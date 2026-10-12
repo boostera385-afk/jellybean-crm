@@ -456,13 +456,13 @@ function SidebarVisitorCard({
   return (
     <div
       className={cn(
-        "min-w-0 rounded-lg border px-3 py-3 transition-colors",
+        "min-w-0 rounded-xl border px-3.5 py-3.5 transition-colors",
         tone === "hot"
           ? "border-orange-500/30 bg-orange-500/5"
           : "border-sky-500/30 bg-sky-500/5",
       )}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-2.5">
         <span
           className={cn(
             "mt-1 h-2 w-2 shrink-0 rounded-full",
@@ -481,14 +481,24 @@ function SidebarVisitorCard({
               })}
             </span>
           </div>
-          <p className="mt-1 break-words text-xs text-muted-foreground" title={[workspaceName, location].filter(Boolean).join(" · ")}>
+          <p
+            className="mt-1.5 line-clamp-2 break-words text-xs leading-relaxed text-muted-foreground"
+            title={[workspaceName, location].filter(Boolean).join(" · ")}
+          >
             {[workspaceName, location].filter(Boolean).join(" · ")}
           </p>
-          {page && <p className="mt-1 line-clamp-2 break-all text-xs text-foreground/70" title={page}>{page}</p>}
+          {page && (
+            <p
+              className="mt-1.5 line-clamp-2 break-words text-xs leading-relaxed text-foreground/70"
+              title={page}
+            >
+              {page}
+            </p>
+          )}
           <Button
             size="sm"
             variant={tone === "hot" ? "default" : "outline"}
-            className="mt-2 h-8 w-full gap-1.5 text-xs font-semibold"
+            className="mt-3 h-8 w-full gap-1.5 text-xs font-semibold"
             onClick={onSend}
           >
             <Send className="h-3 w-3 shrink-0" />
@@ -2335,10 +2345,10 @@ function CrispInboxInner() {
       {/* Visitor groups stack until both columns have enough room to stay readable. */}
       {/* ========================================================================= */}
       {showRightPanel && (
-        <div className="w-72 xl:w-80 2xl:w-[30rem] shrink-0 border-l border-border/40 bg-card/30 flex-col 2xl:flex-row h-full overflow-hidden hidden lg:flex">
+        <div className="w-72 xl:w-80 2xl:w-[clamp(36rem,38vw,44rem)] shrink-0 border-l border-border/40 bg-card/30 flex-col 2xl:flex-row h-full overflow-hidden hidden lg:flex">
           {/* HOT SECTION (left column) — live visitors nobody has messaged yet */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col border-b 2xl:border-b-0 2xl:border-r border-border/40">
-            <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-3 border-b border-border/40">
+            <div className="flex h-14 shrink-0 items-center justify-between gap-3 px-4 border-b border-border/40">
               <div className="flex items-center gap-2 min-w-0">
                 <Flame className="h-4 w-4 shrink-0 text-orange-500" />
                 <span className="truncate text-xs font-semibold uppercase tracking-wider text-foreground">
@@ -2359,7 +2369,7 @@ function CrispInboxInner() {
                 />
               </Button>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5 overscroll-contain">
+            <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 overscroll-contain">
               {hotVisitors.length === 0 ? (
                 <div className="flex h-full min-h-24 flex-col items-center justify-center px-4 text-center">
                   <Flame className="mb-2 h-6 w-6 text-muted-foreground/40" />
@@ -2390,7 +2400,7 @@ function CrispInboxInner() {
 
           {/* AWAITING REPLY (right column) — we sent first message, no reply yet */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-3 border-b border-border/40">
+            <div className="flex h-14 shrink-0 items-center justify-between gap-3 px-4 border-b border-border/40">
               <div className="flex items-center gap-2 min-w-0">
                 <Clock className="h-4 w-4 shrink-0 text-sky-500" />
                 <span className="truncate text-xs font-semibold uppercase tracking-wider text-foreground">
@@ -2398,7 +2408,7 @@ function CrispInboxInner() {
                 </span>
               </div>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5 overscroll-contain">
+            <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 overscroll-contain">
               {warmVisitors.length === 0 ? (
                 <div className="flex h-full min-h-24 flex-col items-center justify-center px-4 text-center">
                   <Clock className="mb-2 h-6 w-6 text-muted-foreground/40" />
