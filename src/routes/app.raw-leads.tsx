@@ -178,15 +178,13 @@ const EMPTY_CACHE_ENTRIES: CacheEntry[] = [];
 const SEARCH_DEBOUNCE_MS = 500;
 type SortDirection = "asc" | "desc";
 type RawLeadSortKey =
-  | "row"
   | "account_name"
   | "sub_area"
   | "posted_at"
   | "post_text"
   | "lead"
   | "lead_link"
-  | "captured_date"
-  | "captured_time"
+  | "captured_at"
   | "account_area"
   | "incog_account"
   | "assignment";
@@ -215,8 +213,7 @@ const RAW_LEAD_COLUMNS = [
   "Post Text",
   "Lead",
   "Lead Link",
-  "Captured Date (UTC)",
-  "Captured Time (UTC)",
+  "Captured Date and Time (PKT)",
   "Account Area",
   "Incog Account",
 ] as const;
@@ -230,8 +227,7 @@ const RAW_LEAD_SORT_BY_COLUMN: Record<RawLeadColumn, RawLeadSortKey> = {
   "Post Text": "post_text",
   Lead: "lead",
   "Lead Link": "lead_link",
-  "Captured Date (UTC)": "captured_date",
-  "Captured Time (UTC)": "captured_time",
+  "Captured Date and Time (PKT)": "captured_at",
   "Account Area": "account_area",
   "Incog Account": "incog_account",
 };
@@ -335,26 +331,35 @@ function parseDateTime(value?: string | null, time?: string | null): number {
   return parseRelativeOrAbsolute(joined);
 }
 
-// Converts a clock-time string ("9:15 AM", "09:15", "21:15", "9:15") into
-// minutes since midnight. Returns NaN if unparseable.
-function parseTimeOfDay(value?: string | null): number {
-  if (!value) return Number.NaN;
-  const raw = String(value).trim().toLowerCase();
-  if (!raw) return Number.NaN;
-  const m = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?$/);
-  if (!m) return Number.NaN;
-  let hours = Number(m[1]);
-  const minutes = Number(m[2]);
-  const seconds = m[3] ? Number(m[3]) : 0;
-  const meridiem = m[4];
-  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return Number.NaN;
-  if (minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) return Number.NaN;
-  if (meridiem) {
-    if (hours < 1 || hours > 12) return Number.NaN;
-    if (meridiem === "am") hours = hours === 12 ? 0 : hours;
-    else hours = hours === 12 ? 12 : hours + 12;
-  } else if (hours < 0 || hours > 23) return Number.NaN;
-  return hours * 60 + minutes + seconds / 60;
+const PKT_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-PK", {
+  timeZone: "Asia/Karachi",
+  year: "numeric",
+  month: "short",
+  day: "2-digit",
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+});
+
+function capturedAtTimestamp(entry: CacheEntry): number {
+  const storedTimestamp = entry.captured_at ? Date.parse(entry.captured_at) : Number.NaN;
+  if (!Number.isNaN(storedTimestamp)) return storedTimestamp;
+
+  const date = entry.data["Captured Date (UTC)"]?.trim();
+  const time = entry.data["Captured Time (UTC)"]?.trim();
+  const joined = [date, time].filter(Boolean).join(" ").trim();
+  if (!joined) return Number.NaN;
+
+  // Legacy rows only have separate UTC text fields. Adding the explicit zone
+  // prevents the browser from interpreting those values as local time.
+  const utcTimestamp = Date.parse(`${joined} UTC`);
+  return Number.isNaN(utcTimestamp) ? parseDateTime(date, time) : utcTimestamp;
+}
+
+function formatCapturedDateTimePkt(entry: CacheEntry): string {
+  const timestamp = capturedAtTimestamp(entry);
+  if (!Number.isFinite(timestamp)) return "—";
+  return `${PKT_DATE_TIME_FORMATTER.format(timestamp)} PKT`;
 }
 
 // Detects whether a "Posted Date & Time" string represents a moment more than
@@ -473,8 +478,6 @@ function rawLeadSortValue(
 ): SortValue {
   const r = entry.data;
   switch (key) {
-    case "row":
-      return typeof entry.sheet_row === "number" ? entry.sheet_row : SORT_EMPTY;
     case "account_name":
       return textOrEmpty(r["Account Name"]);
     case "sub_area":
@@ -491,10 +494,8 @@ function rawLeadSortValue(
     }
     case "lead_link":
       return textOrEmpty(r["Lead Link"]);
-    case "captured_date":
-      return numberOrEmpty(parseDateTime(r["Captured Date (UTC)"], r["Captured Time (UTC)"]));
-    case "captured_time":
-      return numberOrEmpty(parseTimeOfDay(r["Captured Time (UTC)"]));
+    case "captured_at":
+      return numberOrEmpty(capturedAtTimestamp(entry));
     case "account_area":
       return textOrEmpty(r["Account Area"]);
     case "incog_account":
@@ -1172,9 +1173,8 @@ function Inner() {
   function exportRows() {
     downloadCsv(
       "raw-leads.csv",
-      ["Row", "Account", "Sub Area", "Posted", "Lead", "Phone", "Area", "Incog Account", "Link"],
+      ["Account", "Sub Area", "Posted", "Lead", "Phone", "Area", "Incog Account", "Link"],
       visible.map((entry) => [
-        entry.sheet_row ?? "",
         entry.data["Account Name"] ?? "",
         entry.data["Sub Area / Neighborhood"] ?? "",
         entry.data["Posted Date & Time"] ?? "",
@@ -1764,19 +1764,17 @@ function Inner() {
           <div className="max-h-[calc(100vh-340px)] overflow-auto">
             <table
               className="text-[12px] border-separate border-spacing-0 table-fixed w-full"
-              style={{ minWidth: 1240 }}
+              style={{ minWidth: 1140 }}
             >
               <colgroup>
                 <col style={{ width: 36 }} />
-                <col style={{ width: 60 }} />
                 <col style={{ width: 140 }} />
                 <col style={{ width: 125 }} />
                 <col style={{ width: 125 }} />
                 <col style={{ width: 230 }} />
                 <col style={{ width: 72 }} />
                 <col style={{ width: 86 }} />
-                <col style={{ width: 120 }} />
-                <col style={{ width: 96 }} />
+                <col style={{ width: 176 }} />
                 <col style={{ width: 120 }} />
                 <col style={{ width: 120 }} />
                 <col style={{ width: 130 }} />
@@ -1801,14 +1799,6 @@ function Inner() {
                         });
                       }}
                       aria-label="Select all visible"
-                    />
-                  </th>
-                  <th className="border-b border-border px-2 py-2 text-left font-medium text-[10.5px] uppercase tracking-wide text-muted-foreground whitespace-normal leading-tight">
-                    <SortHeader
-                      label="Row #"
-                      active={rawLeadSort.key === "row"}
-                      direction={rawLeadSort.direction}
-                      onClick={() => toggleRawLeadSort("row")}
                     />
                   </th>
                   {RAW_LEAD_COLUMNS.map((h) => (
@@ -1838,7 +1828,7 @@ function Inner() {
               <tbody>
                 {!cacheQuery.isLoading && visible.length === 0 && !error && (
                   <tr>
-                    <td colSpan={14} className="text-center py-12 text-muted-foreground">
+                    <td colSpan={12} className="text-center py-12 text-muted-foreground">
                       <Search className="h-5 w-5 mx-auto mb-2 opacity-50" />
                       No leads in this category. Try a different tab or refresh.
                     </td>
@@ -1849,6 +1839,7 @@ function Inner() {
                   const k = e.row_key;
                   const a = actions[k] || {};
                   const lv = effectiveLead(r, a);
+                  const capturedAtPkt = formatCapturedDateTimePkt(e);
                   const mine = !!currentUserId && e.assigned_to === currentUserId;
                   const claimedByOther = !!e.assigned_to && e.assigned_to !== currentUserId;
                   const isSelected = selected.has(k);
@@ -1877,10 +1868,6 @@ function Inner() {
                           aria-label="Select row"
                         />
                       </td>
-                      <td className="border-b border-border px-2.5 py-2 text-[11.5px] font-mono text-muted-foreground tabular-nums">
-                        {e.sheet_row ?? "—"}
-                      </td>
-
                       <td className="border-b border-border px-2.5 py-2">
                         <div className="flex flex-col gap-1 items-start min-w-0">
                           <div className="font-medium truncate w-full" title={r["Account Name"]}>
@@ -1972,11 +1959,11 @@ function Inner() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="border-b border-border px-2.5 py-2 text-[11.5px] text-muted-foreground whitespace-nowrap">
-                        {r["Captured Date (UTC)"] || "—"}
-                      </td>
-                      <td className="border-b border-border px-2.5 py-2 text-[11.5px] text-muted-foreground whitespace-nowrap">
-                        {r["Captured Time (UTC)"] || "—"}
+                      <td
+                        className="border-b border-border px-2.5 py-2 text-[11.5px] text-muted-foreground whitespace-nowrap"
+                        title={capturedAtPkt}
+                      >
+                        {capturedAtPkt}
                       </td>
                       <td
                         className="border-b border-border px-2.5 py-2 text-[11.5px] truncate"
@@ -2326,6 +2313,7 @@ function LeadDetailDialog({
   onLeadChange: (lead: "yes" | "no") => void | Promise<void>;
 }) {
   const r = entry.data;
+  const capturedAtPkt = formatCapturedDateTimePkt(entry);
   const [phone, setPhone] = useState(entry.phone ?? "");
   const [secondPhone, setSecondPhone] = useState("");
   const [showSecondPhone, setShowSecondPhone] = useState(false);
@@ -2500,15 +2488,10 @@ function LeadDetailDialog({
             </div>
             <div className="min-w-0">
               <Label className="block mb-1 text-[11px] uppercase tracking-wide text-muted-foreground font-medium">
-                Captured (UTC)
+                Captured Date and Time (PKT)
               </Label>
-              <div
-                className="text-foreground truncate"
-                title={`${r["Captured Date (UTC)"] ?? ""} ${r["Captured Time (UTC)"] ?? ""}`.trim()}
-              >
-                {`${r["Captured Date (UTC)"] ?? ""} ${r["Captured Time (UTC)"] ?? ""}`.trim() || (
-                  <span className="text-muted-foreground">—</span>
-                )}
+              <div className="text-foreground truncate" title={capturedAtPkt}>
+                {capturedAtPkt}
               </div>
             </div>
           </div>

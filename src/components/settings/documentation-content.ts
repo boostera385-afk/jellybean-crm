@@ -236,10 +236,10 @@ export const DOC_SECTIONS: DocSection[] = [
       {
         kind: "ul",
         items: [
-          "Fields: post text, account name, sub area (neighborhood), captured time, posted date, lead status, assignment",
+          "Fields: post text, account name, sub area (neighborhood), captured date and time in PKT, posted date, lead status, assignment",
           "Filtering: search box, lead-status categories, assignment filter (All / Unassigned / Assigned to me)",
           "Numbered pagination with page-size selector; page state is stable during list mutations",
-          "Sorting: page-local only (sorts the current page). Captured Time is numeric; Posted Date parses relative and absolute values; statuses use a logical rank",
+          "Sorting: page-local only (sorts the current page). Captured Date and Time sorts chronologically; Posted Date parses relative and absolute values; statuses use a logical rank",
           "Assignment: 'Assign to me' claims a lead race-safely (only if assigned_to IS NULL)",
           "Draft Leads: leads moved to Draft are hidden from the live Raw Leads view and stored in lead_drafts",
           "Duplicate detection: automatic canonical Post ID / URL check plus 4-field fallback (name, area, posted time, post text)",

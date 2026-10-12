@@ -16,7 +16,7 @@ function isCrispMaskedMessage(content: string | null | undefined): boolean {
   return stripped.length >= 3 && /^x+$/i.test(stripped);
 }
 
-function playCrispChime() {
+function playCrispChime(kind: "message" | "visitor" = "message") {
   try {
     const Ctx =
       window.AudioContext ||
@@ -35,9 +35,15 @@ function playCrispChime() {
       osc.start(ctx.currentTime + start);
       osc.stop(ctx.currentTime + start + dur + 0.02);
     };
-    // Clean double-tone notification chime
-    beep(587.33, 0.0, 0.14); // D5
-    beep(880.0, 0.14, 0.22); // A5
+    if (kind === "visitor") {
+      // A distinct rising sound makes a new live visitor easy to recognize.
+      beep(659.25, 0.0, 0.12, 0.34); // E5
+      beep(783.99, 0.11, 0.14, 0.36); // G5
+      beep(987.77, 0.24, 0.22, 0.4); // B5
+    } else {
+      beep(587.33, 0.0, 0.14); // D5
+      beep(880.0, 0.14, 0.22); // A5
+    }
     setTimeout(() => ctx.close(), 1500);
   } catch {
     // Ignore audio context errors if blocked by browser policy
@@ -121,7 +127,7 @@ export function CrispMessageNotifier() {
       // Session storage is optional.
     }
 
-    playCrispChime();
+    playCrispChime("visitor");
     if (newVisitors.length === 1) {
       const visitor = newVisitors[0];
       const location = [visitor.city, visitor.region, visitor.country].filter(Boolean).join(", ");
