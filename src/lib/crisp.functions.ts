@@ -65,6 +65,15 @@ type CrispApiVisitor = {
   locales?: string[];
 };
 
+type CrispWorkspaceRow = {
+  crisp_website_id: string;
+  workspace_name: string;
+  credential_secret_id: string;
+  live_visitor_count: number | null;
+  active_visitor_count: number | null;
+  visitors_limited: boolean | null;
+};
+
 // Generated types lag behind the live-visitor migration, so the row is declared here.
 type CrispVisitorRow = {
   crisp_website_id: string;
@@ -244,7 +253,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
     }
 
     const workspaceNames = new Map(
-      (workspaces ?? []).map((workspace: { crisp_website_id: string; workspace_name: string }) => [workspace.crisp_website_id, workspace.workspace_name]),
+      (workspaces ?? []).map((workspace: CrispWorkspaceRow) => [workspace.crisp_website_id, workspace.workspace_name]),
     );
     const errors: string[] = [];
     let reportedLiveCount = 0;
@@ -253,7 +262,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
 
     const staleBefore = new Date(now.getTime() - 25_000).toISOString();
     await Promise.all(
-      (workspaces ?? []).map(async (workspace: { crisp_website_id: string; workspace_name: string }): Promise<CrispVisitor[]> => {
+      (workspaces ?? []).map(async (workspace: CrispWorkspaceRow): Promise<CrispVisitor[]> => {
         try {
           const { data: claimed } = await supabaseAdmin.rpc("claim_crisp_visitor_sync", {
             p_website_id: workspace.crisp_website_id,
