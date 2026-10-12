@@ -300,8 +300,126 @@ export type Database = {
         }
         Relationships: []
       }
+        crisp_visitor_daily_visits: {
+          Row: {
+            created_at: string
+            crisp_session_id: string
+            crisp_website_id: string
+            first_seen_at: string
+            id: string
+            last_seen_at: string
+            updated_at: string
+            visit_date: string
+          }
+          Insert: {
+            created_at?: string
+            crisp_session_id: string
+            crisp_website_id: string
+            first_seen_at?: string
+            id?: string
+            last_seen_at?: string
+            updated_at?: string
+            visit_date: string
+          }
+          Update: {
+            created_at?: string
+            crisp_session_id?: string
+            crisp_website_id?: string
+            first_seen_at?: string
+            id?: string
+            last_seen_at?: string
+            updated_at?: string
+            visit_date?: string
+          }
+          Relationships: []
+        }
+        crisp_visitors: {
+          Row: {
+            active: boolean
+            avatar: string | null
+            capabilities: string[]
+            city: string | null
+            country: string | null
+            created_at: string
+            crisp_session_id: string
+            crisp_website_id: string
+            email: string | null
+            first_seen_at: string
+            id: string
+            initiated: boolean
+            is_online: boolean
+            last_online_at: string | null
+            last_page_title: string | null
+            last_page_url: string | null
+            last_seen_at: string
+            latitude: number | null
+            locales: string[]
+            longitude: number | null
+            nickname: string | null
+            region: string | null
+            timezone_minutes: number | null
+            updated_at: string
+            user_agent: string | null
+          }
+          Insert: {
+            active?: boolean
+            avatar?: string | null
+            capabilities?: string[]
+            city?: string | null
+            country?: string | null
+            created_at?: string
+            crisp_session_id: string
+            crisp_website_id: string
+            email?: string | null
+            first_seen_at?: string
+            id?: string
+            initiated?: boolean
+            is_online?: boolean
+            last_online_at?: string | null
+            last_page_title?: string | null
+            last_page_url?: string | null
+            last_seen_at?: string
+            latitude?: number | null
+            locales?: string[]
+            longitude?: number | null
+            nickname?: string | null
+            region?: string | null
+            timezone_minutes?: number | null
+            updated_at?: string
+            user_agent?: string | null
+          }
+          Update: {
+            active?: boolean
+            avatar?: string | null
+            capabilities?: string[]
+            city?: string | null
+            country?: string | null
+            created_at?: string
+            crisp_session_id?: string
+            crisp_website_id?: string
+            email?: string | null
+            first_seen_at?: string
+            id?: string
+            initiated?: boolean
+            is_online?: boolean
+            last_online_at?: string | null
+            last_page_title?: string | null
+            last_page_url?: string | null
+            last_seen_at?: string
+            latitude?: number | null
+            locales?: string[]
+            longitude?: number | null
+            nickname?: string | null
+            region?: string | null
+            timezone_minutes?: number | null
+            updated_at?: string
+            user_agent?: string | null
+          }
+          Relationships: []
+        }
       crisp_workspaces: {
         Row: {
+            active_visitor_count: number
           created_at: string
           credential_secret_id: string | null
           crisp_website_id: string
@@ -310,11 +428,15 @@ export type Database = {
           installed_at: string | null
           last_seen_at: string | null
           last_synced_at: string | null
+            live_visitor_count: number
           metadata: Json
           updated_at: string
+            visitor_synced_at: string | null
+            visitors_limited: boolean
           workspace_name: string | null
         }
         Insert: {
+            active_visitor_count?: number
           created_at?: string
           credential_secret_id?: string | null
           crisp_website_id: string
@@ -323,11 +445,15 @@ export type Database = {
           installed_at?: string | null
           last_seen_at?: string | null
           last_synced_at?: string | null
+            live_visitor_count?: number
           metadata?: Json
           updated_at?: string
+            visitor_synced_at?: string | null
+            visitors_limited?: boolean
           workspace_name?: string | null
         }
         Update: {
+            active_visitor_count?: number
           created_at?: string
           credential_secret_id?: string | null
           crisp_website_id?: string
@@ -336,8 +462,11 @@ export type Database = {
           installed_at?: string | null
           last_seen_at?: string | null
           last_synced_at?: string | null
+            live_visitor_count?: number
           metadata?: Json
           updated_at?: string
+            visitor_synced_at?: string | null
+            visitors_limited?: boolean
           workspace_name?: string | null
         }
         Relationships: []
@@ -1194,6 +1323,10 @@ export type Database = {
           id: string
         }[]
       }
+        claim_crisp_visitor_sync: {
+          Args: { p_stale_before: string; p_website_id: string }
+          Returns: boolean
+        }
       count_pending_reminder_leads: { Args: never; Returns: number }
       crisp_create_workspace_secret: {
         Args: {

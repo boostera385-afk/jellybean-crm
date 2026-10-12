@@ -9,6 +9,7 @@ import {
   Globe,
   Loader2,
   MessageSquare,
+  MapPin,
   MoreVertical,
   Plus,
   RefreshCw,
@@ -20,10 +21,12 @@ import {
   PanelRightOpen,
   Info,
   Download,
+  ExternalLink,
   FileText,
   Volume2,
   Paperclip,
   Users,
+  Radio,
   X,
 } from "lucide-react";
 
@@ -40,8 +43,11 @@ import {
   markCrispConversationRead,
   regenerateCrispWebhookSecret,
   sendCrispMessage,
+  sendCrispMessageToVisitor,
   syncCrispHistory,
+  type CrispVisitor,
 } from "@/lib/crisp.functions";
+import { useCrispVisitors } from "@/hooks/use-crisp-visitors";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -67,14 +73,22 @@ import { toast } from "sonner";
 import { RoleGate } from "@/components/page";
 
 export const Route = createFileRoute("/app/crisp-chat")({
-  head: () => ({ meta: [
-    { title: "Crisp Chat \u00b7 JellyBean" },
-    { name: "description", content: "Manage customer conversations across connected Crisp workspaces." },
-    { property: "og:title", content: "Crisp Chat \u00b7 JellyBean" },
-    { property: "og:description", content: "Manage customer conversations across connected Crisp workspaces." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Crisp Chat \u00b7 JellyBean" },
+      {
+        name: "description",
+        content: "Manage customer conversations across connected Crisp workspaces.",
+      },
+      { property: "og:title", content: "Crisp Chat \u00b7 JellyBean" },
+      {
+        property: "og:description",
+        content: "Manage customer conversations across connected Crisp workspaces.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: CrispChatPage,
 });
 
@@ -344,6 +358,36 @@ function getWorkspaceDisplayName(websiteId: string, workspacesMap: Map<string, s
   return `Workspace • ${suffix}`;
 }
 
+function getVisitorDisplayName(visitor: CrispVisitor) {
+  return visitor.nickname?.trim() || visitor.email?.trim() || "Anonymous visitor";
+}
+
+function getVisitorLocation(visitor: CrispVisitor) {
+  return (
+    [visitor.city, visitor.region, visitor.country].filter(Boolean).join(", ") || "Unknown location"
+  );
+}
+
+function getVisitorBrowser(userAgent: string | null) {
+  if (!userAgent) return "Unknown browser";
+  if (/edg/i.test(userAgent)) return "Microsoft Edge";
+  if (/chrome|crios/i.test(userAgent)) return "Chrome";
+  if (/firefox|fxios/i.test(userAgent)) return "Firefox";
+  if (/safari/i.test(userAgent)) return "Safari";
+  return "Web browser";
+}
+
+function getInitials(value: string) {
+  return (
+    value
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "V"
+  );
+}
+
 function CrispChatPage() {
   const auth = useAuth();
   return (
@@ -373,6 +417,14 @@ const PAGE_SIZE_MSGS = 40;
 function CrispInboxInner() {
   const auth = useAuth();
   const isAdmin = auth.primaryRole === "admin";
+  const canUseCrisp =
+    auth.primaryRole === "admin" ||
+    auth.primaryRole === "cs_admin" ||
+    auth.primaryRole === "cs" ||
+    auth.roles.includes("admin") ||
+    auth.roles.includes("cs_admin") ||
+    auth.roles.includes("cs");
+  const visitorOverview = useCrispVisitors(canUseCrisp);
 
   const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
   const [workspaceSearch, setWorkspaceSearch] = useState<string>("");
@@ -387,10 +439,11 @@ function CrispInboxInner() {
   );
   const [totalUnrepliedCount, setTotalUnrepliedCount] = useState<number>(0);
   const [hasAnyUnread, setHasAnyUnread] = useState<boolean>(false);
-  const [todayTotalVisitors, setTodayTotalVisitors] = useState<number>(0);
-  const [todayWorkspaceVisitorsMap, setTodayWorkspaceVisitorsMap] = useState<Map<string, number>>(
-    new Map(),
-  );
+  const [visitorDialogOpen, setVisitorDialogOpen] = useState(false);
+  const [visitorView, setVisitorView] = useState<"live" | "today">("live");
+  const [selectedVisitor, setSelectedVisitor] = useState<CrispVisitor | null>(null);
+  const [visitorMessage, setVisitorMessage] = useState("");
+  const [isMessagingVisitor, setIsMessagingVisitor] = useState(false);
 
   const [selectedWebsiteId, setSelectedWebsiteId] = useState<string>("all");
   const [conversations, setConversations] = useState<ConversationRecord[]>([]);
@@ -511,55 +564,6 @@ function CrispInboxInner() {
       setWorkspaceLatestUnreadAtMap(latestUnreadMap);
       setTotalUnrepliedCount(grandUnrepliedTotal);
       setHasAnyUnread(anyUnread);
-    }
-
-    // Calculate today's visitor count (New visitors from today)
-    try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayIso = today.toISOString();
-
-      // 1. Fetch conversations that received incoming customer messages today
-      const { data: incomingMsgsToday } = await supabase
-        .from("crisp_messages")
-        .select("conversation_id, crisp_website_id")
-        .in("direction", ["incoming"])
-        .gte("sent_at", todayIso);
-
-      // 2. Fetch live session:created webhook events from today (visitors who visited today)
-      const { data: sessionEventsToday } = await supabase
-        .from("crisp_webhook_events")
-        .select("crisp_website_id, payload")
-        .eq("event_type", "session:created")
-        .gte("created_at", todayIso);
-
-      const countedVisitorIds = new Set<string>();
-      const wsVisitorsMap = new Map<string, number>();
-
-      // Add incoming customer messages from today
-      (incomingMsgsToday ?? []).forEach((m) => {
-        if (!countedVisitorIds.has(m.conversation_id)) {
-          countedVisitorIds.add(m.conversation_id);
-          wsVisitorsMap.set(m.crisp_website_id, (wsVisitorsMap.get(m.crisp_website_id) || 0) + 1);
-        }
-      });
-
-      // Add sessions created today from live webhook events (visitors who visited today without sending text)
-      (sessionEventsToday ?? []).forEach((ev) => {
-        if (!ev.crisp_website_id) return;
-        const payload = ev.payload as { data?: { session_id?: string }; session_id?: string };
-        const sessId = payload?.data?.session_id || payload?.session_id;
-        const key = sessId ? `sess_${sessId}` : `evt_${Math.random()}`;
-        if (!countedVisitorIds.has(key)) {
-          countedVisitorIds.add(key);
-          wsVisitorsMap.set(ev.crisp_website_id, (wsVisitorsMap.get(ev.crisp_website_id) || 0) + 1);
-        }
-      });
-
-      setTodayWorkspaceVisitorsMap(wsVisitorsMap);
-      setTodayTotalVisitors(countedVisitorIds.size);
-    } catch {
-      // Non-fatal if count fetch fails
     }
   };
 
@@ -927,6 +931,31 @@ function CrispInboxInner() {
     return map;
   }, [workspaces]);
 
+  const liveVisitors = useMemo(
+    () =>
+      (visitorOverview.data?.liveVisitors ?? []).filter(
+        (visitor) => selectedWebsiteId === "all" || visitor.crisp_website_id === selectedWebsiteId,
+      ),
+    [selectedWebsiteId, visitorOverview.data?.liveVisitors],
+  );
+  const todayVisitors = useMemo(
+    () =>
+      (visitorOverview.data?.todayVisitors ?? []).filter(
+        (visitor) => selectedWebsiteId === "all" || visitor.crisp_website_id === selectedWebsiteId,
+      ),
+    [selectedWebsiteId, visitorOverview.data?.todayVisitors],
+  );
+  const liveVisitorCount =
+    selectedWebsiteId === "all"
+      ? (visitorOverview.data?.liveCount ?? liveVisitors.length)
+      : liveVisitors.length;
+  const todayVisitorCount = todayVisitors.length;
+  const activeLiveVisitors =
+    selectedWebsiteId === "all"
+      ? (visitorOverview.data?.activeCount ??
+        liveVisitors.filter((visitor) => visitor.active).length)
+      : liveVisitors.filter((visitor) => visitor.active).length;
+
   // Sorted Workspaces Priority:
   // 1. All Workspaces stays pinned first
   // 2. Workspaces with at least one chat needing reply (> 0) come first (sorted by unread/needs-reply CHAT COUNT DESC)
@@ -1046,6 +1075,36 @@ function CrispInboxInner() {
       setMessageInput(content);
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handleMessageVisitor = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedVisitor || !visitorMessage.trim() || isMessagingVisitor) return;
+
+    setIsMessagingVisitor(true);
+    try {
+      const result = await sendCrispMessageToVisitor({
+        data: {
+          websiteId: selectedVisitor.crisp_website_id,
+          sessionId: selectedVisitor.crisp_session_id,
+          content: visitorMessage.trim(),
+        },
+      });
+      if (!result.ok) {
+        toast.error(result.error || "Could not message this visitor");
+        return;
+      }
+
+      toast.success("Message sent to the live visitor");
+      setVisitorMessage("");
+      setVisitorDialogOpen(false);
+      await loadConversations(selectedWebsiteId, true);
+      setSelectedConversationId(result.conversationId);
+    } catch (error) {
+      toast.error((error as Error).message || "Could not message this visitor");
+    } finally {
+      setIsMessagingVisitor(false);
     }
   };
 
@@ -1563,26 +1622,48 @@ function CrispInboxInner() {
             </Button>
           </div>
 
-          {/* Today's Visitors Counter */}
-          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-background/60 border border-border/40 text-xs">
-            <div className="flex items-center gap-1.5 text-foreground font-medium">
-              <Users className="w-3.5 h-3.5 text-primary shrink-0" />
-              <span>Visitors Today:</span>
-              <Badge
-                variant="secondary"
-                className="px-1.5 py-0 text-[11px] font-bold bg-primary/15 text-primary border-primary/30"
-              >
-                {selectedWebsiteId === "all"
-                  ? todayTotalVisitors
-                  : todayWorkspaceVisitorsMap.get(selectedWebsiteId) || 0}
-              </Badge>
+          <button
+            type="button"
+            onClick={() => {
+              setVisitorView(liveVisitorCount > 0 ? "live" : "today");
+              setSelectedVisitor((liveVisitors[0] || todayVisitors[0]) ?? null);
+              setVisitorDialogOpen(true);
+            }}
+            className="w-full rounded-lg border border-border/50 bg-background/60 px-2.5 py-2 text-left transition-colors hover:bg-accent/40"
+            title={visitorOverview.data?.error || "View live and today's visitors"}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                <span className="relative flex h-2.5 w-2.5">
+                  {liveVisitorCount > 0 && (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                  )}
+                  <span
+                    className={cn(
+                      "relative inline-flex h-2.5 w-2.5 rounded-full",
+                      liveVisitorCount > 0 ? "bg-emerald-500" : "bg-muted-foreground/40",
+                    )}
+                  />
+                </span>
+                <span>{liveVisitorCount > 0 ? "Visitors live now" : "No live visitors"}</span>
+              </div>
+              {visitorOverview.isFetching && (
+                <RefreshCw className="h-3 w-3 animate-spin text-primary" />
+              )}
             </div>
-            <span className="text-[10px] text-muted-foreground truncate max-w-[110px]">
-              {selectedWebsiteId === "all"
-                ? "All Workspaces"
-                : getWorkspaceDisplayName(selectedWebsiteId, workspacesMap)}
-            </span>
-          </div>
+            <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+              <Badge
+                variant="outline"
+                className="gap-1 border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0 text-emerald-500"
+              >
+                <Radio className="h-3 w-3" /> {liveVisitorCount} live
+              </Badge>
+              <Badge variant="outline" className="gap-1 px-1.5 py-0">
+                <Users className="h-3 w-3" /> {todayVisitorCount} today
+              </Badge>
+              {activeLiveVisitors > 0 && <span>{activeLiveVisitors} active</span>}
+            </div>
+          </button>
         </div>
 
         {/* Conversations Scroll Area with Infinite Scroll */}
@@ -2066,6 +2147,307 @@ function CrispInboxInner() {
           )}
         </div>
       )}
+
+      <Dialog
+        open={visitorDialogOpen}
+        onOpenChange={(open) => {
+          setVisitorDialogOpen(open);
+          if (!open) {
+            setVisitorMessage("");
+            setSelectedVisitor(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[86vh] sm:max-w-4xl overflow-hidden p-0">
+          <DialogHeader className="border-b border-border/50 px-5 py-4">
+            <div className="flex items-start justify-between gap-4 pr-8">
+              <div>
+                <DialogTitle className="flex items-center gap-2 text-base">
+                  <Radio className="h-4 w-4 text-emerald-500" /> Website visitors
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-xs">
+                  See who is browsing now, review today&apos;s visitors, and start a Crisp chat.
+                </DialogDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                onClick={() => visitorOverview.refetch()}
+                disabled={visitorOverview.isFetching}
+              >
+                <RefreshCw
+                  className={cn("h-3.5 w-3.5", visitorOverview.isFetching && "animate-spin")}
+                />
+                Refresh
+              </Button>
+            </div>
+          </DialogHeader>
+
+          <div className="border-b border-border/50 px-5 py-3">
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={visitorView === "live" ? "default" : "outline"}
+                className="h-8 gap-1.5 text-xs"
+                onClick={() => {
+                  setVisitorView("live");
+                  setSelectedVisitor(liveVisitors[0] ?? null);
+                }}
+              >
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                Live now ({liveVisitorCount})
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={visitorView === "today" ? "default" : "outline"}
+                className="h-8 gap-1.5 text-xs"
+                onClick={() => {
+                  setVisitorView("today");
+                  setSelectedVisitor(todayVisitors[0] ?? null);
+                }}
+              >
+                <Users className="h-3.5 w-3.5" />
+                Visited today ({todayVisitorCount})
+              </Button>
+              <span className="ml-auto text-[11px] text-muted-foreground">
+                {selectedWebsiteId === "all"
+                  ? "All workspaces"
+                  : getWorkspaceDisplayName(selectedWebsiteId, workspacesMap)}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(300px,0.9fr)]">
+            <div className="max-h-[60vh] overflow-y-auto border-r border-border/50 p-3">
+              {(visitorView === "live" ? liveVisitors : todayVisitors).length === 0 ? (
+                <div className="flex min-h-52 flex-col items-center justify-center px-6 text-center">
+                  <Users className="mb-2 h-8 w-8 text-muted-foreground/50" />
+                  <p className="text-sm font-medium">
+                    {visitorView === "live"
+                      ? "Nobody is browsing right now"
+                      : "No visitors recorded today"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Visitor presence refreshes automatically every 30 seconds.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {(visitorView === "live" ? liveVisitors : todayVisitors).map((visitor) => {
+                    const selected =
+                      selectedVisitor?.crisp_website_id === visitor.crisp_website_id &&
+                      selectedVisitor?.crisp_session_id === visitor.crisp_session_id;
+                    return (
+                      <button
+                        key={`${visitor.crisp_website_id}:${visitor.crisp_session_id}`}
+                        type="button"
+                        onClick={() => {
+                          setSelectedVisitor(visitor);
+                          setVisitorMessage("");
+                        }}
+                        className={cn(
+                          "w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
+                          selected
+                            ? "border-primary/50 bg-primary/10"
+                            : "border-border/50 bg-background/50 hover:bg-accent/40",
+                        )}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <span
+                            className={cn(
+                              "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
+                              visitor.is_online ? "bg-emerald-500" : "bg-muted-foreground/40",
+                            )}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="truncate text-sm font-semibold">
+                                {getVisitorDisplayName(visitor)}
+                              </span>
+                              <span className="shrink-0 text-[10px] text-muted-foreground">
+                                {new Date(visitor.last_seen_at).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                              {getVisitorLocation(visitor)}
+                            </p>
+                            <p className="mt-1 truncate text-[11px] text-foreground/75">
+                              {visitor.last_page_title ||
+                                visitor.last_page_url ||
+                                "Page unavailable"}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="max-h-[60vh] overflow-y-auto p-5">
+              {selectedVisitor ? (
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3">
+                    <Avatar className="h-11 w-11 border border-border/60">
+                      <AvatarImage src={selectedVisitor.avatar || undefined} />
+                      <AvatarFallback>
+                        {getInitials(getVisitorDisplayName(selectedVisitor))}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="truncate text-sm font-semibold">
+                          {getVisitorDisplayName(selectedVisitor)}
+                        </h3>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "px-1.5 py-0 text-[10px]",
+                            selectedVisitor.is_online
+                              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-500"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {selectedVisitor.is_online
+                            ? selectedVisitor.active
+                              ? "Active now"
+                              : "Online"
+                            : "Offline"}
+                        </Badge>
+                      </div>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {selectedVisitor.workspace_name ||
+                          getWorkspaceDisplayName(selectedVisitor.crisp_website_id, workspacesMap)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-lg border border-border/50 bg-muted/20 p-2.5">
+                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
+                        Location
+                      </span>
+                      <span className="mt-1 flex items-center gap-1 font-medium">
+                        <MapPin className="h-3 w-3 text-primary" />
+                        {getVisitorLocation(selectedVisitor)}
+                      </span>
+                    </div>
+                    <div className="rounded-lg border border-border/50 bg-muted/20 p-2.5">
+                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
+                        Browser
+                      </span>
+                      <span
+                        className="mt-1 block font-medium"
+                        title={selectedVisitor.user_agent || undefined}
+                      >
+                        {getVisitorBrowser(selectedVisitor.user_agent)}
+                      </span>
+                    </div>
+                    <div className="rounded-lg border border-border/50 bg-muted/20 p-2.5">
+                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
+                        First seen
+                      </span>
+                      <span className="mt-1 block font-medium">
+                        {formatMessageDateTime(selectedVisitor.first_seen_at)}
+                      </span>
+                    </div>
+                    <div className="rounded-lg border border-border/50 bg-muted/20 p-2.5">
+                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
+                        Last seen
+                      </span>
+                      <span className="mt-1 block font-medium">
+                        {formatMessageDateTime(selectedVisitor.last_seen_at)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {selectedVisitor.email && (
+                    <div className="text-xs">
+                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
+                        Email
+                      </span>
+                      <span className="break-all font-medium">{selectedVisitor.email}</span>
+                    </div>
+                  )}
+
+                  {(selectedVisitor.last_page_title || selectedVisitor.last_page_url) && (
+                    <div className="text-xs">
+                      <span className="block text-[10px] font-semibold uppercase text-muted-foreground">
+                        Current page
+                      </span>
+                      {selectedVisitor.last_page_url ? (
+                        <a
+                          href={selectedVisitor.last_page_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 flex items-start gap-1 font-medium text-primary hover:underline"
+                        >
+                          <span className="break-all">
+                            {selectedVisitor.last_page_title || selectedVisitor.last_page_url}
+                          </span>
+                          <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
+                        </a>
+                      ) : (
+                        <span className="mt-1 block font-medium">
+                          {selectedVisitor.last_page_title}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <form
+                    onSubmit={handleMessageVisitor}
+                    className="space-y-2 border-t border-border/50 pt-4"
+                  >
+                    <Label htmlFor="visitor-message" className="text-xs font-semibold">
+                      Message from JellyBean
+                    </Label>
+                    <Textarea
+                      id="visitor-message"
+                      value={visitorMessage}
+                      onChange={(event) => setVisitorMessage(event.target.value)}
+                      placeholder={
+                        selectedVisitor.is_online
+                          ? "Type a proactive Crisp message..."
+                          : "This visitor is no longer online"
+                      }
+                      disabled={!selectedVisitor.is_online || isMessagingVisitor}
+                      className="min-h-24 resize-none text-xs"
+                    />
+                    <Button
+                      type="submit"
+                      className="w-full gap-1.5"
+                      disabled={
+                        !selectedVisitor.is_online || !visitorMessage.trim() || isMessagingVisitor
+                      }
+                    >
+                      {isMessagingVisitor ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      Send through Crisp
+                    </Button>
+                  </form>
+                </div>
+              ) : (
+                <div className="flex min-h-52 flex-col items-center justify-center text-center text-muted-foreground">
+                  <Users className="mb-2 h-8 w-8 opacity-50" />
+                  <p className="text-xs">Select a visitor to see their details.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ========================================================================= */}
       {/* ADMIN ADD WORKSPACE MODAL */}

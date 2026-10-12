@@ -5,6 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useCrispVisitors } from "@/hooks/use-crisp-visitors";
+import { toast } from "sonner";
 
 function isCrispMaskedMessage(content: string | null | undefined): boolean {
   if (!content) return false;
@@ -79,9 +81,71 @@ export function CrispMessageNotifier() {
 
   const isCsAdmin =
     primaryRole === "cs_admin" || roles.includes("cs_admin") || roles.includes("admin");
+  const canUseCrisp = isCsAdmin || primaryRole === "cs" || roles.includes("cs");
+  const visitorOverview = useCrispVisitors(canUseCrisp && Boolean(user?.id));
 
   const seenMsgIdsRef = useRef<Set<string>>(new Set());
+  const notifiedVisitorIdsRef = useRef<Set<string>>(new Set());
   const [activeQueue, setActiveQueue] = useState<QueuedMessageAlert[]>([]);
+
+  useEffect(() => {
+    if (!canUseCrisp || !user?.id || !visitorOverview.data?.fetchedAt) return;
+
+    const storageKey = `crisp_live_visitor_alerts_${user.id}`;
+    if (notifiedVisitorIdsRef.current.size === 0) {
+      try {
+        const stored = JSON.parse(sessionStorage.getItem(storageKey) || "[]");
+        if (Array.isArray(stored)) {
+          notifiedVisitorIdsRef.current = new Set(stored.map(String));
+        }
+      } catch {
+        // Session storage is an optional notification convenience.
+      }
+    }
+
+    const newVisitors = visitorOverview.data.liveVisitors.filter((visitor) => {
+      const key = `${visitor.crisp_website_id}:${visitor.crisp_session_id}`;
+      return !notifiedVisitorIdsRef.current.has(key);
+    });
+    if (newVisitors.length === 0) return;
+
+    newVisitors.forEach((visitor) => {
+      notifiedVisitorIdsRef.current.add(`${visitor.crisp_website_id}:${visitor.crisp_session_id}`);
+    });
+    try {
+      sessionStorage.setItem(
+        storageKey,
+        JSON.stringify(Array.from(notifiedVisitorIdsRef.current).slice(-500)),
+      );
+    } catch {
+      // Session storage is optional.
+    }
+
+    playCrispChime();
+    if (newVisitors.length === 1) {
+      const visitor = newVisitors[0];
+      const location = [visitor.city, visitor.region, visitor.country].filter(Boolean).join(", ");
+      toast.info(`${visitor.nickname || "A visitor"} is live`, {
+        description: [visitor.workspace_name || "Crisp", location, visitor.last_page_title]
+          .filter(Boolean)
+          .join(" · "),
+        duration: 10_000,
+        action: {
+          label: "Open Crisp",
+          onClick: () => navigate({ to: "/app/crisp-chat" }),
+        },
+      });
+    } else {
+      toast.info(`${newVisitors.length} visitors are live now`, {
+        description: "Open Crisp Chat to see their pages, locations, and start a conversation.",
+        duration: 10_000,
+        action: {
+          label: "View visitors",
+          onClick: () => navigate({ to: "/app/crisp-chat" }),
+        },
+      });
+    }
+  }, [canUseCrisp, navigate, user?.id, visitorOverview.data]);
 
   const handleDismissTop = () => {
     const item = activeQueue[0];

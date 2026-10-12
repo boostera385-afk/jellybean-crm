@@ -38,6 +38,15 @@ function isCrispMaskedMessage(content: string | null | undefined): boolean {
   const stripped = trimmed.replace(/[\s\p{P}\p{S}]/gu, "");
   return stripped.length >= 3 && /^x+$/i.test(stripped);
 }
+
+function pakistanDayKey(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Karachi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
 // ──────────────────────────────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -268,9 +277,102 @@ serve(async (req) => {
       const finalAvatar = incomingAvatar || existingConv?.customer_avatar || null;
       const finalState = incomingState || existingConv?.status || "unresolved";
 
-      const sentAt = data.timestamp
-        ? new Date(data.timestamp).toISOString()
-        : new Date().toISOString();
+      const eventTimestamp = data.timestamp || body.timestamp;
+      const eventDate = eventTimestamp ? new Date(eventTimestamp) : new Date();
+      const effectiveEventDate = Number.isNaN(eventDate.getTime()) ? new Date() : eventDate;
+      const sentAt = effectiveEventDate.toISOString();
+
+      // Keep visitor presence separate from conversations. Crisp can report a
+      // visitor before they ever open the chat or send a message.
+      const availability = String(data.availability || "").toLowerCase();
+      const isVisitorActivity =
+        isCustomerMessage ||
+        eventType === "session:request:initiated" ||
+        eventType.startsWith("session:set_") ||
+        eventType.startsWith("session:sync:") ||
+        availability === "online";
+
+      const { data: existingVisitor } = await supabase
+        .from("crisp_visitors")
+        .select(
+          "nickname, email, avatar, user_agent, initiated, active, is_online, last_online_at, last_page_title, last_page_url, country, region, city, latitude, longitude, timezone_minutes, capabilities, locales, last_seen_at",
+        )
+        .eq("crisp_website_id", websiteId)
+        .eq("crisp_session_id", sessionId)
+        .maybeSingle();
+
+      const lastPage =
+        data.last_page ||
+        data.page ||
+        (Array.isArray(data.pages) && data.pages.length > 0
+          ? data.pages[data.pages.length - 1]
+          : {}) ||
+        {};
+      const geolocation = data.geolocation || {};
+      const coordinates = geolocation.coordinates || {};
+      const visitorOnline = availability
+        ? availability === "online"
+        : isVisitorActivity
+          ? true
+          : Boolean(existingVisitor?.is_online);
+      const visitorActive =
+        typeof data.active === "boolean"
+          ? data.active
+          : availability
+            ? availability === "online"
+            : Boolean(existingVisitor?.active);
+
+      const { error: visitorUpsertError } = await supabase.from("crisp_visitors").upsert(
+        {
+          crisp_website_id: websiteId,
+          crisp_session_id: sessionId,
+          nickname: incomingName || existingVisitor?.nickname || null,
+          email: incomingEmail || existingVisitor?.email || null,
+          avatar: incomingAvatar || existingVisitor?.avatar || null,
+          user_agent: data.useragent || existingVisitor?.user_agent || null,
+          initiated: Boolean(data.initiated || existingVisitor?.initiated || isMessageEvent),
+          active: visitorActive,
+          is_online: visitorOnline,
+          last_online_at: visitorOnline ? sentAt : existingVisitor?.last_online_at || null,
+          last_page_title:
+            lastPage.page_title || lastPage.title || existingVisitor?.last_page_title || null,
+          last_page_url:
+            lastPage.page_url || lastPage.url || existingVisitor?.last_page_url || null,
+          country: geolocation.country || existingVisitor?.country || null,
+          region: geolocation.region || existingVisitor?.region || null,
+          city: geolocation.city || existingVisitor?.city || null,
+          latitude: coordinates.latitude ?? existingVisitor?.latitude ?? null,
+          longitude: coordinates.longitude ?? existingVisitor?.longitude ?? null,
+          timezone_minutes: data.timezone ?? existingVisitor?.timezone_minutes ?? null,
+          capabilities: Array.isArray(data.capabilities)
+            ? data.capabilities
+            : existingVisitor?.capabilities || [],
+          locales: Array.isArray(data.locales) ? data.locales : existingVisitor?.locales || [],
+          last_seen_at: isVisitorActivity ? sentAt : existingVisitor?.last_seen_at || sentAt,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "crisp_website_id,crisp_session_id" },
+      );
+
+      if (visitorUpsertError && visitorUpsertError.code !== "42P01") {
+        console.error("Failed to update Crisp visitor:", visitorUpsertError.message);
+      }
+
+      if (isVisitorActivity) {
+        const { error: visitError } = await supabase.from("crisp_visitor_daily_visits").upsert(
+          {
+            crisp_website_id: websiteId,
+            crisp_session_id: sessionId,
+            visit_date: pakistanDayKey(effectiveEventDate),
+            last_seen_at: sentAt,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "crisp_website_id,crisp_session_id,visit_date" },
+        );
+        if (visitError && visitError.code !== "42P01") {
+          console.error("Failed to update Crisp daily visitor:", visitError.message);
+        }
+      }
 
       // ── IDEMPOTENT UNREAD COUNT ────────────────────────────────────────────
       // Check if a crisp_messages row for this message already exists BEFORE
