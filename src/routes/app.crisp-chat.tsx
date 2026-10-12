@@ -1232,6 +1232,14 @@ function CrispInboxInner() {
     [liveVisitors, visitorMsgState],
   );
 
+  // Session keys of everyone currently live, so the inbox can flag a
+  // conversation whose visitor is browsing right now (e.g. a warm visitor who
+  // just replied drops out of "Awaiting reply" and lights up here instead).
+  const liveSessionKeys = useMemo(
+    () => new Set(allLiveVisitors.map((v) => `${v.crisp_website_id}:${v.crisp_session_id}`)),
+    [allLiveVisitors],
+  );
+
   // Sorted Workspaces Priority:
   // 1. All Workspaces stays pinned first
   // 2. Workspaces with at least one chat needing reply (> 0) come first (sorted by unread/needs-reply CHAT COUNT DESC)
@@ -1921,6 +1929,9 @@ function CrispInboxInner() {
                 const isSelected = selectedConversationId === conv.id;
                 const isMaskedPreview = isCrispMaskedMessage(conv.last_message);
                 const isUnread = (conv.unread_count || 0) > 0 && !isMaskedPreview;
+                const isLive = liveSessionKeys.has(
+                  `${conv.crisp_website_id}:${conv.crisp_session_id}`,
+                );
 
                 return (
                   <button
@@ -1930,27 +1941,48 @@ function CrispInboxInner() {
                       "w-full text-left p-3 rounded-lg border transition-all space-y-1.5",
                       isSelected
                         ? "bg-accent/80 border-primary/50 shadow-sm"
-                        : isUnread
-                          ? "bg-primary/10 border-primary/30 shadow-xs hover:bg-accent/40"
-                          : "border-border/20 hover:bg-accent/40",
+                        : isLive
+                          ? "bg-emerald-500/10 border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/30 hover:bg-emerald-500/15"
+                          : isUnread
+                            ? "bg-primary/10 border-primary/30 shadow-xs hover:bg-accent/40"
+                            : "border-border/20 hover:bg-accent/40",
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        {isUnread && (
+                        {isLive ? (
                           <span
-                            className="w-2.5 h-2.5 rounded-full bg-primary shrink-0 animate-pulse"
-                            title="Needs operator reply"
-                          />
+                            className="relative flex h-2.5 w-2.5 shrink-0"
+                            title="Visitor is live now"
+                          >
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
+                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                          </span>
+                        ) : (
+                          isUnread && (
+                            <span
+                              className="w-2.5 h-2.5 rounded-full bg-primary shrink-0 animate-pulse"
+                              title="Needs operator reply"
+                            />
+                          )
                         )}
                         <span
                           className={cn(
                             "text-sm truncate text-foreground",
-                            isUnread ? "font-bold" : "font-medium",
+                            isUnread || isLive ? "font-bold" : "font-medium",
                           )}
                         >
                           {conv.customer_name || "Visitor"}
                         </span>
+                        {isLive && (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 gap-0.5 border-emerald-500/40 bg-emerald-500/10 px-1 py-0 text-[9px] font-semibold text-emerald-500"
+                          >
+                            <Radio className="h-2.5 w-2.5" />
+                            LIVE
+                          </Badge>
+                        )}
                       </div>
                       <span className="text-[10px] text-muted-foreground shrink-0 font-medium">
                         {formatConversationTime(conv.last_message_at)}
