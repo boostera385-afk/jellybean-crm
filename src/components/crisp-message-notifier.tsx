@@ -137,8 +137,15 @@ export function CrispMessageNotifier() {
           .join(" · "),
         duration: 10_000,
         action: {
-          label: "Open Crisp",
-          onClick: () => navigate({ to: "/app/crisp-chat" }),
+          label: "Send Message",
+          onClick: () =>
+            navigate({
+              to: "/app/crisp-chat",
+              search: {
+                websiteId: visitor.crisp_website_id,
+                visitorSessionId: visitor.crisp_session_id,
+              },
+            }),
         },
       });
     } else {
@@ -171,13 +178,16 @@ export function CrispMessageNotifier() {
     setActiveQueue([]);
   };
 
-  const handleViewChat = (_conversationId?: string) => {
+  const handleViewChat = (conversationId?: string) => {
     const item = activeQueue[0];
     if (item && user?.id) {
       addDismissedNotificationKeys(user.id, [item.id]);
     }
     setActiveQueue((prev) => prev.slice(1));
-    navigate({ to: "/app/crisp-chat" });
+    navigate({
+      to: "/app/crisp-chat",
+      search: conversationId ? { conversationId } : {},
+    });
   };
 
   // CHECK UNREAD CONVERSATIONS (On login & on tab focus/switch)
@@ -475,7 +485,7 @@ export function CrispMessageNotifier() {
               className="text-[12px] h-9 gap-1.5 font-semibold shadow-sm"
             >
               <ExternalLink className="h-3.5 w-3.5" />
-              View Chat
+              Send Message
             </Button>
           </div>
         </div>

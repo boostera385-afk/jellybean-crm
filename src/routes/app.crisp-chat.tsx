@@ -73,6 +73,22 @@ import { toast } from "sonner";
 import { RoleGate } from "@/components/page";
 
 export const Route = createFileRoute("/app/crisp-chat")({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { conversationId?: string; websiteId?: string; visitorSessionId?: string } => ({
+    conversationId:
+      typeof search.conversationId === "string" && search.conversationId.trim()
+        ? search.conversationId.trim()
+        : undefined,
+    websiteId:
+      typeof search.websiteId === "string" && search.websiteId.trim()
+        ? search.websiteId.trim()
+        : undefined,
+    visitorSessionId:
+      typeof search.visitorSessionId === "string" && search.visitorSessionId.trim()
+        ? search.visitorSessionId.trim()
+        : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Crisp Chat \u00b7 JellyBean" },
@@ -416,6 +432,7 @@ const PAGE_SIZE_MSGS = 40;
 
 function CrispInboxInner() {
   const auth = useAuth();
+  const { conversationId: deepLinkConversationId, websiteId, visitorSessionId } = Route.useSearch();
   const isAdmin = auth.primaryRole === "admin";
   const canUseCrisp =
     auth.primaryRole === "admin" ||
@@ -455,6 +472,7 @@ function CrispInboxInner() {
   const [convPage, setConvPage] = useState<number>(0);
   const [hasMoreConvs, setHasMoreConvs] = useState<boolean>(true);
   const [isLoadingConvs, setIsLoadingConvs] = useState<boolean>(false);
+  const [initialConversationsLoaded, setInitialConversationsLoaded] = useState(false);
 
   // Pagination states for Messages thread
   const [hasMoreMessages, setHasMoreMessages] = useState<boolean>(false);
@@ -504,6 +522,8 @@ function CrispInboxInner() {
   const selectedConversationIdRef = useRef(selectedConversationId);
   const selectedWebsiteIdRef = useRef(selectedWebsiteId);
   const workspacesRef = useRef(workspaces);
+  const handledConversationLinkRef = useRef<string | null>(null);
+  const handledVisitorLinkRef = useRef<string | null>(null);
 
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId;
@@ -516,6 +536,67 @@ function CrispInboxInner() {
   useEffect(() => {
     workspacesRef.current = workspaces;
   }, [workspaces]);
+
+  useEffect(() => {
+    if (
+      !initialConversationsLoaded ||
+      !deepLinkConversationId ||
+      handledConversationLinkRef.current === deepLinkConversationId
+    ) {
+      return;
+    }
+    handledConversationLinkRef.current = deepLinkConversationId;
+
+    let cancelled = false;
+    void supabase
+      .from("crisp_conversations")
+      .select("*")
+      .eq("id", deepLinkConversationId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data) {
+          toast.error("Could not open this Crisp conversation");
+          return;
+        }
+
+        const conversation = data as ConversationRecord;
+        setConversations((current) => {
+          const exists = current.some((item) => item.id === conversation.id);
+          return exists
+            ? current.map((item) => (item.id === conversation.id ? conversation : item))
+            : [conversation, ...current];
+        });
+        setSelectedConversationId(conversation.id);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [deepLinkConversationId, initialConversationsLoaded]);
+
+  useEffect(() => {
+    if (!websiteId || !visitorSessionId || !visitorOverview.data?.fetchedAt) return;
+
+    const visitorKey = `${websiteId}:${visitorSessionId}`;
+    if (handledVisitorLinkRef.current === visitorKey) return;
+
+    const visitors = [
+      ...(visitorOverview.data.liveVisitors ?? []),
+      ...(visitorOverview.data.todayVisitors ?? []),
+    ];
+    const visitor = visitors.find(
+      (item) => item.crisp_website_id === websiteId && item.crisp_session_id === visitorSessionId,
+    );
+    if (!visitor) return;
+
+    handledVisitorLinkRef.current = visitorKey;
+    setSelectedWebsiteId(visitor.crisp_website_id);
+    setVisitorView(visitor.is_online ? "live" : "today");
+    setSelectedVisitor(visitor);
+    setVisitorMessage("");
+    setVisitorDialogOpen(true);
+  }, [visitorOverview.data, visitorSessionId, websiteId]);
 
   // Load active enabled registered workspaces.
   // Returns the fetched rows AND immediately updates workspacesRef.current so that
@@ -717,12 +798,13 @@ function CrispInboxInner() {
 
   // Initial load
   useEffect(() => {
-    loadWorkspaces().then((fetchedWorkspaces) => {
+    void loadWorkspaces().then(async (fetchedWorkspaces) => {
       const activeIds = fetchedWorkspaces.map((w) => w.crisp_website_id);
-      loadWorkspaceCounts();
+      void loadWorkspaceCounts();
       // Pass freshly-fetched IDs directly — avoids race where workspacesRef.current
       // has not yet been populated when loadConversations reads it.
-      loadConversations("all", true, activeIds);
+      await loadConversations("all", true, activeIds);
+      setInitialConversationsLoaded(true);
     });
     // Mount-once by design. `loadWorkspaces` / `loadConversations` are plain
     // functions (new identity every render), so listing them would re-run this
