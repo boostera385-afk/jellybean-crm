@@ -102,7 +102,7 @@ function NotFound() {
   );
 }
 
-function ErrorView({ error }: { error: Error }) {
+function ErrorView({ error }: ErrorComponentProps) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="text-center max-w-md glass-card p-8">
