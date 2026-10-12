@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { Radio, Send, MapPin } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -66,9 +66,19 @@ export function CrispVisitorAlerts() {
     primaryRole === "cs_admin" || roles.includes("cs_admin") || roles.includes("admin");
   const canUseCrisp = isCsAdmin || primaryRole === "cs" || roles.includes("cs");
 
+  // The crisp chat tab shows live visitors in its own right-hand rail, so the
+  // corner toasts would be redundant there — hide them on that route only.
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const onCrispTab = pathname.startsWith("/app/crisp-chat");
+
   const visitorOverview = useCrispVisitors(canUseCrisp && Boolean(user?.id));
   const liveVisitors = useMemo(
-    () => visitorOverview.data?.liveVisitors ?? [],
+    () =>
+      [...(visitorOverview.data?.liveVisitors ?? [])].sort((a, b) =>
+        (b.first_seen_at || b.last_seen_at || "").localeCompare(
+          a.first_seen_at || a.last_seen_at || "",
+        ),
+      ),
     [visitorOverview.data?.liveVisitors],
   );
 
@@ -93,12 +103,14 @@ export function CrispVisitorAlerts() {
     // chimes again, and keep the set bounded.
     chimedKeysRef.current = currentKeys;
 
-    if (hasNewVisitor) {
+    // On the crisp tab the rail already surfaces visitors, so stay silent there
+    // (but keep the seen-set current so we don't chime a backlog on return).
+    if (hasNewVisitor && !onCrispTab) {
       playVisitorChime();
     }
-  }, [liveVisitors, canUseCrisp, user?.id]);
+  }, [liveVisitors, canUseCrisp, user?.id, onCrispTab]);
 
-  if (!canUseCrisp || liveVisitors.length === 0) {
+  if (!canUseCrisp || onCrispTab || liveVisitors.length === 0) {
     return null;
   }
 
