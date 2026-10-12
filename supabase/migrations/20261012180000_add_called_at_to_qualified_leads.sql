@@ -11,7 +11,7 @@ SET called_at = COALESCE(
         SELECT MAX(log.created_at)
         FROM public.activity_logs AS log
         WHERE log.entity_type = 'qualified_lead'
-          AND log.entity_id = lead.id::text
+          AND log.entity_id = lead.id
           AND log.action = 'cs.contact_method_changed'
           AND log.metadata->>'contact_method' = 'called'
     ),
