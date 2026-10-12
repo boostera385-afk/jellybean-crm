@@ -39,6 +39,7 @@ import {
   Phone,
   MapPin,
   MessageSquarePlus,
+  MessageSquareText,
   ArrowRight,
   Search,
   RefreshCw,
@@ -251,6 +252,7 @@ type Lead = {
   number_name: string | null;
   original_lead_link: string | null;
   cs_status: CsStatus;
+  contact_method: ContactMethod | null;
   cs_notes: LeadNote[];
   followup_at: string | null;
   assigned_at: string;
@@ -750,7 +752,7 @@ function Inner() {
       let q = supabase
         .from("qualified_leads")
         .select(
-          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base",
+          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method",
         )
         .order("pinned_important", { ascending: false })
         .order("assigned_at", { ascending: false })
@@ -818,7 +820,7 @@ function Inner() {
       const { data, error } = await supabase
         .from("qualified_leads")
         .select(
-          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base",
+          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method",
         )
         .eq("id", deepLinkLeadId)
         .maybeSingle();
@@ -2247,7 +2249,10 @@ function LeadCard({
   const qc = useQueryClient();
   const auth = useAuth();
   const [status, setStatus] = useState<CsStatus>(lead.cs_status);
-  const [pendingStatus, setPendingStatus] = useState<CsStatus | null>(null);
+  const [contactMethod, setContactMethodState] = useState<ContactMethod>(
+    lead.contact_method ?? "texted",
+  );
+  const [savingContactMethod, setSavingContactMethod] = useState(false);
   const [assignedTo, setAssignedTo] = useState<string | null>(lead.assigned_to);
   const [saving, setSaving] = useState(false);
   const [assigning, setAssigning] = useState(false);
@@ -2328,17 +2333,43 @@ function LeadCard({
   }
 
   function requestStatusChange(next: CsStatus) {
-    if (next !== status) setPendingStatus(next);
+    if (next !== status) void changeStatus(next);
   }
 
-  function confirmContactMethod(method: ContactMethod) {
-    if (!pendingStatus) return;
-    const next = pendingStatus;
-    setPendingStatus(null);
-    void changeStatus(next, method);
+  // Delivery method (Texted / Called) lives on the lead itself, defaulting to
+  // Texted. It is toggled directly from the card rather than prompted on every
+  // status change, and travels with the lead into the forwarded-leads view.
+  async function changeContactMethod(method: ContactMethod) {
+    if (method === contactMethod) return;
+    const prev = contactMethod;
+    setContactMethodState(method);
+    setSavingContactMethod(true);
+    try {
+      const { error } = await supabase
+        .from("qualified_leads")
+        .update({ contact_method: method })
+        .eq("id", lead.id);
+      if (error) throw error;
+      await supabase.from("activity_logs").insert({
+        actor_id: auth.user?.id,
+        actor_name: auth.profile?.full_name,
+        actor_role: auth.primaryRole,
+        action: "cs.contact_method_changed",
+        entity_type: "qualified_lead",
+        entity_id: lead.id,
+        metadata: { contact_method: method, previous_contact_method: prev, from: "card" },
+      });
+      void syncLeadToGoogleSheet("UPDATE", { ...lead, contact_method: method });
+      qc.invalidateQueries({ queryKey: ["cs_leads"] });
+    } catch (e) {
+      setContactMethodState(prev);
+      toast.error(friendlyError(e));
+    } finally {
+      setSavingContactMethod(false);
+    }
   }
 
-  async function changeStatus(next: CsStatus, contactMethod: ContactMethod) {
+  async function changeStatus(next: CsStatus) {
     const prev = status;
     setStatus(next);
     setSaving(true);
@@ -2362,10 +2393,12 @@ function LeadCard({
           from: "card",
         },
       });
-      void syncLeadToGoogleSheet("UPDATE", { ...lead, cs_status: next });
-      toast.success(
-        `Status → ${STATUS_LABEL[next] ?? next} · ${contactMethod === "texted" ? "Texted" : "Called"}`,
-      );
+      void syncLeadToGoogleSheet("UPDATE", {
+        ...lead,
+        cs_status: next,
+        contact_method: contactMethod,
+      });
+      toast.success(`Status → ${STATUS_LABEL[next] ?? next}`);
       qc.invalidateQueries({ queryKey: ["cs_leads"] });
     } catch (e) {
       setStatus(prev);
@@ -2680,20 +2713,23 @@ function LeadCard({
         </div>
       )}
 
-      <div className="mt-4" onClick={(e) => e.stopPropagation()}>
+      <div className="mt-4 space-y-3" onClick={(e) => e.stopPropagation()}>
         <StatusPicker
           value={status}
           onChange={requestStatusChange}
           disabled={saving || (!isAdmin && !isCs && (!assignedTo || auth.user?.id !== assignedTo))}
           saving={saving}
         />
+        <ContactMethodToggle
+          value={contactMethod}
+          onChange={changeContactMethod}
+          disabled={
+            savingContactMethod ||
+            (!isAdmin && !isCs && (!assignedTo || auth.user?.id !== assignedTo))
+          }
+          saving={savingContactMethod}
+        />
       </div>
-
-      <ContactMethodPrompt
-        status={pendingStatus}
-        onCancel={() => setPendingStatus(null)}
-        onChoose={confirmContactMethod}
-      />
 
       {/* Manual field filled by CS */}
       <div
@@ -3083,40 +3119,54 @@ function StatusPicker({
   );
 }
 
-function ContactMethodPrompt({
-  status,
-  onChoose,
-  onCancel,
+function ContactMethodToggle({
+  value,
+  onChange,
+  disabled,
+  saving,
 }: {
-  status: CsStatus | null;
-  onChoose: (method: ContactMethod) => void;
-  onCancel: () => void;
+  value: ContactMethod;
+  onChange: (method: ContactMethod) => void;
+  disabled?: boolean;
+  saving?: boolean;
 }) {
+  const options: { key: ContactMethod; label: string; icon: typeof Phone }[] = [
+    { key: "texted", label: "Texted", icon: MessageSquareText },
+    { key: "called", label: "Called", icon: Phone },
+  ];
   return (
-    <AlertDialog
-      open={status !== null}
-      onOpenChange={(open) => {
-        if (!open) onCancel();
-      }}
-    >
-      <AlertDialogContent onClick={(event) => event.stopPropagation()}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>How did you contact the customer?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {status
-              ? `Choose one before changing the status to ${STATUS_LABEL[status] ?? status}.`
-              : "Choose how the customer was contacted."}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
-          <Button type="button" variant="outline" onClick={() => onChoose("texted")}>
-            Texted
-          </Button>
-          <AlertDialogAction onClick={() => onChoose("called")}>Called</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <div className="flex items-center gap-2">
+      <span className="crm-lead-label !text-[10px] !tracking-[0.08em] !font-bold !text-muted-foreground">
+        Delivery
+      </span>
+      <div className="inline-flex items-center gap-1 rounded-full border border-border bg-surface/70 p-0.5">
+        {options.map((option) => {
+          const active = value === option.key;
+          const Icon = option.icon;
+          return (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => {
+                if (!active && !disabled) onChange(option.key);
+              }}
+              disabled={disabled}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 crm-pill-text transition-colors",
+                active
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+                disabled && "cursor-not-allowed opacity-60",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              <span>{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+    </div>
   );
 }
 
@@ -3193,8 +3243,9 @@ function LeadDrawer({
   }, []);
 
   const [status, setStatus] = useState<CsStatus>(lead.cs_status);
-  const [pendingStatus, setPendingStatus] = useState<CsStatus | null>(null);
-  const [contactMethod, setContactMethod] = useState<ContactMethod | null>(null);
+  const [contactMethod, setContactMethod] = useState<ContactMethod>(
+    lead.contact_method ?? "texted",
+  );
   const [assignedTo, setAssignedTo] = useState<string | null>(lead.assigned_to);
   const [note, setNote] = useState("");
   const [numberName, setNumberName] = useState(lead.number_name ?? "");
@@ -3220,6 +3271,7 @@ function LeadDrawer({
 
   const isDirty =
     status !== lead.cs_status ||
+    contactMethod !== (lead.contact_method ?? "texted") ||
     assignedTo !== lead.assigned_to ||
     note !== "" ||
     requirement1 !== (lead.requirement_1 ?? "") ||
@@ -3291,21 +3343,10 @@ function LeadDrawer({
     : "";
 
   function requestStatusChange(next: CsStatus) {
-    if (next !== status) setPendingStatus(next);
-  }
-
-  function confirmContactMethod(method: ContactMethod) {
-    if (!pendingStatus) return;
-    setStatus(pendingStatus);
-    setContactMethod(pendingStatus === lead.cs_status ? null : method);
-    setPendingStatus(null);
+    if (next !== status) setStatus(next);
   }
 
   async function save() {
-    if (status !== lead.cs_status && !contactMethod) {
-      toast.error("Choose Texted or Called before saving the status change.");
-      return;
-    }
     setBusy(true);
     try {
       const newNotes = note.trim()
@@ -3322,6 +3363,7 @@ function LeadDrawer({
         .from("qualified_leads")
         .update({
           cs_status: status,
+          contact_method: contactMethod,
           cs_notes: newNotes as Json,
           followup_at: csPipelineInputValueToUtcIso(followup),
           assigned_to: assignedTo,
@@ -3345,6 +3387,7 @@ function LeadDrawer({
       void syncLeadToGoogleSheet("UPDATE", {
         ...lead,
         cs_status: status,
+        contact_method: contactMethod,
         number_name: numberName.trim() || null,
         marketing_notes: compose.trim() || null,
         requirement_1: requirement1.trim() || null,
@@ -3364,7 +3407,7 @@ function LeadDrawer({
         metadata: {
           status,
           previous_status: lead.cs_status,
-          contact_method: status !== lead.cs_status ? contactMethod : null,
+          contact_method: contactMethod,
           hasNote: !!note.trim(),
           assigned_to: assignedTo,
           from: "drawer",
@@ -3485,11 +3528,15 @@ function LeadDrawer({
                     busy || (!isAdmin && !isCs && (!assignedTo || auth.user?.id !== assignedTo))
                   }
                 />
-                <ContactMethodPrompt
-                  status={pendingStatus}
-                  onCancel={() => setPendingStatus(null)}
-                  onChoose={confirmContactMethod}
-                />
+                <div className="mt-3">
+                  <ContactMethodToggle
+                    value={contactMethod}
+                    onChange={setContactMethod}
+                    disabled={
+                      busy || (!isAdmin && !isCs && (!assignedTo || auth.user?.id !== assignedTo))
+                    }
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-2 pt-1">
                 <Checkbox

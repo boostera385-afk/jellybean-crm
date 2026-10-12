@@ -1461,92 +1461,72 @@ function CrispInboxInner() {
   };
 
   return (
-    <div className="h-full min-h-0 flex-1 w-full flex overflow-hidden border border-border rounded-2xl bg-card/35 shadow-[inset_0_1px_0_var(--glass-line),var(--glass-shadow)] backdrop-blur-xl">
+    <div className="h-full min-h-0 flex-1 w-full flex flex-col overflow-hidden border border-border rounded-2xl bg-card/35 shadow-[inset_0_1px_0_var(--glass-line),var(--glass-shadow)] backdrop-blur-xl">
       {/* ========================================================================= */}
-      {/* COLUMN 1: CRISP WORKSPACES (~220px) */}
+      {/* WORKSPACES HEADER BAR (horizontal) */}
       {/* ========================================================================= */}
-      <div className="w-56 shrink-0 border-r border-border/40 bg-card/40 flex flex-col h-full overflow-hidden">
-        <div className="p-3 border-b border-border/40 flex items-center justify-between font-medium text-xs text-muted-foreground uppercase tracking-wider shrink-0">
-          <div className="flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-primary shrink-0" />
-            <span>Workspaces</span>
-          </div>
-          {isAdmin && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 rounded-md hover:bg-accent hover:text-accent-foreground"
-              onClick={() => {
-                setAddSuccessResult(null);
-                setIsAddModalOpen(true);
-              }}
-              title="Add Crisp Workspace"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </Button>
-          )}
+      <div className="w-full shrink-0 border-b border-border/40 bg-card/40 flex items-center gap-2 overflow-hidden px-3 py-2">
+        <div className="flex items-center gap-2 shrink-0 font-medium text-xs text-muted-foreground uppercase tracking-wider">
+          <Building2 className="w-4 h-4 text-primary shrink-0" />
+          <span className="hidden md:inline">Workspaces</span>
         </div>
 
         {/* Workspace Search Input */}
-        <div className="p-2 border-b border-border/40 shrink-0">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
-            <Input
-              placeholder="Search workspaces..."
-              value={workspaceSearch}
-              onChange={(e) => setWorkspaceSearch(e.target.value)}
-              className="pl-8 pr-7 h-8 text-xs bg-background/50 border-border/50 focus-visible:ring-1"
-            />
-            {workspaceSearch && (
-              <button
-                type="button"
-                onClick={() => setWorkspaceSearch("")}
-                className="absolute right-2 top-2 text-muted-foreground hover:text-foreground h-4 w-4 rounded-full grid place-items-center"
-                title="Clear search"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
+        <div className="relative shrink-0 w-32 sm:w-40">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-muted-foreground" />
+          <Input
+            placeholder="Search..."
+            value={workspaceSearch}
+            onChange={(e) => setWorkspaceSearch(e.target.value)}
+            className="pl-8 pr-7 h-8 text-xs bg-background/50 border-border/50 focus-visible:ring-1"
+          />
+          {workspaceSearch && (
+            <button
+              type="button"
+              onClick={() => setWorkspaceSearch("")}
+              className="absolute right-2 top-2 text-muted-foreground hover:text-foreground h-4 w-4 rounded-full grid place-items-center"
+              title="Clear search"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto p-2 overscroll-contain">
-          <div className="space-y-1">
+        <div className="flex-1 min-w-0 overflow-x-auto overscroll-contain">
+          <div className="flex items-center gap-1.5 w-max pr-1">
             {/* All Workspaces (Pinned First) */}
             <button
               onClick={() => setSelectedWebsiteId("all")}
               className={cn(
-                "w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors text-left",
+                "shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors text-left border",
                 selectedWebsiteId === "all"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "hover:bg-accent hover:text-accent-foreground text-foreground",
+                  ? "bg-primary text-primary-foreground shadow-sm border-primary"
+                  : "hover:bg-accent hover:text-accent-foreground text-foreground border-border/50",
               )}
             >
-              <div className="flex items-center gap-2 truncate">
-                <Globe className="w-4 h-4 shrink-0" />
-                <span className="truncate">All Workspaces</span>
-                {hasAnyUnread && (
-                  <span
-                    className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse ml-0.5"
-                    title="Has chats needing reply"
-                  />
-                )}
-              </div>
+              <Globe className="w-4 h-4 shrink-0" />
+              <span className="truncate max-w-[10rem]">All Workspaces</span>
+              {hasAnyUnread && (
+                <span
+                  className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse"
+                  title="Has chats needing reply"
+                />
+              )}
               {totalUnrepliedCount > 0 && (
                 <Badge
                   variant={selectedWebsiteId === "all" ? "secondary" : "outline"}
-                  className="ml-1 shrink-0 text-xs px-1.5 py-0 font-semibold border-border/60"
+                  className="shrink-0 text-xs px-1.5 py-0 font-semibold border-border/60"
                 >
                   {totalUnrepliedCount}
                 </Badge>
               )}
             </button>
 
-            <div className="my-2 border-t border-border/40" />
+            <div className="mx-1 h-6 w-px bg-border/40 shrink-0" />
 
             {/* Individual Active Workspaces List (Filtered & Sorted) */}
             {filteredWorkspaces.length === 0 ? (
-              <div className="p-3 text-center text-xs text-muted-foreground">
+              <div className="px-3 text-center text-xs text-muted-foreground whitespace-nowrap">
                 No workspaces match &quot;{workspaceSearch}&quot;
               </div>
             ) : (
@@ -1560,15 +1540,15 @@ function CrispInboxInner() {
                   <div
                     key={ws.crisp_website_id}
                     className={cn(
-                      "w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-sm transition-colors group",
+                      "shrink-0 flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full text-sm transition-colors group border",
                       isSelected
-                        ? "bg-primary text-primary-foreground font-medium shadow-sm"
-                        : "hover:bg-accent hover:text-accent-foreground text-muted-foreground",
+                        ? "bg-primary text-primary-foreground font-medium shadow-sm border-primary"
+                        : "hover:bg-accent hover:text-accent-foreground text-muted-foreground border-border/50",
                     )}
                   >
                     <button
                       onClick={() => setSelectedWebsiteId(ws.crisp_website_id)}
-                      className="flex-1 flex items-center gap-2 min-w-0 text-left py-0.5"
+                      className="flex items-center gap-2 min-w-0 text-left py-0.5"
                     >
                       <span
                         className={cn(
@@ -1576,7 +1556,7 @@ function CrispInboxInner() {
                           ws.enabled ? "bg-emerald-500/60" : "bg-muted",
                         )}
                       />
-                      <span className="truncate">{displayName}</span>
+                      <span className="truncate max-w-[9rem]">{displayName}</span>
                       {hasUnread && (
                         <span
                           className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse ml-0.5"
@@ -1585,7 +1565,7 @@ function CrispInboxInner() {
                       )}
                     </button>
 
-                    <div className="flex items-center gap-1 shrink-0 ml-1">
+                    <div className="flex items-center gap-1 shrink-0">
                       {unrepliedCount > 0 && (
                         <Badge
                           variant={isSelected ? "secondary" : "outline"}
@@ -1654,12 +1634,32 @@ function CrispInboxInner() {
             )}
           </div>
         </div>
+
+        {isAdmin && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 text-xs"
+            onClick={() => {
+              setAddSuccessResult(null);
+              setIsAddModalOpen(true);
+            }}
+            title="Add Crisp Workspace"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Add</span>
+          </Button>
+        )}
       </div>
 
       {/* ========================================================================= */}
-      {/* COLUMN 2: CONVERSATIONS LIST (~320px) */}
+      {/* COLUMN ROW: conversations · chat · live visitors + details */}
       {/* ========================================================================= */}
-      <div className="w-80 shrink-0 border-r border-border/40 bg-card/20 flex flex-col h-full overflow-hidden">
+      <div className="flex flex-1 min-h-0 w-full overflow-hidden">
+        {/* ========================================================================= */}
+        {/* COLUMN 2: CONVERSATIONS LIST (~320px) */}
+        {/* ========================================================================= */}
+        <div className="w-80 shrink-0 border-r border-border/40 bg-card/20 flex flex-col h-full overflow-hidden">
         {/* Search & Sync Header */}
         <div className="p-3 border-b border-border/40 shrink-0 space-y-2">
           <div className="flex items-center justify-between gap-2">
@@ -1879,7 +1879,7 @@ function CrispInboxInner() {
                   size="icon"
                   className="h-8 w-8 text-muted-foreground hover:text-foreground hidden lg:flex"
                   onClick={() => setShowRightPanel((prev) => !prev)}
-                  title={showRightPanel ? "Hide Details Panel" : "Show Details Panel"}
+                  title={showRightPanel ? "Hide visitors & details" : "Show visitors & details"}
                 >
                   {showRightPanel ? (
                     <PanelRightClose className="w-4 h-4" />
@@ -2078,7 +2078,128 @@ function CrispInboxInner() {
       {/* COLUMN 4: CHAT DETAILS & INTERNAL NOTES (~280px) */}
       {/* ========================================================================= */}
       {showRightPanel && (
-        <div className="w-72 shrink-0 border-l border-border/40 bg-card/30 flex flex-col h-full overflow-hidden hidden lg:flex">
+        <div className="w-80 shrink-0 border-l border-border/40 bg-card/30 flex flex-col h-full overflow-hidden hidden lg:flex">
+          {/* LIVE VISITORS (always visible, primary panel) */}
+          <div className="shrink-0 flex flex-col max-h-[52%] min-h-[190px] border-b border-border/40">
+            <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border/40">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="relative flex h-2.5 w-2.5">
+                  {liveVisitorCount > 0 && (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                  )}
+                  <span
+                    className={cn(
+                      "relative inline-flex h-2.5 w-2.5 rounded-full",
+                      liveVisitorCount > 0 ? "bg-emerald-500" : "bg-muted-foreground/40",
+                    )}
+                  />
+                </span>
+                <span className="truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {visitorView === "live"
+                    ? `Live visitors (${liveVisitorCount})`
+                    : `Visited today (${todayVisitorCount})`}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={visitorView === "live" ? "default" : "ghost"}
+                  className="h-6 px-2 text-[11px]"
+                  onClick={() => setVisitorView("live")}
+                >
+                  Live
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={visitorView === "today" ? "default" : "ghost"}
+                  className="h-6 px-2 text-[11px]"
+                  onClick={() => setVisitorView("today")}
+                >
+                  Today
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  onClick={() => visitorOverview.refetch()}
+                  disabled={visitorOverview.isFetching}
+                  title="Refresh visitors"
+                >
+                  <RefreshCw
+                    className={cn("h-3.5 w-3.5", visitorOverview.isFetching && "animate-spin")}
+                  />
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5 overscroll-contain">
+              {(visitorView === "live" ? liveVisitors : todayVisitors).length === 0 ? (
+                <div className="flex h-full min-h-28 flex-col items-center justify-center px-4 text-center">
+                  <Users className="mb-2 h-6 w-6 text-muted-foreground/40" />
+                  <p className="text-xs text-muted-foreground">
+                    {visitorView === "live"
+                      ? "Nobody is browsing right now"
+                      : "No visitors recorded today"}
+                  </p>
+                </div>
+              ) : (
+                (visitorView === "live" ? liveVisitors : todayVisitors).map((visitor) => {
+                  const selected =
+                    selectedVisitor?.crisp_website_id === visitor.crisp_website_id &&
+                    selectedVisitor?.crisp_session_id === visitor.crisp_session_id;
+                  return (
+                    <button
+                      key={`${visitor.crisp_website_id}:${visitor.crisp_session_id}`}
+                      type="button"
+                      onClick={() => {
+                        setSelectedVisitor(visitor);
+                        setVisitorMessage("");
+                        setVisitorDialogOpen(true);
+                      }}
+                      className={cn(
+                        "w-full rounded-lg border px-2.5 py-2 text-left transition-colors",
+                        selected
+                          ? "border-primary/50 bg-primary/10"
+                          : "border-border/40 bg-background/50 hover:bg-accent/40",
+                      )}
+                    >
+                      <div className="flex items-start gap-2">
+                        <span
+                          className={cn(
+                            "mt-1 h-2 w-2 shrink-0 rounded-full",
+                            visitor.is_online ? "bg-emerald-500" : "bg-muted-foreground/40",
+                          )}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-xs font-semibold">
+                              {getVisitorDisplayName(visitor)}
+                            </span>
+                            <span className="shrink-0 text-[10px] text-muted-foreground">
+                              {new Date(visitor.last_seen_at).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                            {getVisitorLocation(visitor)}
+                          </p>
+                          <p className="truncate text-[10px] text-foreground/70">
+                            {visitor.last_page_title || visitor.last_page_url || "Page unavailable"}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* CUSTOMER DETAILS & INTERNAL NOTES */}
           {activeConversation ? (
             <div className="flex-1 min-h-0 overflow-y-auto p-4 overscroll-contain">
               <div className="space-y-6">
@@ -2229,6 +2350,7 @@ function CrispInboxInner() {
           )}
         </div>
       )}
+      </div>
 
       <Dialog
         open={visitorDialogOpen}
@@ -2314,7 +2436,7 @@ function CrispInboxInner() {
                       : "No visitors recorded today"}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Visitor presence refreshes automatically every 30 seconds.
+                    Visitor presence refreshes automatically every 10 seconds.
                   </p>
                 </div>
               ) : (

@@ -25,6 +25,7 @@ import {
 import { CrmUpdatesNotifier } from "@/components/crm-updates-notifier";
 import { LeadReminderNotifier } from "@/components/lead-reminder-notifier";
 import { CrispMessageNotifier } from "@/components/crisp-message-notifier";
+import { CrispVisitorAlerts } from "@/components/crisp-visitor-alerts";
 
 import { useRealtimeSync } from "@/hooks/use-realtime-sync";
 import type { AppRole, AuthState } from "@/hooks/use-auth";
@@ -454,6 +455,7 @@ export function AppShell({ auth, children }: { auth: AuthState; children: React.
       <CrmUpdatesNotifier />
       <LeadReminderNotifier />
       <CrispMessageNotifier />
+      <CrispVisitorAlerts />
     </div>
   );
 }

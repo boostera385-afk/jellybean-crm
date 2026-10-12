@@ -11,6 +11,7 @@ import {
   Loader2,
   MapPin,
   Phone,
+  MessageSquareText,
   RefreshCw,
   Search,
   Trash2,
@@ -75,6 +76,7 @@ type Row = {
   sub_area: string | null;
   original_lead_link: string | null;
   cs_status: ForwardedStatus | string;
+  contact_method: string | null;
   assigned_at: string;
   assigned_by: string | null;
   updated_at: string;
@@ -259,7 +261,7 @@ function Inner() {
       let q = supabase
         .from("qualified_leads")
         .select(
-          "id, customer_name, customer_number, customer_number_2, extra_numbers, service, context, post_text, pass_it_to, main_area, sub_area, original_lead_link, reference, is_important, pinned_important, is_landline, images, submitted_by_role, cs_status, assigned_at, assigned_by, assigned_to, updated_at, created_by, out_of_base",
+          "id, customer_name, customer_number, customer_number_2, extra_numbers, service, context, post_text, pass_it_to, main_area, sub_area, original_lead_link, reference, is_important, pinned_important, is_landline, images, submitted_by_role, cs_status, contact_method, assigned_at, assigned_by, assigned_to, updated_at, created_by, out_of_base",
         )
         .order("updated_at", { ascending: false })
         .range(from, to);
@@ -732,20 +734,35 @@ function ForwardedTable({
                 ) : null}
               </td>
               <td className="px-3 py-2">
-                {r.cs_status === "new" ? (
-                  <span className="text-[10.5px] px-2.5 py-1 rounded-full border font-medium bg-surface-hover text-foreground border-border shadow-sm">
-                    Pending
-                  </span>
-                ) : (
-                  <span
-                    className={cn(
-                      "text-[10.5px] px-2.5 py-1 rounded-full border font-medium shadow-sm",
-                      STATUS_TONE[r.cs_status] ?? "bg-muted text-muted-foreground border-border",
-                    )}
-                  >
-                    {STATUS_LABEL[r.cs_status] ?? r.cs_status.replace(/_/g, " ")}
-                  </span>
-                )}
+                <div className="flex flex-col items-start gap-1">
+                  {r.cs_status === "new" ? (
+                    <span className="text-[10.5px] px-2.5 py-1 rounded-full border font-medium bg-surface-hover text-foreground border-border shadow-sm">
+                      Pending
+                    </span>
+                  ) : (
+                    <span
+                      className={cn(
+                        "text-[10.5px] px-2.5 py-1 rounded-full border font-medium shadow-sm",
+                        STATUS_TONE[r.cs_status] ?? "bg-muted text-muted-foreground border-border",
+                      )}
+                    >
+                      {STATUS_LABEL[r.cs_status] ?? r.cs_status.replace(/_/g, " ")}
+                    </span>
+                  )}
+                  {r.cs_status !== "new" && (
+                    <span
+                      className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border font-medium bg-surface/70 text-muted-foreground border-border/70"
+                      title="How the customer was contacted"
+                    >
+                      {r.contact_method === "called" ? (
+                        <Phone className="h-2.5 w-2.5" />
+                      ) : (
+                        <MessageSquareText className="h-2.5 w-2.5" />
+                      )}
+                      {r.contact_method === "called" ? "Called" : "Texted"}
+                    </span>
+                  )}
+                </div>
               </td>
               {isAdmin && (
                 <td className="px-3 py-2 text-muted-foreground">
