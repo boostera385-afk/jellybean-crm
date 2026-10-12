@@ -491,8 +491,8 @@ function SidebarVisitorCard({
             className="mt-1.5 h-7 w-full gap-1.5 text-[11px] font-semibold"
             onClick={onSend}
           >
-            <Send className="h-3 w-3" />
-            {tone === "hot" ? "Send first message" : "Follow up"}
+            <Send className="h-3 w-3 shrink-0" />
+            <span className="truncate">{tone === "hot" ? "Message" : "Follow up"}</span>
           </Button>
         </div>
       </div>
@@ -2028,7 +2028,7 @@ function CrispInboxInner() {
       {/* ========================================================================= */}
       {/* COLUMN 3: ACTIVE CHAT THREAD (Flex-1) */}
       {/* ========================================================================= */}
-      <div className="flex-1 flex flex-col bg-background min-w-0 h-full overflow-hidden">
+      <div className="flex-1 flex flex-col bg-background min-w-0 max-w-[40rem] h-full overflow-hidden">
         {activeConversation ? (
           <>
             {/* Chat Header (Clean Customer Identity - No Session ID, No Workspace Tag) */}
@@ -2295,9 +2295,9 @@ function CrispInboxInner() {
       {/* COLUMN 4: LIVE VISITOR RAIL — Hot Section + Awaiting reply (~320px) */}
       {/* ========================================================================= */}
       {showRightPanel && (
-        <div className="w-[28rem] shrink-0 border-l border-border/40 bg-card/30 flex flex-row h-full overflow-hidden hidden lg:flex">
+        <div className="w-80 xl:w-96 shrink-0 border-l border-border/40 bg-card/30 flex flex-row h-full overflow-hidden hidden lg:flex">
           {/* HOT SECTION (left column) — live visitors nobody has messaged yet */}
-          <div className="flex min-h-0 h-full flex-1 flex-col border-r border-border/40">
+          <div className="flex min-h-0 min-w-0 h-full flex-1 flex-col border-r border-border/40">
             <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border/40">
               <div className="flex items-center gap-2 min-w-0">
                 <Flame className="h-4 w-4 shrink-0 text-orange-500" />
@@ -2349,7 +2349,7 @@ function CrispInboxInner() {
           </div>
 
           {/* AWAITING REPLY (right column) — we sent first message, no reply yet */}
-          <div className="flex min-h-0 h-full flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 h-full flex-1 flex-col">
             <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border/40">
               <div className="flex items-center gap-2 min-w-0">
                 <Clock className="h-4 w-4 shrink-0 text-sky-500" />
