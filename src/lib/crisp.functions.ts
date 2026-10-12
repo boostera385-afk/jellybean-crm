@@ -495,7 +495,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
       liveCount: Math.max(reportedLiveCount, liveVisitors.length),
       activeCount: Math.max(
         reportedActiveCount,
-        liveVisitors.filter((visitor: CrispVisitorRow) => visitor.active).length,
+        liveVisitors.filter((visitor: CrispVisitor) => visitor.active).length,
       ),
       todayCount: todayVisitors.length,
       limited,
