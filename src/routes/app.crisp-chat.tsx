@@ -1045,6 +1045,24 @@ function CrispInboxInner() {
               setTimeout(() => scrollToBottom("smooth"), 30);
             }
           }
+
+          // Keep the Hot / Awaiting-reply buckets accurate without re-querying:
+          // a customer reply moves the visitor to "replied" (drops out of both
+          // rails), an operator message moves them to "warm" (awaiting reply).
+          if (newMsg?.crisp_website_id && newMsg?.crisp_session_id) {
+            const msgKey = `${newMsg.crisp_website_id}:${newMsg.crisp_session_id}`;
+            if (liveSessionKeysRef.current.has(msgKey)) {
+              const isOut =
+                newMsg.direction === "outgoing" || newMsg.sender_type === "operator";
+              setVisitorMsgState((prev) => {
+                const nextState = isOut ? "warm" : "replied";
+                if (prev.get(msgKey) === nextState) return prev;
+                const next = new Map(prev);
+                next.set(msgKey, nextState);
+                return next;
+              });
+            }
+          }
         },
       )
       .on(
@@ -1157,17 +1175,36 @@ function CrispInboxInner() {
     () => visitorOverview.data?.liveVisitors ?? [],
     [visitorOverview.data?.liveVisitors],
   );
+  // Stable fingerprint of the live-visitor SET (ignores per-poll object churn).
+  // The classification query below keys off this, so it only re-queries when a
+  // visitor actually joins or leaves — not on every 4s refresh.
+  const liveVisitorsKey = useMemo(
+    () =>
+      allLiveVisitors
+        .map((v) => `${v.crisp_website_id}|${v.crisp_session_id}`)
+        .sort()
+        .join(","),
+    [allLiveVisitors],
+  );
   const [visitorMsgState, setVisitorMsgState] = useState<
     Map<string, "hot" | "warm" | "replied">
   >(new Map());
 
+  // Classify each live visitor (hot / warm / replied) with ONE query per
+  // set-change. Between changes the realtime crisp_messages subscription patches
+  // individual visitors as messages flow, so a 4s poll never re-reads the DB.
   useEffect(() => {
-    if (!canUseCrisp || allLiveVisitors.length === 0) {
+    const entries = liveVisitorsKey ? liveVisitorsKey.split(",") : [];
+    if (!canUseCrisp || entries.length === 0) {
       setVisitorMsgState(new Map());
       return;
     }
-    const sessionIds = Array.from(new Set(allLiveVisitors.map((v) => v.crisp_session_id)));
-    const websiteIds = Array.from(new Set(allLiveVisitors.map((v) => v.crisp_website_id)));
+    const pairs = entries.map((entry) => {
+      const sep = entry.indexOf("|");
+      return { websiteId: entry.slice(0, sep), sessionId: entry.slice(sep + 1) };
+    });
+    const websiteIds = Array.from(new Set(pairs.map((p) => p.websiteId)));
+    const sessionIds = Array.from(new Set(pairs.map((p) => p.sessionId)));
     let cancelled = false;
     void (async () => {
       const { data } = await supabase
@@ -1191,8 +1228,8 @@ function CrispInboxInner() {
         byKey.set(key, cur);
       });
       const next = new Map<string, "hot" | "warm" | "replied">();
-      allLiveVisitors.forEach((v) => {
-        const key = `${v.crisp_website_id}:${v.crisp_session_id}`;
+      pairs.forEach(({ websiteId, sessionId }) => {
+        const key = `${websiteId}:${sessionId}`;
         const info = byKey.get(key);
         if (!info || !info.hasOutgoing) next.set(key, "hot");
         else if (info.lastDir === "out") next.set(key, "warm");
@@ -1203,7 +1240,7 @@ function CrispInboxInner() {
     return () => {
       cancelled = true;
     };
-  }, [canUseCrisp, allLiveVisitors]);
+  }, [canUseCrisp, liveVisitorsKey]);
 
   const sortVisitorsNewestFirst = (list: CrispVisitor[]) =>
     [...list].sort((a, b) => {
@@ -1239,6 +1276,12 @@ function CrispInboxInner() {
     () => new Set(allLiveVisitors.map((v) => `${v.crisp_website_id}:${v.crisp_session_id}`)),
     [allLiveVisitors],
   );
+  // Expose the current live-session set to the realtime handler (set up once)
+  // so it can reclassify a visitor the instant a message arrives.
+  const liveSessionKeysRef = useRef(liveSessionKeys);
+  useEffect(() => {
+    liveSessionKeysRef.current = liveSessionKeys;
+  }, [liveSessionKeys]);
 
   // Sorted Workspaces Priority:
   // 1. All Workspaces stays pinned first
