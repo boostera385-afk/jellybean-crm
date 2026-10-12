@@ -456,7 +456,7 @@ function SidebarVisitorCard({
   return (
     <div
       className={cn(
-        "rounded-lg border px-2.5 py-2 transition-colors",
+        "min-w-0 rounded-lg border px-3 py-3 transition-colors",
         tone === "hot"
           ? "border-orange-500/30 bg-orange-500/5"
           : "border-sky-500/30 bg-sky-500/5",
@@ -471,7 +471,7 @@ function SidebarVisitorCard({
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-xs font-semibold">
+            <span className="min-w-0 truncate text-sm font-semibold" title={getVisitorDisplayName(visitor)}>
               {getVisitorDisplayName(visitor)}
             </span>
             <span className="shrink-0 text-[10px] text-muted-foreground">
@@ -481,14 +481,14 @@ function SidebarVisitorCard({
               })}
             </span>
           </div>
-          <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+          <p className="mt-1 break-words text-xs text-muted-foreground" title={[workspaceName, location].filter(Boolean).join(" · ")}>
             {[workspaceName, location].filter(Boolean).join(" · ")}
           </p>
-          {page && <p className="truncate text-[10px] text-foreground/70">{page}</p>}
+          {page && <p className="mt-1 line-clamp-2 break-all text-xs text-foreground/70" title={page}>{page}</p>}
           <Button
             size="sm"
             variant={tone === "hot" ? "default" : "outline"}
-            className="mt-1.5 h-7 w-full gap-1.5 text-[11px] font-semibold"
+            className="mt-2 h-8 w-full gap-1.5 text-xs font-semibold"
             onClick={onSend}
           >
             <Send className="h-3 w-3 shrink-0" />
@@ -1862,7 +1862,7 @@ function CrispInboxInner() {
         {/* ========================================================================= */}
         {/* COLUMN 2: CONVERSATIONS LIST (~320px) */}
         {/* ========================================================================= */}
-        <div className="w-80 shrink-0 border-r border-border/40 bg-card/20 flex flex-col h-full overflow-hidden">
+        <div className="w-64 xl:w-72 2xl:w-80 shrink-0 border-r border-border/40 bg-card/20 flex flex-col h-full overflow-hidden">
         {/* Search & Sync Header */}
         <div className="p-3 border-b border-border/40 shrink-0 space-y-2">
           <div className="flex items-center justify-between gap-2">
@@ -2028,7 +2028,7 @@ function CrispInboxInner() {
       {/* ========================================================================= */}
       {/* COLUMN 3: ACTIVE CHAT THREAD (Flex-1) */}
       {/* ========================================================================= */}
-      <div className="flex-1 flex flex-col bg-background min-w-0 max-w-[40rem] h-full overflow-hidden">
+      <div className="flex-1 flex flex-col bg-background min-w-0 h-full overflow-hidden">
         {activeConversation ? (
           <>
             {/* Chat Header (Clean Customer Identity - No Session ID, No Workspace Tag) */}
@@ -2284,21 +2284,18 @@ function CrispInboxInner() {
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-muted-foreground text-center">
             <MessageSquare className="w-10 h-10 mb-2 stroke-1 opacity-50" />
             <p className="text-sm font-medium">No conversation selected</p>
-            <p className="text-xs text-muted-foreground">
-              Select a chat from Column 2 to inspect and reply.
-            </p>
           </div>
         )}
       </div>
 
       {/* ========================================================================= */}
-      {/* COLUMN 4: LIVE VISITOR RAIL — Hot Section + Awaiting reply (~320px) */}
+      {/* Visitor groups stack until both columns have enough room to stay readable. */}
       {/* ========================================================================= */}
       {showRightPanel && (
-        <div className="w-80 xl:w-96 shrink-0 border-l border-border/40 bg-card/30 flex flex-row h-full overflow-hidden hidden lg:flex">
+        <div className="w-72 xl:w-80 2xl:w-[30rem] shrink-0 border-l border-border/40 bg-card/30 flex-col 2xl:flex-row h-full overflow-hidden hidden lg:flex">
           {/* HOT SECTION (left column) — live visitors nobody has messaged yet */}
-          <div className="flex min-h-0 min-w-0 h-full flex-1 flex-col border-r border-border/40">
-            <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border/40">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col border-b 2xl:border-b-0 2xl:border-r border-border/40">
+            <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-3 border-b border-border/40">
               <div className="flex items-center gap-2 min-w-0">
                 <Flame className="h-4 w-4 shrink-0 text-orange-500" />
                 <span className="truncate text-xs font-semibold uppercase tracking-wider text-foreground">
@@ -2349,8 +2346,8 @@ function CrispInboxInner() {
           </div>
 
           {/* AWAITING REPLY (right column) — we sent first message, no reply yet */}
-          <div className="flex min-h-0 min-w-0 h-full flex-1 flex-col">
-            <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border/40">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="flex h-12 shrink-0 items-center justify-between gap-2 px-3 border-b border-border/40">
               <div className="flex items-center gap-2 min-w-0">
                 <Clock className="h-4 w-4 shrink-0 text-sky-500" />
                 <span className="truncate text-xs font-semibold uppercase tracking-wider text-foreground">
