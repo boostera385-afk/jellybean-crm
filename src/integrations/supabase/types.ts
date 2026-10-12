@@ -777,13 +777,13 @@ export type Database = {
           assigned_to: string | null
           canonical_lead_link: string | null
           canonical_post_id: string | null
+          contact_method: string
           context: string | null
           created_at: string
           created_by: string | null
           cs_notes: Json
           cs_outcome: string | null
           cs_status: Database["public"]["Enums"]["cs_status"]
-          contact_method: string
           customer_name: string
           customer_number: string
           customer_number_2: string | null
@@ -819,13 +819,13 @@ export type Database = {
           assigned_to?: string | null
           canonical_lead_link?: string | null
           canonical_post_id?: string | null
+          contact_method?: string
           context?: string | null
           created_at?: string
           created_by?: string | null
           cs_notes?: Json
           cs_outcome?: string | null
           cs_status?: Database["public"]["Enums"]["cs_status"]
-          contact_method?: string
           customer_name: string
           customer_number: string
           customer_number_2?: string | null
@@ -861,13 +861,13 @@ export type Database = {
           assigned_to?: string | null
           canonical_lead_link?: string | null
           canonical_post_id?: string | null
+          contact_method?: string
           context?: string | null
           created_at?: string
           created_by?: string | null
           cs_notes?: Json
           cs_outcome?: string | null
           cs_status?: Database["public"]["Enums"]["cs_status"]
-          contact_method?: string
           customer_name?: string
           customer_number?: string
           customer_number_2?: string | null
@@ -1505,13 +1505,13 @@ export type Database = {
           assigned_to: string | null
           canonical_lead_link: string | null
           canonical_post_id: string | null
+          contact_method: string
           context: string | null
           created_at: string
           created_by: string | null
           cs_notes: Json
           cs_outcome: string | null
           cs_status: Database["public"]["Enums"]["cs_status"]
-          contact_method: string
           customer_name: string
           customer_number: string
           customer_number_2: string | null
