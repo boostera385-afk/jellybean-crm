@@ -113,8 +113,9 @@ export function CrispVisitorAlerts() {
   };
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-2 z-[95] flex flex-col items-center gap-2 px-3">
-      <div className="pointer-events-auto flex w-full max-w-md flex-col gap-2 max-h-[70vh] overflow-y-auto">
+    <div className="pointer-events-none fixed bottom-4 right-4 z-[95] flex max-w-[calc(100vw-2rem)] flex-col items-end">
+      <div className="pointer-events-auto flex w-80 max-w-full flex-col gap-2 max-h-[50vh] overflow-y-auto overscroll-contain pr-0.5">
+
         {liveVisitors.map((visitor) => {
           const name = visitorName(visitor);
           const location = visitorLocation(visitor);
@@ -122,7 +123,7 @@ export function CrispVisitorAlerts() {
           return (
             <div
               key={visitorKey(visitor)}
-              className="flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-card/95 px-3.5 py-2.5 shadow-lg backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-200"
+              className="flex w-full items-center gap-3 rounded-xl border border-emerald-500/30 bg-card/95 px-3.5 py-2.5 shadow-lg backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
             >
               <div className="relative grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-500/15 text-emerald-500">
                 <span className="absolute inline-flex h-2.5 w-2.5 animate-ping rounded-full bg-emerald-400 opacity-70 -right-0.5 -top-0.5" />
