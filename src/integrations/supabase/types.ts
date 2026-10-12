@@ -300,126 +300,8 @@ export type Database = {
         }
         Relationships: []
       }
-        crisp_visitor_daily_visits: {
-          Row: {
-            created_at: string
-            crisp_session_id: string
-            crisp_website_id: string
-            first_seen_at: string
-            id: string
-            last_seen_at: string
-            updated_at: string
-            visit_date: string
-          }
-          Insert: {
-            created_at?: string
-            crisp_session_id: string
-            crisp_website_id: string
-            first_seen_at?: string
-            id?: string
-            last_seen_at?: string
-            updated_at?: string
-            visit_date: string
-          }
-          Update: {
-            created_at?: string
-            crisp_session_id?: string
-            crisp_website_id?: string
-            first_seen_at?: string
-            id?: string
-            last_seen_at?: string
-            updated_at?: string
-            visit_date?: string
-          }
-          Relationships: []
-        }
-        crisp_visitors: {
-          Row: {
-            active: boolean
-            avatar: string | null
-            capabilities: string[]
-            city: string | null
-            country: string | null
-            created_at: string
-            crisp_session_id: string
-            crisp_website_id: string
-            email: string | null
-            first_seen_at: string
-            id: string
-            initiated: boolean
-            is_online: boolean
-            last_online_at: string | null
-            last_page_title: string | null
-            last_page_url: string | null
-            last_seen_at: string
-            latitude: number | null
-            locales: string[]
-            longitude: number | null
-            nickname: string | null
-            region: string | null
-            timezone_minutes: number | null
-            updated_at: string
-            user_agent: string | null
-          }
-          Insert: {
-            active?: boolean
-            avatar?: string | null
-            capabilities?: string[]
-            city?: string | null
-            country?: string | null
-            created_at?: string
-            crisp_session_id: string
-            crisp_website_id: string
-            email?: string | null
-            first_seen_at?: string
-            id?: string
-            initiated?: boolean
-            is_online?: boolean
-            last_online_at?: string | null
-            last_page_title?: string | null
-            last_page_url?: string | null
-            last_seen_at?: string
-            latitude?: number | null
-            locales?: string[]
-            longitude?: number | null
-            nickname?: string | null
-            region?: string | null
-            timezone_minutes?: number | null
-            updated_at?: string
-            user_agent?: string | null
-          }
-          Update: {
-            active?: boolean
-            avatar?: string | null
-            capabilities?: string[]
-            city?: string | null
-            country?: string | null
-            created_at?: string
-            crisp_session_id?: string
-            crisp_website_id?: string
-            email?: string | null
-            first_seen_at?: string
-            id?: string
-            initiated?: boolean
-            is_online?: boolean
-            last_online_at?: string | null
-            last_page_title?: string | null
-            last_page_url?: string | null
-            last_seen_at?: string
-            latitude?: number | null
-            locales?: string[]
-            longitude?: number | null
-            nickname?: string | null
-            region?: string | null
-            timezone_minutes?: number | null
-            updated_at?: string
-            user_agent?: string | null
-          }
-          Relationships: []
-        }
       crisp_workspaces: {
         Row: {
-            active_visitor_count: number
           created_at: string
           credential_secret_id: string | null
           crisp_website_id: string
@@ -428,15 +310,11 @@ export type Database = {
           installed_at: string | null
           last_seen_at: string | null
           last_synced_at: string | null
-            live_visitor_count: number
           metadata: Json
           updated_at: string
-            visitor_synced_at: string | null
-            visitors_limited: boolean
           workspace_name: string | null
         }
         Insert: {
-            active_visitor_count?: number
           created_at?: string
           credential_secret_id?: string | null
           crisp_website_id: string
@@ -445,15 +323,11 @@ export type Database = {
           installed_at?: string | null
           last_seen_at?: string | null
           last_synced_at?: string | null
-            live_visitor_count?: number
           metadata?: Json
           updated_at?: string
-            visitor_synced_at?: string | null
-            visitors_limited?: boolean
           workspace_name?: string | null
         }
         Update: {
-            active_visitor_count?: number
           created_at?: string
           credential_secret_id?: string | null
           crisp_website_id?: string
@@ -462,11 +336,8 @@ export type Database = {
           installed_at?: string | null
           last_seen_at?: string | null
           last_synced_at?: string | null
-            live_visitor_count?: number
           metadata?: Json
           updated_at?: string
-            visitor_synced_at?: string | null
-            visitors_limited?: boolean
           workspace_name?: string | null
         }
         Relationships: []
@@ -557,8 +428,8 @@ export type Database = {
           longitude: number | null
           notes: string | null
           platform: string | null
-          profile_priority: string
           profile_name: string
+          profile_priority: string
         }
         Insert: {
           account_area?: string | null
@@ -577,8 +448,8 @@ export type Database = {
           longitude?: number | null
           notes?: string | null
           platform?: string | null
-          profile_priority?: string
           profile_name: string
+          profile_priority?: string
         }
         Update: {
           account_area?: string | null
@@ -597,8 +468,8 @@ export type Database = {
           longitude?: number | null
           notes?: string | null
           platform?: string | null
-          profile_priority?: string
           profile_name?: string
+          profile_priority?: string
         }
         Relationships: [
           {
@@ -798,8 +669,8 @@ export type Database = {
           pass_it_to: string | null
           pinned_important: boolean
           post_text: string | null
-          raw_lead_id: string | null
           raw_lead_cache_id: string | null
+          raw_lead_id: string | null
           reference: string | null
           requirement_1: string | null
           requirement_2: string | null
@@ -839,8 +710,8 @@ export type Database = {
           pass_it_to?: string | null
           pinned_important?: boolean
           post_text?: string | null
-          raw_lead_id?: string | null
           raw_lead_cache_id?: string | null
+          raw_lead_id?: string | null
           reference?: string | null
           requirement_1?: string | null
           requirement_2?: string | null
@@ -880,8 +751,8 @@ export type Database = {
           pass_it_to?: string | null
           pinned_important?: boolean
           post_text?: string | null
-          raw_lead_id?: string | null
           raw_lead_cache_id?: string | null
+          raw_lead_id?: string | null
           reference?: string | null
           requirement_1?: string | null
           requirement_2?: string | null
@@ -1274,22 +1145,6 @@ export type Database = {
         Args: { _lead_id: string }
         Returns: number
       }
-      browser_profile_performance: {
-        Args: { _from: string; _to: string }
-        Returns: {
-          account_area: string | null
-          cx_interested: number
-          delivered: number
-          forwarded: number
-          incogniton_profile_id: string
-          launch_count: number
-          profile_id: string
-          profile_name: string
-          profile_priority: string
-          scraped_posts: number
-          top_service: string | null
-        }[]
-      }
       adjust_raw_lead_cache_count: {
         Args: { _assigned_to: string; _category_key: string; _delta: number }
         Returns: undefined
@@ -1313,6 +1168,22 @@ export type Database = {
         Args: { decisions: Json }
         Returns: number
       }
+      browser_profile_performance: {
+        Args: { _from: string; _to: string }
+        Returns: {
+          account_area: string
+          cx_interested: number
+          delivered: number
+          forwarded: number
+          incogniton_profile_id: string
+          launch_count: number
+          profile_id: string
+          profile_name: string
+          profile_priority: string
+          scraped_posts: number
+          top_service: string
+        }[]
+      }
       check_qualified_lead_phone_duplicates: {
         Args: { _phone_digits: string; _since: string }
         Returns: {
@@ -1323,10 +1194,6 @@ export type Database = {
           id: string
         }[]
       }
-        claim_crisp_visitor_sync: {
-          Args: { p_stale_before: string; p_website_id: string }
-          Returns: boolean
-        }
       count_pending_reminder_leads: { Args: never; Returns: number }
       crisp_create_workspace_secret: {
         Args: {
@@ -1523,6 +1390,7 @@ export type Database = {
           pass_it_to: string | null
           pinned_important: boolean
           post_text: string | null
+          raw_lead_cache_id: string | null
           raw_lead_id: string | null
           reference: string | null
           requirement_1: string | null
