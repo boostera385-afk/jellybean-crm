@@ -69,9 +69,9 @@ type CrispWorkspaceRow = {
   crisp_website_id: string;
   workspace_name: string;
   credential_secret_id: string;
-  live_visitor_count: number | null;
-  active_visitor_count: number | null;
-  visitors_limited: boolean | null;
+  live_visitor_count: number;
+  active_visitor_count: number;
+  visitors_limited: boolean;
 };
 
 // Generated types lag behind the live-visitor migration, so the row is declared here.
