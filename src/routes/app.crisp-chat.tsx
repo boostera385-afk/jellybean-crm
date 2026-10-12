@@ -2295,9 +2295,9 @@ function CrispInboxInner() {
       {/* COLUMN 4: LIVE VISITOR RAIL — Hot Section + Awaiting reply (~320px) */}
       {/* ========================================================================= */}
       {showRightPanel && (
-        <div className="w-80 shrink-0 border-l border-border/40 bg-card/30 flex flex-col h-full overflow-hidden hidden lg:flex">
-          {/* HOT SECTION — live visitors nobody has messaged yet (newest on top) */}
-          <div className="flex min-h-0 flex-1 flex-col border-b border-border/40">
+        <div className="w-[28rem] shrink-0 border-l border-border/40 bg-card/30 flex flex-row h-full overflow-hidden hidden lg:flex">
+          {/* HOT SECTION (left column) — live visitors nobody has messaged yet */}
+          <div className="flex min-h-0 h-full flex-1 flex-col border-r border-border/40">
             <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border/40">
               <div className="flex items-center gap-2 min-w-0">
                 <Flame className="h-4 w-4 shrink-0 text-orange-500" />
@@ -2348,8 +2348,8 @@ function CrispInboxInner() {
             </div>
           </div>
 
-          {/* AWAITING REPLY — we sent the first message, visitor hasn't replied back */}
-          <div className="flex min-h-0 flex-1 flex-col">
+          {/* AWAITING REPLY (right column) — we sent first message, no reply yet */}
+          <div className="flex min-h-0 h-full flex-1 flex-col">
             <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border/40">
               <div className="flex items-center gap-2 min-w-0">
                 <Clock className="h-4 w-4 shrink-0 text-sky-500" />
