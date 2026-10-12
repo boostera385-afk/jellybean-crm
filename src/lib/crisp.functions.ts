@@ -252,7 +252,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
       };
     }
 
-    const workspaceNames = new Map(
+    const workspaceNames = new Map<string, string>(
       (workspaces ?? []).map((workspace: CrispWorkspaceRow) => [workspace.crisp_website_id, workspace.workspace_name]),
     );
     const errors: string[] = [];
