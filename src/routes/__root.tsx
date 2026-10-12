@@ -5,6 +5,7 @@ import {
   useRouter,
   HeadContent,
   Scripts,
+  type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
@@ -102,12 +103,12 @@ function NotFound() {
   );
 }
 
-function ErrorView({ error }: { error: Error }) {
+function ErrorView({ error }: ErrorComponentProps) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="text-center max-w-md glass-card p-8">
         <h1 className="text-2xl font-semibold">Something went wrong</h1>
-        <p className="text-sm text-muted-foreground mt-2">{error.message}</p>
+        <p className="text-sm text-muted-foreground mt-2">{error instanceof Error ? error.message : String(error)}</p>
         <a href="/" className="inline-block mt-5 text-primary hover:text-primary-glow transition">
           Reload →
         </a>

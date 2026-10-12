@@ -9,44 +9,34 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppRouteImport } from './routes/app'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as SetupRouteImport } from './routes/setup'
 import { Route as TrustRouteImport } from './routes/trust'
+import { Route as SetupRouteImport } from './routes/setup'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as AppRouteImport } from './routes/app'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppIndexRouteImport } from './routes/app.index'
-import { Route as AppAnalyticsRouteImport } from './routes/app.analytics'
-import { Route as AppBrowserProfilesRouteImport } from './routes/app.browser-profiles'
-import { Route as AppCrispChatRouteImport } from './routes/app.crisp-chat'
-import { Route as AppCrmUpdatesRouteImport } from './routes/app.crm-updates'
-import { Route as AppCsLeadsRouteImport } from './routes/app.cs-leads'
-import { Route as AppCsReportsRouteImport } from './routes/app.cs-reports'
-import { Route as AppForwardedLeadsRouteImport } from './routes/app.forwarded-leads'
-import { Route as AppGoogleSheetsRouteImport } from './routes/app.google-sheets'
-import { Route as AppLeadAssignmentRouteImport } from './routes/app.lead-assignment'
-import { Route as AppLogsRouteImport } from './routes/app.logs'
-import { Route as AppMapRouteImport } from './routes/app.map'
-import { Route as AppPendingLeadsRouteImport } from './routes/app.pending-leads'
-import { Route as AppRawLeadsRouteImport } from './routes/app.raw-leads'
-import { Route as AppReportsRouteImport } from './routes/app.reports'
-import { Route as AppServiceAreaBaseRouteImport } from './routes/app.service-area-base'
-import { Route as AppSettingsRouteImport } from './routes/app.settings'
 import { Route as AppSubmitLeadRouteImport } from './routes/app.submit-lead'
+import { Route as AppSettingsRouteImport } from './routes/app.settings'
+import { Route as AppServiceAreaBaseRouteImport } from './routes/app.service-area-base'
+import { Route as AppReportsRouteImport } from './routes/app.reports'
+import { Route as AppRawLeadsRouteImport } from './routes/app.raw-leads'
+import { Route as AppPendingLeadsRouteImport } from './routes/app.pending-leads'
+import { Route as AppMapRouteImport } from './routes/app.map'
+import { Route as AppLogsRouteImport } from './routes/app.logs'
+import { Route as AppLeadAssignmentRouteImport } from './routes/app.lead-assignment'
+import { Route as AppGoogleSheetsRouteImport } from './routes/app.google-sheets'
+import { Route as AppForwardedLeadsRouteImport } from './routes/app.forwarded-leads'
+import { Route as AppCsReportsRouteImport } from './routes/app.cs-reports'
+import { Route as AppCsLeadsRouteImport } from './routes/app.cs-leads'
+import { Route as AppCrmUpdatesRouteImport } from './routes/app.crm-updates'
+import { Route as AppCrispChatRouteImport } from './routes/app.crisp-chat'
+import { Route as AppBrowserProfilesRouteImport } from './routes/app.browser-profiles'
+import { Route as AppAnalyticsRouteImport } from './routes/app.analytics'
 import { Route as ApiPublicNextdoorLeadsRouteImport } from './routes/api.public.nextdoor-leads'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AppRoute = AppRouteImport.update({
-  id: '/app',
-  path: '/app',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const TrustRoute = TrustRouteImport.update({
+  id: '/trust',
+  path: '/trust',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SetupRoute = SetupRouteImport.update({
@@ -54,9 +44,19 @@ const SetupRoute = SetupRouteImport.update({
   path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TrustRoute = TrustRouteImport.update({
-  id: '/trust',
-  path: '/trust',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppRoute = AppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -64,79 +64,9 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
-const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
-  id: '/analytics',
-  path: '/analytics',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppBrowserProfilesRoute = AppBrowserProfilesRouteImport.update({
-  id: '/browser-profiles',
-  path: '/browser-profiles',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppCrispChatRoute = AppCrispChatRouteImport.update({
-  id: '/crisp-chat',
-  path: '/crisp-chat',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppCrmUpdatesRoute = AppCrmUpdatesRouteImport.update({
-  id: '/crm-updates',
-  path: '/crm-updates',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppCsLeadsRoute = AppCsLeadsRouteImport.update({
-  id: '/cs-leads',
-  path: '/cs-leads',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppCsReportsRoute = AppCsReportsRouteImport.update({
-  id: '/cs-reports',
-  path: '/cs-reports',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppForwardedLeadsRoute = AppForwardedLeadsRouteImport.update({
-  id: '/forwarded-leads',
-  path: '/forwarded-leads',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppGoogleSheetsRoute = AppGoogleSheetsRouteImport.update({
-  id: '/google-sheets',
-  path: '/google-sheets',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppLeadAssignmentRoute = AppLeadAssignmentRouteImport.update({
-  id: '/lead-assignment',
-  path: '/lead-assignment',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppLogsRoute = AppLogsRouteImport.update({
-  id: '/logs',
-  path: '/logs',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppMapRoute = AppMapRouteImport.update({
-  id: '/map',
-  path: '/map',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppPendingLeadsRoute = AppPendingLeadsRouteImport.update({
-  id: '/pending-leads',
-  path: '/pending-leads',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppRawLeadsRoute = AppRawLeadsRouteImport.update({
-  id: '/raw-leads',
-  path: '/raw-leads',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppReportsRoute = AppReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppServiceAreaBaseRoute = AppServiceAreaBaseRouteImport.update({
-  id: '/service-area-base',
-  path: '/service-area-base',
+const AppSubmitLeadRoute = AppSubmitLeadRouteImport.update({
+  id: '/submit-lead',
+  path: '/submit-lead',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -144,9 +74,79 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppRoute,
 } as any)
-const AppSubmitLeadRoute = AppSubmitLeadRouteImport.update({
-  id: '/submit-lead',
-  path: '/submit-lead',
+const AppServiceAreaBaseRoute = AppServiceAreaBaseRouteImport.update({
+  id: '/service-area-base',
+  path: '/service-area-base',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsRoute = AppReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppRawLeadsRoute = AppRawLeadsRouteImport.update({
+  id: '/raw-leads',
+  path: '/raw-leads',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPendingLeadsRoute = AppPendingLeadsRouteImport.update({
+  id: '/pending-leads',
+  path: '/pending-leads',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMapRoute = AppMapRouteImport.update({
+  id: '/map',
+  path: '/map',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLogsRoute = AppLogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLeadAssignmentRoute = AppLeadAssignmentRouteImport.update({
+  id: '/lead-assignment',
+  path: '/lead-assignment',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppGoogleSheetsRoute = AppGoogleSheetsRouteImport.update({
+  id: '/google-sheets',
+  path: '/google-sheets',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppForwardedLeadsRoute = AppForwardedLeadsRouteImport.update({
+  id: '/forwarded-leads',
+  path: '/forwarded-leads',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCsReportsRoute = AppCsReportsRouteImport.update({
+  id: '/cs-reports',
+  path: '/cs-reports',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCsLeadsRoute = AppCsLeadsRouteImport.update({
+  id: '/cs-leads',
+  path: '/cs-leads',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCrmUpdatesRoute = AppCrmUpdatesRouteImport.update({
+  id: '/crm-updates',
+  path: '/crm-updates',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCrispChatRoute = AppCrispChatRouteImport.update({
+  id: '/crisp-chat',
+  path: '/crisp-chat',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBrowserProfilesRoute = AppBrowserProfilesRouteImport.update({
+  id: '/browser-profiles',
+  path: '/browser-profiles',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAnalyticsRoute = AppAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
   getParentRoute: () => AppRoute,
 } as any)
 const ApiPublicNextdoorLeadsRoute = ApiPublicNextdoorLeadsRouteImport.update({
@@ -324,25 +324,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/app': {
-      id: '/app'
-      path: '/app'
-      fullPath: '/app'
-      preLoaderRoute: typeof AppRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/trust': {
+      id: '/trust'
+      path: '/trust'
+      fullPath: '/trust'
+      preLoaderRoute: typeof TrustRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/setup': {
@@ -352,11 +338,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/trust': {
-      id: '/trust'
-      path: '/trust'
-      fullPath: '/trust'
-      preLoaderRoute: typeof TrustRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/app': {
+      id: '/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app/': {
@@ -366,109 +366,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/analytics': {
-      id: '/app/analytics'
-      path: '/analytics'
-      fullPath: '/app/analytics'
-      preLoaderRoute: typeof AppAnalyticsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/browser-profiles': {
-      id: '/app/browser-profiles'
-      path: '/browser-profiles'
-      fullPath: '/app/browser-profiles'
-      preLoaderRoute: typeof AppBrowserProfilesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/crisp-chat': {
-      id: '/app/crisp-chat'
-      path: '/crisp-chat'
-      fullPath: '/app/crisp-chat'
-      preLoaderRoute: typeof AppCrispChatRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/crm-updates': {
-      id: '/app/crm-updates'
-      path: '/crm-updates'
-      fullPath: '/app/crm-updates'
-      preLoaderRoute: typeof AppCrmUpdatesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/cs-leads': {
-      id: '/app/cs-leads'
-      path: '/cs-leads'
-      fullPath: '/app/cs-leads'
-      preLoaderRoute: typeof AppCsLeadsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/cs-reports': {
-      id: '/app/cs-reports'
-      path: '/cs-reports'
-      fullPath: '/app/cs-reports'
-      preLoaderRoute: typeof AppCsReportsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/forwarded-leads': {
-      id: '/app/forwarded-leads'
-      path: '/forwarded-leads'
-      fullPath: '/app/forwarded-leads'
-      preLoaderRoute: typeof AppForwardedLeadsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/google-sheets': {
-      id: '/app/google-sheets'
-      path: '/google-sheets'
-      fullPath: '/app/google-sheets'
-      preLoaderRoute: typeof AppGoogleSheetsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/lead-assignment': {
-      id: '/app/lead-assignment'
-      path: '/lead-assignment'
-      fullPath: '/app/lead-assignment'
-      preLoaderRoute: typeof AppLeadAssignmentRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/logs': {
-      id: '/app/logs'
-      path: '/logs'
-      fullPath: '/app/logs'
-      preLoaderRoute: typeof AppLogsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/map': {
-      id: '/app/map'
-      path: '/map'
-      fullPath: '/app/map'
-      preLoaderRoute: typeof AppMapRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/pending-leads': {
-      id: '/app/pending-leads'
-      path: '/pending-leads'
-      fullPath: '/app/pending-leads'
-      preLoaderRoute: typeof AppPendingLeadsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/raw-leads': {
-      id: '/app/raw-leads'
-      path: '/raw-leads'
-      fullPath: '/app/raw-leads'
-      preLoaderRoute: typeof AppRawLeadsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/reports': {
-      id: '/app/reports'
-      path: '/reports'
-      fullPath: '/app/reports'
-      preLoaderRoute: typeof AppReportsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/app/service-area-base': {
-      id: '/app/service-area-base'
-      path: '/service-area-base'
-      fullPath: '/app/service-area-base'
-      preLoaderRoute: typeof AppServiceAreaBaseRouteImport
+    '/app/submit-lead': {
+      id: '/app/submit-lead'
+      path: '/submit-lead'
+      fullPath: '/app/submit-lead'
+      preLoaderRoute: typeof AppSubmitLeadRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/settings': {
@@ -478,11 +380,109 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsRouteImport
       parentRoute: typeof AppRoute
     }
-    '/app/submit-lead': {
-      id: '/app/submit-lead'
-      path: '/submit-lead'
-      fullPath: '/app/submit-lead'
-      preLoaderRoute: typeof AppSubmitLeadRouteImport
+    '/app/service-area-base': {
+      id: '/app/service-area-base'
+      path: '/service-area-base'
+      fullPath: '/app/service-area-base'
+      preLoaderRoute: typeof AppServiceAreaBaseRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/reports': {
+      id: '/app/reports'
+      path: '/reports'
+      fullPath: '/app/reports'
+      preLoaderRoute: typeof AppReportsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/raw-leads': {
+      id: '/app/raw-leads'
+      path: '/raw-leads'
+      fullPath: '/app/raw-leads'
+      preLoaderRoute: typeof AppRawLeadsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/pending-leads': {
+      id: '/app/pending-leads'
+      path: '/pending-leads'
+      fullPath: '/app/pending-leads'
+      preLoaderRoute: typeof AppPendingLeadsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/map': {
+      id: '/app/map'
+      path: '/map'
+      fullPath: '/app/map'
+      preLoaderRoute: typeof AppMapRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/logs': {
+      id: '/app/logs'
+      path: '/logs'
+      fullPath: '/app/logs'
+      preLoaderRoute: typeof AppLogsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/lead-assignment': {
+      id: '/app/lead-assignment'
+      path: '/lead-assignment'
+      fullPath: '/app/lead-assignment'
+      preLoaderRoute: typeof AppLeadAssignmentRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/google-sheets': {
+      id: '/app/google-sheets'
+      path: '/google-sheets'
+      fullPath: '/app/google-sheets'
+      preLoaderRoute: typeof AppGoogleSheetsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/forwarded-leads': {
+      id: '/app/forwarded-leads'
+      path: '/forwarded-leads'
+      fullPath: '/app/forwarded-leads'
+      preLoaderRoute: typeof AppForwardedLeadsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/cs-reports': {
+      id: '/app/cs-reports'
+      path: '/cs-reports'
+      fullPath: '/app/cs-reports'
+      preLoaderRoute: typeof AppCsReportsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/cs-leads': {
+      id: '/app/cs-leads'
+      path: '/cs-leads'
+      fullPath: '/app/cs-leads'
+      preLoaderRoute: typeof AppCsLeadsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/crm-updates': {
+      id: '/app/crm-updates'
+      path: '/crm-updates'
+      fullPath: '/app/crm-updates'
+      preLoaderRoute: typeof AppCrmUpdatesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/crisp-chat': {
+      id: '/app/crisp-chat'
+      path: '/crisp-chat'
+      fullPath: '/app/crisp-chat'
+      preLoaderRoute: typeof AppCrispChatRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/browser-profiles': {
+      id: '/app/browser-profiles'
+      path: '/browser-profiles'
+      fullPath: '/app/browser-profiles'
+      preLoaderRoute: typeof AppBrowserProfilesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/analytics': {
+      id: '/app/analytics'
+      path: '/analytics'
+      fullPath: '/app/analytics'
+      preLoaderRoute: typeof AppAnalyticsRouteImport
       parentRoute: typeof AppRoute
     }
     '/api/public/nextdoor-leads': {

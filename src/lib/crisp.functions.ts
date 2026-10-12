@@ -65,7 +65,40 @@ type CrispApiVisitor = {
   locales?: string[];
 };
 
-type CrispVisitorRow = Database["public"]["Tables"]["crisp_visitors"]["Row"];
+type CrispWorkspaceRow = {
+  crisp_website_id: string;
+  workspace_name: string;
+  credential_secret_id: string;
+  live_visitor_count: number;
+  active_visitor_count: number;
+  visitors_limited: boolean;
+};
+
+// Generated types lag behind the live-visitor migration, so the row is declared here.
+type CrispVisitorRow = {
+  crisp_website_id: string;
+  crisp_session_id: string;
+  nickname: string | null;
+  email: string | null;
+  avatar: string | null;
+  user_agent: string | null;
+  initiated: boolean;
+  active: boolean;
+  is_online: boolean;
+  last_page_title: string | null;
+  last_page_url: string | null;
+  country: string | null;
+  region: string | null;
+  city: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  timezone_minutes: number | null;
+  capabilities: string[];
+  locales: string[];
+  first_seen_at: string;
+  last_seen_at: string;
+  last_online_at: string | null;
+};
 
 function pakistanDayKey(date: Date) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -188,7 +221,9 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await assertCrispAccess(supabase, userId);
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
     const { getWorkspaceCreds, crispHeaders, crispErrorReason } = await import("./crisp.server");
     const now = new Date();
     const nowIso = now.toISOString();
@@ -217,8 +252,8 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
       };
     }
 
-    const workspaceNames = new Map(
-      (workspaces ?? []).map((workspace) => [workspace.crisp_website_id, workspace.workspace_name]),
+    const workspaceNames = new Map<string, string>(
+      (workspaces ?? []).map((workspace: CrispWorkspaceRow) => [workspace.crisp_website_id, workspace.workspace_name]),
     );
     const errors: string[] = [];
     let reportedLiveCount = 0;
@@ -227,7 +262,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
 
     const staleBefore = new Date(now.getTime() - 25_000).toISOString();
     await Promise.all(
-      (workspaces ?? []).map(async (workspace): Promise<CrispVisitor[]> => {
+      (workspaces ?? []).map(async (workspace: CrispWorkspaceRow): Promise<CrispVisitor[]> => {
         try {
           const { data: claimed } = await supabaseAdmin.rpc("claim_crisp_visitor_sync", {
             p_website_id: workspace.crisp_website_id,
@@ -460,7 +495,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
       liveCount: Math.max(reportedLiveCount, liveVisitors.length),
       activeCount: Math.max(
         reportedActiveCount,
-        liveVisitors.filter((visitor) => visitor.active).length,
+        liveVisitors.filter((visitor: CrispVisitor) => visitor.active).length,
       ),
       todayCount: todayVisitors.length,
       limited,
@@ -533,7 +568,8 @@ export const sendCrispMessageToVisitor = createServerFn({ method: "POST" })
       ? new Date(message.timestamp).toISOString()
       : new Date().toISOString();
     const [{ data: visitor }, { data: existingConversation }] = await Promise.all([
-      supabaseAdmin
+      (supabaseAdmin as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+
         .from("crisp_visitors")
         .select("nickname, email, avatar")
         .eq("crisp_website_id", data.websiteId)
