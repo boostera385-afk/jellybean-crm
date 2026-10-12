@@ -134,7 +134,9 @@ export const syncCrispHistory = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await assertCrispAccess(supabase, userId);
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
     const { syncWorkspace } = await import("./crisp.server");
 
     let query = supabaseAdmin
@@ -188,7 +190,9 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await assertCrispAccess(supabase, userId);
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
     const { getWorkspaceCreds, crispHeaders, crispErrorReason } = await import("./crisp.server");
     const now = new Date();
     const nowIso = now.toISOString();
@@ -488,7 +492,9 @@ export const sendCrispMessageToVisitor = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await assertCrispAccess(supabase, userId);
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
     const { getWorkspaceCreds, crispHeaders, crispErrorReason } = await import("./crisp.server");
     const { data: workspace } = await supabaseAdmin
       .from("crisp_workspaces")
@@ -611,7 +617,9 @@ export const sendCrispMessage = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await assertCrispAccess(supabase, userId);
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
     const { getWorkspaceCreds, crispHeaders, crispErrorReason } = await import("./crisp.server");
 
     const { data: conv } = await supabaseAdmin
@@ -701,7 +709,9 @@ export const markCrispConversationRead = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await assertCrispAccess(supabase, userId);
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
     const { getWorkspaceCreds, crispHeaders, crispErrorReason } = await import("./crisp.server");
 
     const { data: conv } = await supabaseAdmin
@@ -830,7 +840,9 @@ export const addCrispWorkspace = createServerFn({ method: "POST" })
     const verified = await verifyCrispCredentials(data.websiteId, data.tokenId, data.tokenKey);
     if (!verified.ok) return { ok: false as const, error: verified.error };
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
 
     const { data: existingWs, error: existingWsErr } = await supabaseAdmin
       .from("crisp_workspaces")
@@ -939,7 +951,9 @@ export const toggleCrispWorkspace = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await assertAdmin(supabase, userId);
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
     const { error } = await supabaseAdmin
       .from("crisp_workspaces")
       .update({ enabled: data.enabled, updated_at: new Date().toISOString() })
@@ -960,7 +974,9 @@ export const getCrispWorkspaceWebhookUrl = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await assertAdmin(supabase, userId);
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
     const { data: ws, error: fetchErr } = await supabaseAdmin
       .from("crisp_workspaces")
       .select("credential_secret_id")
@@ -1003,7 +1019,9 @@ export const regenerateCrispWebhookSecret = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await assertAdmin(supabase, userId);
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
     const { data: ws, error: fetchErr } = await supabaseAdmin
       .from("crisp_workspaces")
       .select("credential_secret_id")
@@ -1063,7 +1081,9 @@ export const deleteCrispWorkspace = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await assertAdmin(supabase, userId);
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
 
     // Fetch workspace
     const { data: ws, error: fetchErr } = await supabaseAdmin
@@ -1129,7 +1149,9 @@ export const getCrispConversationNotes = createServerFn({ method: "POST" })
     const isCallerAdmin = callerRoles.includes("admin");
     const isCallerCsAdmin = callerRoles.includes("cs_admin");
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
 
     const { data: notes, error: notesErr } = await supabaseAdmin
       .from("crisp_conversation_notes")
@@ -1262,7 +1284,9 @@ export const deleteCrispConversationNote = createServerFn({ method: "POST" })
       throw new Error("Forbidden: Crisp notes are restricted to admin, cs_admin and cs roles.");
     }
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
 
     // Fetch the target note to check creator
     const { data: note, error: noteErr } = await supabaseAdmin
