@@ -110,6 +110,8 @@ const GARAGE_DOOR_OR_CLAUSE = GARAGE_DOOR_FIELDS.flatMap((f) =>
   GARAGE_DOOR_PATTERNS.map((p) => `${f}.ilike.${p}`),
 ).join(",");
 
+type ContactMethod = "texted" | "called";
+
 function formatLeadServiceLabel(service: string | null): string | null {
   if (!service) return null;
 
@@ -146,14 +148,22 @@ Forbidden Phrases (do not use in any field):
 - "arrange a visit"`;
 
 export const Route = createFileRoute("/app/cs-leads")({
-  head: () => ({ meta: [
-    { title: "CS Pipeline \u00b7 JellyBean" },
-    { name: "description", content: "Manage customer leads, delivery outcomes, and follow-ups in JellyBean." },
-    { property: "og:title", content: "CS Pipeline \u00b7 JellyBean" },
-    { property: "og:description", content: "Manage customer leads, delivery outcomes, and follow-ups in JellyBean." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "CS Pipeline \u00b7 JellyBean" },
+      {
+        name: "description",
+        content: "Manage customer leads, delivery outcomes, and follow-ups in JellyBean.",
+      },
+      { property: "og:title", content: "CS Pipeline \u00b7 JellyBean" },
+      {
+        property: "og:description",
+        content: "Manage customer leads, delivery outcomes, and follow-ups in JellyBean.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: Page,
   pendingComponent: () => <RouteSkeleton />,
   pendingMs: 200,
@@ -2237,6 +2247,7 @@ function LeadCard({
   const qc = useQueryClient();
   const auth = useAuth();
   const [status, setStatus] = useState<CsStatus>(lead.cs_status);
+  const [pendingStatus, setPendingStatus] = useState<CsStatus | null>(null);
   const [assignedTo, setAssignedTo] = useState<string | null>(lead.assigned_to);
   const [saving, setSaving] = useState(false);
   const [assigning, setAssigning] = useState(false);
@@ -2316,7 +2327,18 @@ function LeadCard({
     return true;
   }
 
-  async function changeStatus(next: CsStatus) {
+  function requestStatusChange(next: CsStatus) {
+    if (next !== status) setPendingStatus(next);
+  }
+
+  function confirmContactMethod(method: ContactMethod) {
+    if (!pendingStatus) return;
+    const next = pendingStatus;
+    setPendingStatus(null);
+    void changeStatus(next, method);
+  }
+
+  async function changeStatus(next: CsStatus, contactMethod: ContactMethod) {
     const prev = status;
     setStatus(next);
     setSaving(true);
@@ -2333,10 +2355,17 @@ function LeadCard({
         action: "cs.status_changed",
         entity_type: "qualified_lead",
         entity_id: lead.id,
-        metadata: { status: next, from: "card" },
+        metadata: {
+          status: next,
+          previous_status: prev,
+          contact_method: contactMethod,
+          from: "card",
+        },
       });
       void syncLeadToGoogleSheet("UPDATE", { ...lead, cs_status: next });
-      toast.success(`Status → ${STATUS_LABEL[next] ?? next}`);
+      toast.success(
+        `Status → ${STATUS_LABEL[next] ?? next} · ${contactMethod === "texted" ? "Texted" : "Called"}`,
+      );
       qc.invalidateQueries({ queryKey: ["cs_leads"] });
     } catch (e) {
       setStatus(prev);
@@ -2654,11 +2683,17 @@ function LeadCard({
       <div className="mt-4" onClick={(e) => e.stopPropagation()}>
         <StatusPicker
           value={status}
-          onChange={changeStatus}
+          onChange={requestStatusChange}
           disabled={saving || (!isAdmin && !isCs && (!assignedTo || auth.user?.id !== assignedTo))}
           saving={saving}
         />
       </div>
+
+      <ContactMethodPrompt
+        status={pendingStatus}
+        onCancel={() => setPendingStatus(null)}
+        onChoose={confirmContactMethod}
+      />
 
       {/* Manual field filled by CS */}
       <div
@@ -3013,7 +3048,9 @@ function StatusPicker({
             <button
               key={statusOption}
               type="button"
-              onClick={() => onChange(statusOption)}
+              onClick={() => {
+                if (!active) onChange(statusOption);
+              }}
               disabled={disabled}
               className={cn(
                 "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 crm-pill-text transition-colors",
@@ -3043,6 +3080,43 @@ function StatusPicker({
         </div>
       )}
     </div>
+  );
+}
+
+function ContactMethodPrompt({
+  status,
+  onChoose,
+  onCancel,
+}: {
+  status: CsStatus | null;
+  onChoose: (method: ContactMethod) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <AlertDialog
+      open={status !== null}
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+    >
+      <AlertDialogContent onClick={(event) => event.stopPropagation()}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>How did you contact the customer?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {status
+              ? `Choose one before changing the status to ${STATUS_LABEL[status] ?? status}.`
+              : "Choose how the customer was contacted."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
+          <Button type="button" variant="outline" onClick={() => onChoose("texted")}>
+            Texted
+          </Button>
+          <AlertDialogAction onClick={() => onChoose("called")}>Called</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -3119,6 +3193,8 @@ function LeadDrawer({
   }, []);
 
   const [status, setStatus] = useState<CsStatus>(lead.cs_status);
+  const [pendingStatus, setPendingStatus] = useState<CsStatus | null>(null);
+  const [contactMethod, setContactMethod] = useState<ContactMethod | null>(null);
   const [assignedTo, setAssignedTo] = useState<string | null>(lead.assigned_to);
   const [note, setNote] = useState("");
   const [numberName, setNumberName] = useState(lead.number_name ?? "");
@@ -3214,7 +3290,22 @@ function LeadDrawer({
     ? renderCsComposeSuggestion(finalTemplates[0].template, lead)
     : "";
 
+  function requestStatusChange(next: CsStatus) {
+    if (next !== status) setPendingStatus(next);
+  }
+
+  function confirmContactMethod(method: ContactMethod) {
+    if (!pendingStatus) return;
+    setStatus(pendingStatus);
+    setContactMethod(pendingStatus === lead.cs_status ? null : method);
+    setPendingStatus(null);
+  }
+
   async function save() {
+    if (status !== lead.cs_status && !contactMethod) {
+      toast.error("Choose Texted or Called before saving the status change.");
+      return;
+    }
     setBusy(true);
     try {
       const newNotes = note.trim()
@@ -3267,10 +3358,17 @@ function LeadDrawer({
         actor_id: auth.user?.id,
         actor_name: auth.profile?.full_name,
         actor_role: auth.primaryRole,
-        action: "cs.updated",
+        action: status !== lead.cs_status ? "cs.status_changed" : "cs.updated",
         entity_type: "qualified_lead",
         entity_id: lead.id,
-        metadata: { status, hasNote: !!note.trim(), assigned_to: assignedTo },
+        metadata: {
+          status,
+          previous_status: lead.cs_status,
+          contact_method: status !== lead.cs_status ? contactMethod : null,
+          hasNote: !!note.trim(),
+          assigned_to: assignedTo,
+          from: "drawer",
+        },
       });
       toast.success("Saved");
       qc.invalidateQueries({ queryKey: ["cs_leads"] });
@@ -3382,10 +3480,15 @@ function LeadDrawer({
                 </Label>
                 <StatusPicker
                   value={status}
-                  onChange={setStatus}
+                  onChange={requestStatusChange}
                   disabled={
                     busy || (!isAdmin && !isCs && (!assignedTo || auth.user?.id !== assignedTo))
                   }
+                />
+                <ContactMethodPrompt
+                  status={pendingStatus}
+                  onCancel={() => setPendingStatus(null)}
+                  onChoose={confirmContactMethod}
                 />
               </div>
               <div className="flex items-center gap-2 pt-1">

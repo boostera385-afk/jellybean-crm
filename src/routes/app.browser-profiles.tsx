@@ -69,7 +69,7 @@ export const Route = createFileRoute("/app/browser-profiles")({
 
 type LaunchHistoryEntry = { at: string; by: string | null };
 type ProfilePriority = "none" | "first" | "second";
-type ProfileView = "all" | "first" | "second" | "launched_today" | "performance";
+type ProfileView = "all" | "first" | "second" | "other" | "launched_today" | "performance";
 type PerformancePreset = "today" | "week" | "month" | "custom";
 type ProfilePerformanceRow = {
   profile_id: string;
@@ -262,6 +262,12 @@ function Inner() {
       if (addedDateFilter && dateKey(p.created_at) !== addedDateFilter) return false;
       if (profileView === "first" && p.profile_priority !== "first") return false;
       if (profileView === "second" && p.profile_priority !== "second") return false;
+      if (
+        profileView === "other" &&
+        (p.profile_priority === "first" || p.profile_priority === "second")
+      ) {
+        return false;
+      }
       if (profileView === "launched_today" && pktDayKey(p.last_launched_at) !== todayKey) {
         return false;
       }
@@ -277,10 +283,11 @@ function Inner() {
 
   const profileCounts = useMemo(() => {
     const all = profiles.data ?? [];
-    const counts = { all: all.length, first: 0, second: 0, launchedToday: 0 };
+    const counts = { all: all.length, first: 0, second: 0, other: 0, launchedToday: 0 };
     for (const profile of all) {
       if (profile.profile_priority === "first") counts.first += 1;
-      if (profile.profile_priority === "second") counts.second += 1;
+      else if (profile.profile_priority === "second") counts.second += 1;
+      else counts.other += 1;
       if (pktDayKey(profile.last_launched_at) === todayKey) counts.launchedToday += 1;
     }
     return counts;
@@ -619,6 +626,13 @@ function Inner() {
               {profileCounts.second}
             </span>
           </TabsTrigger>
+          <TabsTrigger value="other" className="gap-2">
+            <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+            Other Accounts
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums">
+              {profileCounts.other}
+            </span>
+          </TabsTrigger>
           <TabsTrigger value="launched_today" className="gap-2">
             <CalendarCheck className="h-3.5 w-3.5 text-success" />
             Launched Today
@@ -726,7 +740,9 @@ function Inner() {
                       ? "No browser profiles found."
                       : profileView === "launched_today"
                         ? "No profiles launched today."
-                        : `No ${profileView === "first" ? "1st" : "2nd"} Priority profiles.`}
+                        : profileView === "other"
+                          ? "No accounts without a priority."
+                          : `No ${profileView === "first" ? "1st" : "2nd"} Priority profiles.`}
                   </td>
                 </tr>
               )}
