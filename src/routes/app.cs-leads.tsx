@@ -112,6 +112,7 @@ const GARAGE_DOOR_OR_CLAUSE = GARAGE_DOOR_FIELDS.flatMap((f) =>
 ).join(",");
 
 type ContactMethod = "texted" | "called";
+type NotCalledFilter = "__off__" | "__all__" | CsStatus;
 
 function formatLeadServiceLabel(service: string | null): string | null {
   if (!service) return null;
@@ -253,6 +254,7 @@ type Lead = {
   original_lead_link: string | null;
   cs_status: CsStatus;
   contact_method: ContactMethod | null;
+  called_at: string | null;
   cs_notes: LeadNote[];
   followup_at: string | null;
   assigned_at: string;
@@ -511,6 +513,7 @@ function Inner() {
   const [activeStatus, setActiveStatus] = useState<CsStatus | "__all__" | "templates">("__all__");
   const [opened, setOpened] = useState<Lead | null>(null);
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
+  const [notCalledOnly, setNotCalledOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkAssignee, setBulkAssignee] = useState<string>("");
@@ -738,12 +741,12 @@ function Inner() {
   // ── Reset page to 1 whenever any server-side filter changes ──────────────
   useEffect(() => {
     setPage(1);
-  }, [dbDateFrom, dbDateTo, dbOwner, dbStatus, areaFilter, dbSearch, garageDoorOnly]);
+  }, [dbDateFrom, dbDateTo, dbOwner, dbStatus, areaFilter, dbSearch, garageDoorOnly, notCalledOnly]);
 
   const list = useQuery({
     queryKey: [
       "cs_leads",
-      { page, dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, garageDoorOnly },
+      { page, dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, garageDoorOnly, notCalledOnly },
     ],
     queryFn: async () => {
       const from = (page - 1) * PAGE_SIZE;
@@ -752,7 +755,7 @@ function Inner() {
       let q = supabase
         .from("qualified_leads")
         .select(
-          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method",
+          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at",
         )
         .order("pinned_important", { ascending: false })
         .order("assigned_at", { ascending: false })
@@ -771,6 +774,8 @@ function Inner() {
 
       // Status filter — pushed to DB (cs_status+created_at is indexed)
       if (dbStatus) q = q.eq("cs_status", dbStatus);
+
+      if (notCalledOnly) q = q.is("called_at", null);
 
       // Search text filter — pushed to DB across all pages
       if (dbSearch) {
@@ -820,7 +825,7 @@ function Inner() {
       const { data, error } = await supabase
         .from("qualified_leads")
         .select(
-          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method",
+          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at",
         )
         .eq("id", deepLinkLeadId)
         .maybeSingle();
@@ -850,13 +855,15 @@ function Inner() {
   //   • no filters at all      → reuse the cached `cs_leads_status_counts` RPC
   //   • only a status selected → reuse the same cached RPC's per-status counts
   // A real count query only runs when a date/owner/search/garage filter is on.
-  const needsCountQuery = Boolean(dbDateFrom || dbDateTo || dbOwner || dbSearch || garageDoorOnly);
+  const needsCountQuery = Boolean(
+    dbDateFrom || dbDateTo || dbOwner || dbSearch || garageDoorOnly || notCalledOnly,
+  );
 
   const totalCount = useQuery({
     queryKey: [
       "cs_leads",
       "cs_leads_count",
-      { dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, garageDoorOnly },
+      { dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, garageDoorOnly, notCalledOnly },
     ],
     enabled: needsCountQuery,
     queryFn: async () => {
@@ -875,6 +882,8 @@ function Inner() {
       }
 
       if (dbStatus) q = q.eq("cs_status", dbStatus);
+
+      if (notCalledOnly) q = q.is("called_at", null);
 
       if (dbSearch) {
         const s = `%${dbSearch}%`;
@@ -932,7 +941,7 @@ function Inner() {
     queryKey: [
       "cs_leads",
       "cs_garage_door_count",
-      { dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, areaFilter },
+      { dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, areaFilter, notCalledOnly },
     ],
     enabled: garageDoorOnly,
     queryFn: async () => {
@@ -948,6 +957,8 @@ function Inner() {
       }
 
       if (dbStatus) q = q.eq("cs_status", dbStatus);
+
+      if (notCalledOnly) q = q.is("called_at", null);
 
       if (dbSearch) {
         const s = `%${dbSearch}%`;
@@ -983,6 +994,22 @@ function Inner() {
       : cachedStatusTotal;
 
   const totalPages = Math.max(1, Math.ceil(effectiveTotalCount / PAGE_SIZE));
+
+  const notCalledFilterValue: NotCalledFilter = notCalledOnly
+    ? dbStatus ?? "__all__"
+    : "__off__";
+
+  function changeNotCalledFilter(value: string) {
+    const next = value as NotCalledFilter;
+    if (next === "__off__") {
+      setNotCalledOnly(false);
+      return;
+    }
+
+    setNotCalledOnly(true);
+    setActiveStatus(next === "__all__" ? "__all__" : next);
+    setViewMode("table");
+  }
 
   // ── Eastern-Time date rollover ─────────────────────────────────────────
   // `etDateKey` is a "YYYY-MM-DD" string (ET) that updates at the exact
@@ -1287,6 +1314,8 @@ function Inner() {
         "Requirement 1",
         "Requirement 2",
         "Status",
+        "Delivery",
+        "Called At (ET)",
         "Assigned To",
         "Area",
         "Sub Area",
@@ -1300,6 +1329,8 @@ function Inner() {
         lead.requirement_1 ?? "",
         lead.requirement_2 ?? "",
         STATUS_LABEL[lead.cs_status] ?? lead.cs_status,
+        lead.contact_method === "called" ? "Called" : "Texted",
+        lead.called_at ? formatCsPipelineDateTime(lead.called_at) : "",
         lead.assigned_to
           ? (teamById.get(lead.assigned_to)?.full_name ??
             teamById.get(lead.assigned_to)?.email ??
@@ -1790,7 +1821,10 @@ function Inner() {
             ))}
             <button
               type="button"
-              onClick={() => setActiveStatus("templates")}
+              onClick={() => {
+                setNotCalledOnly(false);
+                setActiveStatus("templates");
+              }}
               className={cn(
                 "crm-motion px-3 h-8 text-[12px] font-medium rounded-lg inline-flex items-center gap-1.5",
                 activeStatus === "templates"
@@ -1802,33 +1836,61 @@ function Inner() {
               Templates
             </button>
           </div>
-          <div className="inline-flex items-center gap-1 rounded-xl border border-border bg-surface p-1 ">
-            <button
-              type="button"
-              onClick={() => setViewMode("cards")}
-              className={cn(
-                "crm-motion h-8 px-3 rounded-lg text-[12px] font-medium inline-flex items-center gap-1.5",
-                viewMode === "cards"
-                  ? "bg-surface-hover text-foreground ring-1 ring-border shadow-sm"
-                  : "text-muted-foreground hover:bg-surface hover:text-foreground",
-              )}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              Cards
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("table")}
-              className={cn(
-                "crm-motion h-8 px-3 rounded-lg text-[12px] font-medium inline-flex items-center gap-1.5",
-                viewMode === "table"
-                  ? "bg-surface-hover text-foreground ring-1 ring-border shadow-sm"
-                  : "text-muted-foreground hover:bg-surface hover:text-foreground",
-              )}
-            >
-              <Table2 className="h-3.5 w-3.5" />
-              Table
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-surface px-2.5">
+              <Phone
+                className={cn(
+                  "h-3.5 w-3.5",
+                  notCalledOnly ? "text-primary" : "text-muted-foreground",
+                )}
+              />
+              <span className="text-[11px] font-semibold text-muted-foreground">Not called</span>
+              <Select value={notCalledFilterValue} onValueChange={changeNotCalledFilter}>
+                <SelectTrigger className="h-7 w-[170px] border-0 bg-transparent px-2 text-[12px] shadow-none focus:ring-0 focus:ring-offset-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__off__">Filter off</SelectItem>
+                  <SelectItem value="__all__">All statuses</SelectItem>
+                  {PIPELINE_STATUSES.map((statusOption) => (
+                    <SelectItem key={statusOption} value={statusOption}>
+                      {STATUS_LABEL[statusOption] ?? statusOption}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="inline-flex items-center gap-1 rounded-xl border border-border bg-surface p-1 ">
+              <button
+                type="button"
+                onClick={() => {
+                  setNotCalledOnly(false);
+                  setViewMode("cards");
+                }}
+                className={cn(
+                  "crm-motion h-8 px-3 rounded-lg text-[12px] font-medium inline-flex items-center gap-1.5",
+                  viewMode === "cards"
+                    ? "bg-surface-hover text-foreground ring-1 ring-border shadow-sm"
+                    : "text-muted-foreground hover:bg-surface hover:text-foreground",
+                )}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Cards
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("table")}
+                className={cn(
+                  "crm-motion h-8 px-3 rounded-lg text-[12px] font-medium inline-flex items-center gap-1.5",
+                  viewMode === "table"
+                    ? "bg-surface-hover text-foreground ring-1 ring-border shadow-sm"
+                    : "text-muted-foreground hover:bg-surface hover:text-foreground",
+                )}
+              >
+                <Table2 className="h-3.5 w-3.5" />
+                Table
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1851,7 +1913,9 @@ function Inner() {
         <div className="crm-section-panel">
           <div className="glass-card p-10 text-center text-[12.5px] text-muted-foreground">
             <Search className="h-5 w-5 mx-auto mb-2 opacity-50" />
-            No leads yet. New leads will appear here when forwarded from the pipeline.
+            {notCalledOnly
+              ? "No leads in this status are waiting to be called."
+              : "No leads yet. New leads will appear here when forwarded from the pipeline."}
           </div>
         </div>
       ) : (
@@ -2147,6 +2211,8 @@ function CsLeadsTable({
             <th className="text-left px-3 py-2 font-medium">Second Phone</th>
             <th className="text-left px-3 py-2 font-medium">Number Name</th>
             <th className="text-left px-3 py-2 font-medium">Status</th>
+            <th className="text-left px-3 py-2 font-medium">Delivery</th>
+            <th className="text-left px-3 py-2 font-medium">Called at</th>
             <th className="text-left px-3 py-2 font-medium">Assigned</th>
             <th className="text-left px-3 py-2 font-medium">Area</th>
             <th className="text-left px-3 py-2 font-medium">Compose</th>
@@ -2206,6 +2272,26 @@ function CsLeadsTable({
                 <td className="px-3 py-2">
                   <StatusBadge status={lead.cs_status} />
                 </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-semibold",
+                      lead.contact_method === "called"
+                        ? "border-primary/25 bg-primary/10 text-primary"
+                        : "border-border bg-surface text-muted-foreground",
+                    )}
+                  >
+                    {lead.contact_method === "called" ? (
+                      <Phone className="h-3 w-3" />
+                    ) : (
+                      <MessageSquareText className="h-3 w-3" />
+                    )}
+                    {lead.contact_method === "called" ? "Called" : "Texted"}
+                  </span>
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-muted-foreground tabular-nums">
+                  {lead.called_at ? formatCsPipelineDateTime(lead.called_at) : "—"}
+                </td>
                 <td className="px-3 py-2 text-muted-foreground">
                   {assignee ? assignee.full_name || assignee.email : "Unassigned"}
                 </td>
@@ -2252,6 +2338,7 @@ function LeadCard({
   const [contactMethod, setContactMethodState] = useState<ContactMethod>(
     lead.contact_method ?? "texted",
   );
+  const [calledAt, setCalledAt] = useState<string | null>(lead.called_at);
   const [savingContactMethod, setSavingContactMethod] = useState(false);
   const [assignedTo, setAssignedTo] = useState<string | null>(lead.assigned_to);
   const [saving, setSaving] = useState(false);
@@ -2342,12 +2429,15 @@ function LeadCard({
   async function changeContactMethod(method: ContactMethod) {
     if (method === contactMethod) return;
     const prev = contactMethod;
+    const previousCalledAt = calledAt;
+    const nextCalledAt = method === "called" ? new Date().toISOString() : null;
     setContactMethodState(method);
+    setCalledAt(nextCalledAt);
     setSavingContactMethod(true);
     try {
       const { error } = await supabase
         .from("qualified_leads")
-        .update({ contact_method: method })
+        .update({ contact_method: method, called_at: nextCalledAt })
         .eq("id", lead.id);
       if (error) throw error;
       await supabase.from("activity_logs").insert({
@@ -2357,12 +2447,22 @@ function LeadCard({
         action: "cs.contact_method_changed",
         entity_type: "qualified_lead",
         entity_id: lead.id,
-        metadata: { contact_method: method, previous_contact_method: prev, from: "card" },
+        metadata: {
+          contact_method: method,
+          previous_contact_method: prev,
+          called_at: nextCalledAt,
+          from: "card",
+        },
       });
-      void syncLeadToGoogleSheet("UPDATE", { ...lead, contact_method: method });
+      void syncLeadToGoogleSheet("UPDATE", {
+        ...lead,
+        contact_method: method,
+        called_at: nextCalledAt,
+      });
       qc.invalidateQueries({ queryKey: ["cs_leads"] });
     } catch (e) {
       setContactMethodState(prev);
+      setCalledAt(previousCalledAt);
       toast.error(friendlyError(e));
     } finally {
       setSavingContactMethod(false);
@@ -2722,6 +2822,7 @@ function LeadCard({
         />
         <ContactMethodToggle
           value={contactMethod}
+          calledAt={calledAt}
           onChange={changeContactMethod}
           disabled={
             savingContactMethod ||
@@ -3121,11 +3222,13 @@ function StatusPicker({
 
 function ContactMethodToggle({
   value,
+  calledAt,
   onChange,
   disabled,
   saving,
 }: {
   value: ContactMethod;
+  calledAt?: string | null;
   onChange: (method: ContactMethod) => void;
   disabled?: boolean;
   saving?: boolean;
@@ -3135,37 +3238,44 @@ function ContactMethodToggle({
     { key: "called", label: "Called", icon: Phone },
   ];
   return (
-    <div className="flex items-center gap-2">
-      <span className="crm-lead-label !text-[10px] !tracking-[0.08em] !font-bold !text-muted-foreground">
-        Delivery
-      </span>
-      <div className="inline-flex items-center gap-1 rounded-full border border-border bg-surface/70 p-0.5">
-        {options.map((option) => {
-          const active = value === option.key;
-          const Icon = option.icon;
-          return (
-            <button
-              key={option.key}
-              type="button"
-              onClick={() => {
-                if (!active && !disabled) onChange(option.key);
-              }}
-              disabled={disabled}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 crm-pill-text transition-colors",
-                active
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-                disabled && "cursor-not-allowed opacity-60",
-              )}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              <span>{option.label}</span>
-            </button>
-          );
-        })}
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="crm-lead-label !text-[10px] !tracking-[0.08em] !font-bold !text-muted-foreground">
+          Delivery
+        </span>
+        <div className="inline-flex items-center gap-1 rounded-full border border-border bg-surface/70 p-0.5">
+          {options.map((option) => {
+            const active = value === option.key;
+            const Icon = option.icon;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => {
+                  if (!active && !disabled) onChange(option.key);
+                }}
+                disabled={disabled}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 crm-pill-text transition-colors",
+                  active
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                  disabled && "cursor-not-allowed opacity-60",
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span>{option.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
       </div>
-      {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+      {value === "called" && calledAt && (
+        <span className="text-[10.5px] text-muted-foreground tabular-nums">
+          Called {formatCsPipelineDateTime(calledAt)}
+        </span>
+      )}
     </div>
   );
 }
@@ -3246,6 +3356,7 @@ function LeadDrawer({
   const [contactMethod, setContactMethod] = useState<ContactMethod>(
     lead.contact_method ?? "texted",
   );
+  const [calledAt, setCalledAt] = useState<string | null>(lead.called_at);
   const [assignedTo, setAssignedTo] = useState<string | null>(lead.assigned_to);
   const [note, setNote] = useState("");
   const [numberName, setNumberName] = useState(lead.number_name ?? "");
@@ -3346,6 +3457,11 @@ function LeadDrawer({
     if (next !== status) setStatus(next);
   }
 
+  function changeDrawerContactMethod(method: ContactMethod) {
+    setContactMethod(method);
+    setCalledAt(method === "called" ? lead.called_at ?? new Date().toISOString() : null);
+  }
+
   async function save() {
     setBusy(true);
     try {
@@ -3364,6 +3480,7 @@ function LeadDrawer({
         .update({
           cs_status: status,
           contact_method: contactMethod,
+          called_at: calledAt,
           cs_notes: newNotes as Json,
           followup_at: csPipelineInputValueToUtcIso(followup),
           assigned_to: assignedTo,
@@ -3388,6 +3505,7 @@ function LeadDrawer({
         ...lead,
         cs_status: status,
         contact_method: contactMethod,
+        called_at: calledAt,
         number_name: numberName.trim() || null,
         marketing_notes: compose.trim() || null,
         requirement_1: requirement1.trim() || null,
@@ -3408,6 +3526,7 @@ function LeadDrawer({
           status,
           previous_status: lead.cs_status,
           contact_method: contactMethod,
+          called_at: calledAt,
           hasNote: !!note.trim(),
           assigned_to: assignedTo,
           from: "drawer",
@@ -3531,7 +3650,8 @@ function LeadDrawer({
                 <div className="mt-3">
                   <ContactMethodToggle
                     value={contactMethod}
-                    onChange={setContactMethod}
+                    calledAt={calledAt}
+                    onChange={changeDrawerContactMethod}
                     disabled={
                       busy || (!isAdmin && !isCs && (!assignedTo || auth.user?.id !== assignedTo))
                     }

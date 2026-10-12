@@ -777,6 +777,7 @@ export type Database = {
           assigned_to: string | null
           canonical_lead_link: string | null
           canonical_post_id: string | null
+          called_at: string | null
           contact_method: string
           context: string | null
           created_at: string
@@ -819,6 +820,7 @@ export type Database = {
           assigned_to?: string | null
           canonical_lead_link?: string | null
           canonical_post_id?: string | null
+          called_at?: string | null
           contact_method?: string
           context?: string | null
           created_at?: string
@@ -861,6 +863,7 @@ export type Database = {
           assigned_to?: string | null
           canonical_lead_link?: string | null
           canonical_post_id?: string | null
+          called_at?: string | null
           contact_method?: string
           context?: string | null
           created_at?: string
@@ -1505,6 +1508,7 @@ export type Database = {
           assigned_to: string | null
           canonical_lead_link: string | null
           canonical_post_id: string | null
+          called_at: string | null
           contact_method: string
           context: string | null
           created_at: string
