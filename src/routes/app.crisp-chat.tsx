@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   Building2,
   Check,
+  CheckCheck,
   CheckCircle2,
   ChevronUp,
   Copy,
@@ -159,6 +160,7 @@ type MessageRecord = {
   content: string;
   message_type: string | null;
   sent_at: string;
+  delivery_state?: "sent" | "delivered" | "seen" | string | null;
   raw_payload: CrispRawPayload | null;
 };
 
@@ -403,6 +405,38 @@ function getInitials(value: string) {
       .slice(0, 2)
       .map((part) => part[0]?.toUpperCase())
       .join("") || "V"
+  );
+}
+
+function MessageDeliveryStatus({ state }: { state?: string | null }) {
+  const normalized = state === "delivered" || state === "seen" ? state : "sent";
+  if (normalized === "seen") {
+    return (
+      <span className="flex items-center gap-0.5 text-[10px] font-medium text-sky-500" title="Seen">
+        <CheckCheck className="h-3 w-3" />
+        Seen
+      </span>
+    );
+  }
+  if (normalized === "delivered") {
+    return (
+      <span
+        className="flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground"
+        title="Delivered"
+      >
+        <CheckCheck className="h-3 w-3" />
+        Delivered
+      </span>
+    );
+  }
+  return (
+    <span
+      className="flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground"
+      title="Sent"
+    >
+      <Check className="h-3 w-3" />
+      Sent
+    </span>
   );
 }
 
@@ -1015,6 +1049,21 @@ function CrispInboxInner() {
       )
       .on(
         "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "crisp_messages" },
+        (payload) => {
+          const activeId = selectedConversationIdRef.current;
+          const updated = payload.new as MessageRecord;
+          if (!activeId || !updated || updated.conversation_id !== activeId) return;
+          // Keep delivery-state ticks (sent -> delivered -> seen) in sync live.
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === updated.id ? { ...m, delivery_state: updated.delivery_state } : m,
+            ),
+          );
+        },
+      )
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "crisp_conversation_notes" },
         () => {
           const activeId = selectedConversationIdRef.current;
@@ -1275,6 +1324,7 @@ function CrispInboxInner() {
             content: content,
             message_type: "text",
             sent_at: res.sent_at || new Date().toISOString(),
+            delivery_state: "sent",
             raw_payload: {},
           };
           return [...prev, tempMsg];
@@ -2146,9 +2196,19 @@ function CrispInboxInner() {
                           <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                         )}
                       </div>
-                      <span className="text-[10px] text-muted-foreground px-1 mt-0.5 font-medium">
-                        {formatMessageDateTime(msg.sent_at)}
-                      </span>
+                      <div
+                        className={cn(
+                          "flex items-center gap-1.5 px-1 mt-0.5",
+                          isOperator ? "flex-row-reverse" : "flex-row",
+                        )}
+                      >
+                        <span className="text-[10px] text-muted-foreground font-medium">
+                          {formatMessageDateTime(msg.sent_at)}
+                        </span>
+                        {isOperator && !isMasked && (
+                          <MessageDeliveryStatus state={msg.delivery_state} />
+                        )}
+                      </div>
                     </div>
                   );
                 })}

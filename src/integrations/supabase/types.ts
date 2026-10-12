@@ -219,6 +219,7 @@ export type Database = {
           crisp_message_id: string | null
           crisp_session_id: string
           crisp_website_id: string
+          delivery_state: string
           direction: string
           id: string
           message_type: string | null
@@ -233,6 +234,7 @@ export type Database = {
           crisp_message_id?: string | null
           crisp_session_id: string
           crisp_website_id: string
+          delivery_state?: string
           direction: string
           id?: string
           message_type?: string | null
@@ -247,6 +249,7 @@ export type Database = {
           crisp_message_id?: string | null
           crisp_session_id?: string
           crisp_website_id?: string
+          delivery_state?: string
           direction?: string
           id?: string
           message_type?: string | null

@@ -158,6 +158,48 @@ serve(async (req) => {
       );
     }
 
+    // ─── MESSAGE ACKNOWLEDGEMENTS (delivery / seen receipts) ─────────────────
+    // Crisp emits message:acknowledge:delivered and message:acknowledge:read:*
+    // events carrying the fingerprints of operator messages that were delivered
+    // to / read by the visitor. Upgrade each matching outgoing message's
+    // delivery_state so the inbox can show Sent -> Delivered -> Seen ticks.
+    // State only ever moves forward, never backward.
+    if (eventType.startsWith("message:acknowledge")) {
+      const rawFingerprints = Array.isArray(data.fingerprints)
+        ? data.fingerprints
+        : data.fingerprint != null
+          ? [data.fingerprint]
+          : [];
+      const fingerprintIds = rawFingerprints
+        .map((f: unknown) => String(f))
+        .filter((f: string) => f.length > 0);
+
+      // read receipts => "seen"; everything else (delivered) => "delivered".
+      const isSeen = eventType.includes(":read");
+      const nextState = isSeen ? "seen" : "delivered";
+      const upgradableFrom = isSeen ? ["sent", "delivered"] : ["sent"];
+
+      if (fingerprintIds.length > 0) {
+        const { error: ackErr } = await supabase
+          .from("crisp_messages")
+          .update({ delivery_state: nextState })
+          .eq("crisp_website_id", websiteId)
+          .eq("crisp_session_id", sessionId)
+          .eq("direction", "outgoing")
+          .in("crisp_message_id", fingerprintIds)
+          .in("delivery_state", upgradableFrom);
+        // 42703 = column does not exist (migration not yet applied) — ignore.
+        if (ackErr && ackErr.code !== "42703") {
+          console.error("Failed to update message delivery state:", ackErr.message);
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ status: "success", acknowledge: nextState, count: fingerprintIds.length }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // ─── EVENT CLASSIFICATION ───────────────────────────────────────────────
     const isMessageEvent = isGenuineMessageEvent(eventType);
     const rawFrom = String(data.from || "user").toLowerCase();
