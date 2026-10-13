@@ -148,6 +148,27 @@ serve(async (req) => {
       .update({ last_seen_at: new Date().toISOString() })
       .eq("id", wsRecord.id);
 
+    // Crisp documents this as `website:update_visitors_count`. The loose match
+    // also accepts alternate/legacy names such as `website:visitors:count`.
+    if (eventType.includes("visitors") && eventType.includes("count")) {
+      try {
+        await fetch(`${supabaseUrl}/functions/v1/crisp-auto-greet`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${supabaseServiceKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ websiteId, immediate: true }),
+        });
+      } catch (err) {
+        console.error("Failed to trigger auto-greet sweep:", err);
+      }
+      return new Response(JSON.stringify({ status: "success", event: "visitors-count" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const sessionId = data.session_id || body.session_id;
 
     if (!sessionId) {

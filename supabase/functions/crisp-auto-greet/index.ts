@@ -16,7 +16,7 @@ const corsHeaders = {
 };
 
 const CRISP_VISITOR_PAGE_LIMIT = 10;
-const SYNC_STALE_MS = 4_000;
+const SYNC_STALE_MS = 20_000;
 
 type CrispApiVisitor = {
   session_id?: string;
@@ -100,15 +100,25 @@ serve(async (req) => {
     });
   }
 
+  const body = await req.json().catch(() => ({}));
+  const onlyWebsiteId = typeof body.websiteId === "string" ? body.websiteId : null;
+  const immediate = body.immediate === true;
+
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  const { data: workspaces, error: wsErr } = await supabase
+  let workspacesQuery = supabase
     .from("crisp_workspaces")
     .select(
       "crisp_website_id, workspace_name, credential_secret_id, auto_greet_enabled, auto_greet_message, auto_greet_delay_seconds",
     )
     .eq("enabled", true)
     .eq("auto_greet_enabled", true);
+
+  if (onlyWebsiteId) {
+    workspacesQuery = workspacesQuery.eq("crisp_website_id", onlyWebsiteId);
+  }
+
+  const { data: workspaces, error: wsErr } = await workspacesQuery;
 
   if (wsErr) {
     return new Response(JSON.stringify({ error: wsErr.message }), {
@@ -118,14 +128,14 @@ serve(async (req) => {
   }
 
   const nowIso = new Date().toISOString();
-  const staleBefore = new Date(Date.now() - SYNC_STALE_MS).toISOString();
+  const staleMs = immediate ? 3_000 : SYNC_STALE_MS;
+  const staleBefore = new Date(Date.now() - staleMs).toISOString();
   let greeted = 0;
 
   await Promise.all(
     (workspaces ?? []).map(async (ws) => {
       const websiteId = ws.crisp_website_id as string;
-      const message =
-        typeof ws.auto_greet_message === "string" ? ws.auto_greet_message.trim() : "";
+      const message = typeof ws.auto_greet_message === "string" ? ws.auto_greet_message.trim() : "";
       if (!message || !ws.credential_secret_id) return;
 
       try {
