@@ -432,7 +432,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
     let reportedActiveCount = 0;
     let limited = false;
 
-    const staleBefore = new Date(now.getTime() - 10_000).toISOString();
+    const staleBefore = new Date(now.getTime() - 4_000).toISOString();
     await Promise.all(
       (workspaces ?? []).map(async (workspace: CrispWorkspaceRow): Promise<CrispVisitor[]> => {
         try {
