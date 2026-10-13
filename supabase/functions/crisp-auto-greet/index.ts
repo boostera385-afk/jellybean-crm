@@ -38,6 +38,20 @@ type CrispApiVisitor = {
   locales?: string[];
 };
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const b64 = part
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(part.length / 4) * 4, "=");
+    return JSON.parse(atob(b64)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 function crispHeaders(tokenId: string, tokenKey: string): Record<string, string> {
   return {
     Authorization: `Basic ${btoa(`${tokenId}:${tokenKey}`)}`,
@@ -60,10 +74,26 @@ serve(async (req) => {
     });
   }
 
-  // Only the pg_cron job (carrying the service role key) may trigger sends.
+  // Authorize the caller. The pg_cron job sends a service-role key. Accept it
+  // either by exact match against this function's injected service-role key, or
+  // by validating the bearer is a non-expired service_role JWT for THIS project
+  // (covers projects that have more than one valid service-role key, e.g. after
+  // a JWT-secret rotation, where the injected key differs from the stored one).
   const auth = req.headers.get("Authorization") || "";
-  const bearer = auth.replace(/^Bearer\s+/i, "");
-  if (bearer !== serviceKey) {
+  const bearer = auth.replace(/^Bearer\s+/i, "").trim();
+  const projectRef = supabaseUrl.match(/^https:\/\/([^.]+)\./)?.[1] || "";
+
+  let authorized = bearer.length > 0 && bearer === serviceKey.trim();
+  if (!authorized && bearer) {
+    const claims = decodeJwtPayload(bearer);
+    const exp = typeof claims?.exp === "number" ? (claims.exp as number) : null;
+    const notExpired = exp === null || exp * 1000 > Date.now();
+    authorized =
+      claims?.role === "service_role" &&
+      (claims?.ref === projectRef || projectRef === "") &&
+      notExpired;
+  }
+  if (!authorized) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
