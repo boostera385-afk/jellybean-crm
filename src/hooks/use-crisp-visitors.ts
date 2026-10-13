@@ -17,24 +17,27 @@ const EMPTY_OVERVIEW: CrispVisitorOverview = {
 // the message notifier) reads from ONE polling loop instead of each firing its
 // own request. React Query dedupes by key, so mounting the hook in several
 // places still results in just one fetch every refetch interval.
-const CRISP_VISITORS_QUERY_KEY = ["crisp-visitor-overview"] as const;
-const CRISP_VISITORS_REFETCH_MS = 4_000;
+export const CRISP_VISITORS_QUERY_KEY = ["crisp-visitor-overview"] as const;
+// Live-visitor changes are pushed over Supabase Realtime (see CrispVisitorAlerts),
+// so this interval is only a safety-net for when the realtime channel drops or
+// to drive the sync if the server-side sweeper is not running. Keeping it slow
+// avoids redundant polling while the realtime path handles freshness.
+const CRISP_VISITORS_REFETCH_MS = 20_000;
 
 export function useCrispVisitors(enabled = true) {
   return useQuery({
     queryKey: CRISP_VISITORS_QUERY_KEY,
     queryFn: async () => getCrispVisitorOverview({ data: {} }),
     enabled,
-    // Keep staleTime just under the poll interval so background remounts reuse
-    // the cached snapshot instead of kicking off an extra fetch.
-    staleTime: CRISP_VISITORS_REFETCH_MS - 500,
+    // Short staleTime so a realtime-triggered invalidation always refetches.
+    staleTime: 2_000,
     refetchInterval: CRISP_VISITORS_REFETCH_MS,
-    // Don't hammer the Crisp API while the browser tab is hidden — the next
-    // refetch on focus (refetchOnWindowFocus) catches the operator up instantly.
+    // Don't poll while the browser tab is hidden — the next refetch on focus
+    // (refetchOnWindowFocus) catches the operator up instantly.
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
-    // A 4s cadence already retries constantly; an extra retry on failure just
-    // doubles the request rate against Crisp, so let the next tick recover.
+    // The interval already recovers from a failed tick; an extra retry just
+    // doubles the request rate against Crisp.
     retry: false,
     placeholderData: EMPTY_OVERVIEW,
   });
