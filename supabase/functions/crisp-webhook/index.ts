@@ -105,7 +105,9 @@ serve(async (req) => {
     // 1. LOOKUP WORKSPACE — must be active and enabled
     const { data: wsRecord, error: wsErr } = await supabase
       .from("crisp_workspaces")
-      .select("id, enabled, credential_secret_id, auto_greet_enabled, auto_greet_message")
+      .select(
+        "id, enabled, credential_secret_id, auto_greet_enabled, auto_greet_message, auto_greet_delay_seconds",
+      )
       .eq("crisp_website_id", websiteId)
       .maybeSingle();
 
@@ -337,7 +339,7 @@ serve(async (req) => {
       const { data: existingVisitor } = await supabase
         .from("crisp_visitors")
         .select(
-          "nickname, email, avatar, user_agent, initiated, active, is_online, last_online_at, last_page_title, last_page_url, country, region, city, latitude, longitude, timezone_minutes, capabilities, locales, last_seen_at, auto_greeted_at",
+          "nickname, email, avatar, user_agent, initiated, active, is_online, last_online_at, last_page_title, last_page_url, country, region, city, latitude, longitude, timezone_minutes, capabilities, locales, last_seen_at, auto_greeted_at, auto_greet_due_at",
         )
         .eq("crisp_website_id", websiteId)
         .eq("crisp_session_id", sessionId)
@@ -527,7 +529,32 @@ serve(async (req) => {
           !existingVisitor?.auto_greeted_at &&
           !(existingConv && existingConv.last_message);
 
-        if (canAutoGreet) {
+        // Optional per-workspace delay: wait N seconds after the visitor is
+        // first seen live before greeting. We schedule a due time on the first
+        // live sighting and only send once it has passed (sent on the next
+        // activity event after the delay). A 0s delay sends immediately.
+        const delaySeconds = Math.max(
+          0,
+          Math.min(3600, Number(wsRecord.auto_greet_delay_seconds) || 0),
+        );
+        const dueAtMs = existingVisitor?.auto_greet_due_at
+          ? new Date(existingVisitor.auto_greet_due_at).getTime()
+          : null;
+        const greetingDue = dueAtMs == null ? delaySeconds <= 0 : Date.now() >= dueAtMs;
+
+        if (canAutoGreet && dueAtMs == null && delaySeconds > 0) {
+          // First live sighting with a delay configured — schedule, don't send.
+          await supabase
+            .from("crisp_visitors")
+            .update({
+              auto_greet_due_at: new Date(Date.now() + delaySeconds * 1000).toISOString(),
+            })
+            .eq("crisp_website_id", websiteId)
+            .eq("crisp_session_id", sessionId)
+            .is("auto_greet_due_at", null);
+        }
+
+        if (canAutoGreet && greetingDue) {
           // Atomically claim the greeting so two near-simultaneous events can't
           // both send: only the update that flips NULL -> now() proceeds.
           const { data: claimed } = await supabase

@@ -1146,19 +1146,24 @@ export const deleteCrispWorkspace = createServerFn({ method: "POST" })
 // new live visitor. Admin only.
 export const updateCrispWorkspaceAutoGreet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { websiteId: string; enabled: boolean; message: string }) => {
-    const websiteId = String(input?.websiteId ?? "").trim();
-    if (!websiteId) throw new Error("websiteId is required");
-    const enabled = Boolean(input?.enabled);
-    const message = String(input?.message ?? "").trim();
-    if (enabled && !message) {
-      throw new Error("An auto-greeting message is required to enable auto-greeting.");
-    }
-    if (message.length > 2000) {
-      throw new Error("Auto-greeting message must be 2000 characters or fewer.");
-    }
-    return { websiteId, enabled, message };
-  })
+  .inputValidator(
+    (input: { websiteId: string; enabled: boolean; message: string; delaySeconds?: number }) => {
+      const websiteId = String(input?.websiteId ?? "").trim();
+      if (!websiteId) throw new Error("websiteId is required");
+      const enabled = Boolean(input?.enabled);
+      const message = String(input?.message ?? "").trim();
+      if (enabled && !message) {
+        throw new Error("An auto-greeting message is required to enable auto-greeting.");
+      }
+      if (message.length > 2000) {
+        throw new Error("Auto-greeting message must be 2000 characters or fewer.");
+      }
+      let delaySeconds = Math.round(Number(input?.delaySeconds ?? 0));
+      if (!Number.isFinite(delaySeconds) || delaySeconds < 0) delaySeconds = 0;
+      if (delaySeconds > 3600) delaySeconds = 3600;
+      return { websiteId, enabled, message, delaySeconds };
+    },
+  )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertAdmin(supabase, userId);
@@ -1170,6 +1175,7 @@ export const updateCrispWorkspaceAutoGreet = createServerFn({ method: "POST" })
       .update({
         auto_greet_enabled: data.enabled,
         auto_greet_message: data.message || null,
+        auto_greet_delay_seconds: data.delaySeconds,
         updated_at: new Date().toISOString(),
       })
       .eq("crisp_website_id", data.websiteId);
@@ -1178,7 +1184,12 @@ export const updateCrispWorkspaceAutoGreet = createServerFn({ method: "POST" })
       return { ok: false as const, error: `Failed to save auto-greeting: ${error.message}` };
     }
 
-    return { ok: true as const, enabled: data.enabled, message: data.message };
+    return {
+      ok: true as const,
+      enabled: data.enabled,
+      message: data.message,
+      delaySeconds: data.delaySeconds,
+    };
   });
 
 export const getCrispConversationNotes = createServerFn({ method: "POST" })

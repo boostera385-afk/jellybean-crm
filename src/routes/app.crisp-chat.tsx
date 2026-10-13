@@ -178,6 +178,7 @@ type WorkspaceRecord = {
   last_synced_at: string | null;
   auto_greet_enabled?: boolean | null;
   auto_greet_message?: string | null;
+  auto_greet_delay_seconds?: number | null;
 };
 
 type NoteRecord = {
@@ -621,6 +622,7 @@ function CrispInboxInner() {
   const [autoGreetWs, setAutoGreetWs] = useState<WorkspaceRecord | null>(null);
   const [autoGreetEnabled, setAutoGreetEnabled] = useState(false);
   const [autoGreetMessage, setAutoGreetMessage] = useState("");
+  const [autoGreetDelay, setAutoGreetDelay] = useState("0");
   const [isSavingAutoGreet, setIsSavingAutoGreet] = useState(false);
 
   // Refs for message container, conversation scroll container, and stable realtime access
@@ -1714,6 +1716,7 @@ function CrispInboxInner() {
     setAutoGreetWs(ws);
     setAutoGreetEnabled(Boolean(ws.auto_greet_enabled));
     setAutoGreetMessage(ws.auto_greet_message ?? "");
+    setAutoGreetDelay(String(ws.auto_greet_delay_seconds ?? 0));
   };
 
   const handleSaveAutoGreet = async () => {
@@ -1724,11 +1727,13 @@ function CrispInboxInner() {
     }
     setIsSavingAutoGreet(true);
     try {
+      const parsedDelay = Math.max(0, Math.min(3600, Math.round(Number(autoGreetDelay) || 0)));
       const res = await updateCrispWorkspaceAutoGreet({
         data: {
           websiteId: autoGreetWs.crisp_website_id,
           enabled: autoGreetEnabled,
           message: autoGreetMessage.trim(),
+          delaySeconds: parsedDelay,
         },
       });
       if (!res.ok) {
@@ -2840,6 +2845,27 @@ function CrispInboxInner() {
                 <p className="text-[11px] text-muted-foreground">
                   Use <code className="font-mono">{"{{name}}"}</code> for the visitor&apos;s name and{" "}
                   <code className="font-mono">{"{{city}}"}</code> for their city.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="auto-greet-delay" className="text-xs font-semibold">
+                  Delay before sending (seconds)
+                </Label>
+                <Input
+                  id="auto-greet-delay"
+                  type="number"
+                  min={0}
+                  max={3600}
+                  step={1}
+                  value={autoGreetDelay}
+                  onChange={(e) => setAutoGreetDelay(e.target.value)}
+                  className="h-9 text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Wait this long after a visitor goes live before greeting them. 0 = send
+                  immediately. The greeting fires on the visitor&apos;s next activity once the delay
+                  has passed, so quick bouncers are skipped.
                 </p>
               </div>
 

@@ -303,6 +303,7 @@ export type Database = {
       crisp_visitors: {
         Row: {
           active: boolean
+          auto_greet_due_at: string | null
           auto_greeted_at: string | null
           avatar: string | null
           capabilities: string[]
@@ -331,6 +332,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          auto_greet_due_at?: string | null
           auto_greeted_at?: string | null
           avatar?: string | null
           capabilities?: string[]
@@ -359,6 +361,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          auto_greet_due_at?: string | null
           auto_greeted_at?: string | null
           avatar?: string | null
           capabilities?: string[]
@@ -426,6 +429,7 @@ export type Database = {
       crisp_workspaces: {
         Row: {
           active_visitor_count: number
+          auto_greet_delay_seconds: number
           auto_greet_enabled: boolean
           auto_greet_message: string | null
           created_at: string
@@ -445,6 +449,7 @@ export type Database = {
         }
         Insert: {
           active_visitor_count?: number
+          auto_greet_delay_seconds?: number
           auto_greet_enabled?: boolean
           auto_greet_message?: string | null
           created_at?: string
@@ -464,6 +469,7 @@ export type Database = {
         }
         Update: {
           active_visitor_count?: number
+          auto_greet_delay_seconds?: number
           auto_greet_enabled?: boolean
           auto_greet_message?: string | null
           created_at?: string
