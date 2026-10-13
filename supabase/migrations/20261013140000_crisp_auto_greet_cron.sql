@@ -3,15 +3,18 @@
 --
 -- The sweeper edge function (crisp-auto-greet) is invoked every 5 seconds via
 -- pg_cron + pg_net. The target URL and the service-role key are read at run time
--- from database settings so no secrets are committed here. Configure them once
--- (replace the placeholders) after enabling pg_cron and pg_net:
+-- from Supabase Vault so no secrets are committed here, and no database-level
+-- parameters are required (ALTER DATABASE is not permitted on Supabase SQL).
 --
---   ALTER DATABASE postgres
---     SET app.crisp_auto_greet_url = 'https://<project-ref>.supabase.co/functions/v1/crisp-auto-greet';
---   ALTER DATABASE postgres
---     SET app.crisp_auto_greet_key = '<service_role_key>';
+-- Configure the two Vault secrets once (replace the key placeholder), e.g. in
+-- the SQL Editor:
 --
--- Until both settings are set, the scheduled job is a no-op (it POSTs nothing).
+--   delete from vault.secrets where name in ('crisp_auto_greet_url','crisp_auto_greet_key');
+--   select vault.create_secret(
+--     'https://<project-ref>.supabase.co/functions/v1/crisp-auto-greet', 'crisp_auto_greet_url');
+--   select vault.create_secret('<service_role_key>', 'crisp_auto_greet_key');
+--
+-- Until both secrets exist, the scheduled job is a no-op (it POSTs nothing).
 
 DO $do$
 BEGIN
@@ -37,15 +40,18 @@ BEGIN
       '5 seconds',
       $cron$
         SELECT net.http_post(
-          url := current_setting('app.crisp_auto_greet_url', true),
+          url := (SELECT decrypted_secret FROM vault.decrypted_secrets
+                  WHERE name = 'crisp_auto_greet_url'),
           headers := jsonb_build_object(
-            'Authorization', 'Bearer ' || current_setting('app.crisp_auto_greet_key', true),
+            'Authorization',
+            'Bearer ' || (SELECT decrypted_secret FROM vault.decrypted_secrets
+                          WHERE name = 'crisp_auto_greet_key'),
             'Content-Type', 'application/json'
           ),
           body := '{}'::jsonb
         )
-        WHERE coalesce(current_setting('app.crisp_auto_greet_url', true), '') <> ''
-          AND coalesce(current_setting('app.crisp_auto_greet_key', true), '') <> '';
+        WHERE EXISTS (SELECT 1 FROM vault.decrypted_secrets WHERE name = 'crisp_auto_greet_url')
+          AND EXISTS (SELECT 1 FROM vault.decrypted_secrets WHERE name = 'crisp_auto_greet_key');
       $cron$
     );
   ELSE
