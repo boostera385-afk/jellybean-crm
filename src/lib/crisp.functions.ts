@@ -212,6 +212,178 @@ export const syncCrispHistory = createServerFn({ method: "POST" })
     };
   });
 
+/**
+ * Send the per-workspace auto-greeting to eligible live visitors.
+ *
+ * Runs server-side from the visitor-overview sync (the authoritative source of
+ * who is live). For each live visitor that has not been greeted, has no ongoing
+ * conversation, and whose optional delay has elapsed, it posts the greeting to
+ * Crisp, records the message, and marks the visitor greeted. The per-visitor
+ * `auto_greeted_at` claim (NULL -> now) makes it safe against concurrent syncs.
+ */
+async function autoGreetLiveVisitors({
+  supabaseAdmin,
+  websiteId,
+  headers,
+  message,
+  delaySeconds,
+  liveVisitors,
+  nowIso,
+}: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseAdmin: any;
+  websiteId: string;
+  headers: Record<string, string>;
+  message: string;
+  delaySeconds: number;
+  liveVisitors: CrispVisitor[];
+  nowIso: string;
+}): Promise<void> {
+  if (liveVisitors.length === 0) return;
+  const sessionIds = liveVisitors.map((v) => v.crisp_session_id);
+
+  type GreetRow = {
+    crisp_session_id: string;
+    auto_greeted_at: string | null;
+    auto_greet_due_at: string | null;
+  };
+  const { data: visitorRows } = await supabaseAdmin
+    .from("crisp_visitors")
+    .select("crisp_session_id, auto_greeted_at, auto_greet_due_at")
+    .eq("crisp_website_id", websiteId)
+    .in("crisp_session_id", sessionIds);
+  const greetState = new Map<string, GreetRow>(
+    ((visitorRows ?? []) as GreetRow[]).map((r) => [r.crisp_session_id, r]),
+  );
+
+  type ConvRow = { crisp_session_id: string; last_message: string | null };
+  const { data: convRows } = await supabaseAdmin
+    .from("crisp_conversations")
+    .select("crisp_session_id, last_message")
+    .eq("crisp_website_id", websiteId)
+    .in("crisp_session_id", sessionIds);
+  const convBySession = new Map<string, ConvRow>(
+    ((convRows ?? []) as ConvRow[]).map((c) => [c.crisp_session_id, c]),
+  );
+
+  const nowMs = Date.now();
+
+  for (const visitor of liveVisitors) {
+    const sessionId = visitor.crisp_session_id;
+    const state = greetState.get(sessionId);
+    if (state?.auto_greeted_at) continue; // already greeted
+    const conv = convBySession.get(sessionId);
+    if (conv && conv.last_message) continue; // already in a conversation
+
+    const dueAtMs = state?.auto_greet_due_at ? new Date(state.auto_greet_due_at).getTime() : null;
+    if (dueAtMs == null) {
+      if (delaySeconds > 0) {
+        // First time we see them live with a delay set — schedule, send later.
+        await supabaseAdmin
+          .from("crisp_visitors")
+          .update({ auto_greet_due_at: new Date(nowMs + delaySeconds * 1000).toISOString() })
+          .eq("crisp_website_id", websiteId)
+          .eq("crisp_session_id", sessionId)
+          .is("auto_greet_due_at", null);
+        continue;
+      }
+      // delaySeconds === 0 → send now.
+    } else if (nowMs < dueAtMs) {
+      continue; // scheduled, not due yet
+    }
+
+    // Atomically claim so overlapping syncs can't double-send.
+    const { data: claimed } = await supabaseAdmin
+      .from("crisp_visitors")
+      .update({ auto_greeted_at: new Date().toISOString() })
+      .eq("crisp_website_id", websiteId)
+      .eq("crisp_session_id", sessionId)
+      .is("auto_greeted_at", null)
+      .select("crisp_session_id")
+      .maybeSingle();
+    if (!claimed) continue;
+
+    const content = message
+      .replace(/\{\{\s*name\s*\}\}/gi, visitor.nickname || "there")
+      .replace(/\{\{\s*city\s*\}\}/gi, visitor.city || "");
+
+    try {
+      const res = await fetch(
+        `https://api.crisp.chat/v1/website/${websiteId}/conversation/${sessionId}/message`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ type: "text", from: "operator", origin: "chat", content }),
+        },
+      );
+      const resData = (await res.json().catch(() => ({}))) as {
+        data?: { fingerprint?: number; timestamp?: number };
+        fingerprint?: number;
+        timestamp?: number;
+      };
+
+      if (!res.ok) {
+        // Release the claim so a later sync can retry.
+        await supabaseAdmin
+          .from("crisp_visitors")
+          .update({ auto_greeted_at: null })
+          .eq("crisp_website_id", websiteId)
+          .eq("crisp_session_id", sessionId);
+        continue;
+      }
+
+      const msg = resData.data || resData;
+      const crispMsgId = String(msg.fingerprint || `autogreet_${Date.now()}`);
+      const sentAt = msg.timestamp
+        ? new Date(msg.timestamp).toISOString()
+        : new Date().toISOString();
+
+      // Upsert the conversation so the greeting shows up in the inbox even if
+      // the webhook does not relay our own outgoing message.
+      const { data: convRow } = await supabaseAdmin
+        .from("crisp_conversations")
+        .upsert(
+          {
+            crisp_website_id: websiteId,
+            crisp_session_id: sessionId,
+            customer_name: visitor.nickname || null,
+            customer_email: visitor.email || null,
+            customer_avatar: visitor.avatar || null,
+            last_message: content,
+            last_message_at: sentAt,
+            unread_count: 0,
+            updated_at: nowIso,
+          },
+          { onConflict: "crisp_website_id,crisp_session_id" },
+        )
+        .select("id")
+        .maybeSingle();
+
+      if (convRow?.id) {
+        await supabaseAdmin.from("crisp_messages").insert({
+          conversation_id: convRow.id,
+          crisp_website_id: websiteId,
+          crisp_session_id: sessionId,
+          crisp_message_id: crispMsgId,
+          sender_type: "operator",
+          direction: "outgoing",
+          content,
+          message_type: "text",
+          sent_at: sentAt,
+          raw_payload: resData,
+        });
+      }
+    } catch {
+      // Network/Crisp error — release the claim so it can retry next sync.
+      await supabaseAdmin
+        .from("crisp_visitors")
+        .update({ auto_greeted_at: null })
+        .eq("crisp_website_id", websiteId)
+        .eq("crisp_session_id", sessionId);
+    }
+  }
+}
+
 export const getCrispVisitorOverview = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input?: { websiteId?: string }) => ({
@@ -232,7 +404,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
     let workspaceQuery = supabaseAdmin
       .from("crisp_workspaces")
       .select(
-        "crisp_website_id, workspace_name, credential_secret_id, live_visitor_count, active_visitor_count, visitors_limited",
+        "crisp_website_id, workspace_name, credential_secret_id, live_visitor_count, active_visitor_count, visitors_limited, auto_greet_enabled, auto_greet_message, auto_greet_delay_seconds",
       )
       .eq("enabled", true);
     if (data.websiteId) workspaceQuery = workspaceQuery.eq("crisp_website_id", data.websiteId);
@@ -260,7 +432,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
     let reportedActiveCount = 0;
     let limited = false;
 
-    const staleBefore = new Date(now.getTime() - 25_000).toISOString();
+    const staleBefore = new Date(now.getTime() - 10_000).toISOString();
     await Promise.all(
       (workspaces ?? []).map(async (workspace: CrispWorkspaceRow): Promise<CrispVisitor[]> => {
         try {
@@ -423,6 +595,37 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
               })),
               { onConflict: "crisp_website_id,crisp_session_id,visit_date" },
             );
+          }
+
+          // Auto-greet eligible live visitors. This runs inside the claim-won
+          // branch, so it fires at most once per sync window per workspace —
+          // and, crucially, from the same path that actually detects who is
+          // live (the webhook may never see presence events).
+          const autoGreetMessage =
+            typeof workspace.auto_greet_message === "string"
+              ? workspace.auto_greet_message.trim()
+              : "";
+          if (workspace.auto_greet_enabled && autoGreetMessage) {
+            try {
+              await autoGreetLiveVisitors({
+                supabaseAdmin,
+                websiteId: workspace.crisp_website_id,
+                headers,
+                message: autoGreetMessage,
+                delaySeconds: Math.max(
+                  0,
+                  Math.min(3600, Number(workspace.auto_greet_delay_seconds) || 0),
+                ),
+                liveVisitors: normalized,
+                nowIso,
+              });
+            } catch (greetError) {
+              errors.push(
+                `${workspace.workspace_name || workspace.crisp_website_id}: auto-greet failed (${
+                  greetError instanceof Error ? greetError.message : "unknown error"
+                })`,
+              );
+            }
           }
 
           return normalized;
