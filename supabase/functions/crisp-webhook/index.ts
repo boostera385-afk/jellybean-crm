@@ -105,7 +105,7 @@ serve(async (req) => {
     // 1. LOOKUP WORKSPACE — must be active and enabled
     const { data: wsRecord, error: wsErr } = await supabase
       .from("crisp_workspaces")
-      .select("id, enabled, credential_secret_id")
+      .select("id, enabled, credential_secret_id, auto_greet_enabled, auto_greet_message")
       .eq("crisp_website_id", websiteId)
       .maybeSingle();
 
@@ -337,7 +337,7 @@ serve(async (req) => {
       const { data: existingVisitor } = await supabase
         .from("crisp_visitors")
         .select(
-          "nickname, email, avatar, user_agent, initiated, active, is_online, last_online_at, last_page_title, last_page_url, country, region, city, latitude, longitude, timezone_minutes, capabilities, locales, last_seen_at",
+          "nickname, email, avatar, user_agent, initiated, active, is_online, last_online_at, last_page_title, last_page_url, country, region, city, latitude, longitude, timezone_minutes, capabilities, locales, last_seen_at, auto_greeted_at",
         )
         .eq("crisp_website_id", websiteId)
         .eq("crisp_session_id", sessionId)
@@ -509,6 +509,107 @@ serve(async (req) => {
         if (msgErr && msgErr.code !== "23505") {
           throw new Error(`Error inserting crisp_messages: ${msgErr.message}`);
         }
+      }
+
+      // 4b. AUTO-GREET NEW LIVE VISITORS ──────────────────────────────────────
+      // If this workspace has an auto-greeting configured, proactively send the
+      // template the first time a visitor is live: once per visitor (guarded by
+      // auto_greeted_at), and only if nobody has started a conversation yet.
+      try {
+        const autoGreetMessage =
+          typeof wsRecord.auto_greet_message === "string" ? wsRecord.auto_greet_message.trim() : "";
+        const canAutoGreet =
+          wsRecord.auto_greet_enabled === true &&
+          autoGreetMessage.length > 0 &&
+          visitorOnline &&
+          !isCustomerMessage &&
+          !isOperator &&
+          !existingVisitor?.auto_greeted_at &&
+          !(existingConv && existingConv.last_message);
+
+        if (canAutoGreet) {
+          // Atomically claim the greeting so two near-simultaneous events can't
+          // both send: only the update that flips NULL -> now() proceeds.
+          const { data: claimed } = await supabase
+            .from("crisp_visitors")
+            .update({ auto_greeted_at: new Date().toISOString() })
+            .eq("crisp_website_id", websiteId)
+            .eq("crisp_session_id", sessionId)
+            .is("auto_greeted_at", null)
+            .select("crisp_session_id")
+            .maybeSingle();
+
+          const tokenId = (secretData as Record<string, unknown>)?.token_id as string | undefined;
+          const tokenKey = (secretData as Record<string, unknown>)?.token_key as string | undefined;
+
+          if (claimed && tokenId && tokenKey) {
+            const greetingContent = autoGreetMessage
+              .replace(/\{\{\s*name\s*\}\}/gi, finalName || "there")
+              .replace(/\{\{\s*city\s*\}\}/gi, geolocation.city || "");
+            const authString = btoa(`${tokenId}:${tokenKey}`);
+            const greetUrl = `https://api.crisp.chat/v1/website/${websiteId}/conversation/${sessionId}/message`;
+            const greetRes = await fetch(greetUrl, {
+              method: "POST",
+              headers: {
+                Authorization: `Basic ${authString}`,
+                "X-Crisp-Tier": "website",
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                type: "text",
+                from: "operator",
+                origin: "chat",
+                content: greetingContent,
+              }),
+            });
+            const greetData = await greetRes.json().catch(() => ({}));
+
+            if (greetRes.ok) {
+              const greetMsg = greetData.data || greetData;
+              const greetMsgId = String(greetMsg.fingerprint || `autogreet_${Date.now()}`);
+              const greetSentAt = greetMsg.timestamp
+                ? new Date(greetMsg.timestamp).toISOString()
+                : new Date().toISOString();
+              await supabase.from("crisp_messages").insert({
+                conversation_id: conversationId,
+                crisp_website_id: websiteId,
+                crisp_session_id: sessionId,
+                crisp_message_id: greetMsgId,
+                sender_type: "operator",
+                direction: "outgoing",
+                content: greetingContent,
+                message_type: "text",
+                sent_at: greetSentAt,
+                raw_payload: greetData,
+              });
+              await supabase
+                .from("crisp_conversations")
+                .update({
+                  last_message: greetingContent,
+                  last_message_at: greetSentAt,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", conversationId);
+            } else {
+              // Send failed — release the claim so a later event can retry.
+              console.error("Auto-greet send failed:", greetRes.status, greetData);
+              await supabase
+                .from("crisp_visitors")
+                .update({ auto_greeted_at: null })
+                .eq("crisp_website_id", websiteId)
+                .eq("crisp_session_id", sessionId);
+            }
+          } else if (claimed) {
+            // Claimed but no send credentials available — release the claim.
+            await supabase
+              .from("crisp_visitors")
+              .update({ auto_greeted_at: null })
+              .eq("crisp_website_id", websiteId)
+              .eq("crisp_session_id", sessionId);
+          }
+        }
+      } catch (greetErr) {
+        console.error("Auto-greet error:", greetErr);
       }
 
       // 5. Mark webhook event as processed: true

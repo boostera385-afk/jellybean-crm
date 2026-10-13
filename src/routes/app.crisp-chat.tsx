@@ -30,8 +30,10 @@ import {
   Radio,
   Flame,
   Clock,
+  Sparkles,
   X,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -45,6 +47,7 @@ import {
   getCrispWorkspaceWebhookUrl,
   markCrispConversationRead,
   regenerateCrispWebhookSecret,
+  updateCrispWorkspaceAutoGreet,
   sendCrispMessage,
   sendCrispMessageToVisitor,
   syncCrispHistory,
@@ -173,6 +176,8 @@ type WorkspaceRecord = {
   installed_at: string | null;
   last_seen_at: string | null;
   last_synced_at: string | null;
+  auto_greet_enabled?: boolean | null;
+  auto_greet_message?: string | null;
 };
 
 type NoteRecord = {
@@ -611,6 +616,12 @@ function CrispInboxInner() {
   // Delete Workspace Dialog
   const [deleteWs, setDeleteWs] = useState<WorkspaceRecord | null>(null);
   const [isDeletingWs, setIsDeletingWs] = useState(false);
+
+  // Per-workspace auto-greeting (sent to new live visitors by the webhook)
+  const [autoGreetWs, setAutoGreetWs] = useState<WorkspaceRecord | null>(null);
+  const [autoGreetEnabled, setAutoGreetEnabled] = useState(false);
+  const [autoGreetMessage, setAutoGreetMessage] = useState("");
+  const [isSavingAutoGreet, setIsSavingAutoGreet] = useState(false);
 
   // Refs for message container, conversation scroll container, and stable realtime access
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -1699,6 +1710,45 @@ function CrispInboxInner() {
     }
   };
 
+  const openAutoGreet = (ws: WorkspaceRecord) => {
+    setAutoGreetWs(ws);
+    setAutoGreetEnabled(Boolean(ws.auto_greet_enabled));
+    setAutoGreetMessage(ws.auto_greet_message ?? "");
+  };
+
+  const handleSaveAutoGreet = async () => {
+    if (!autoGreetWs || isSavingAutoGreet) return;
+    if (autoGreetEnabled && !autoGreetMessage.trim()) {
+      toast.error("Add a greeting message before turning auto-greeting on.");
+      return;
+    }
+    setIsSavingAutoGreet(true);
+    try {
+      const res = await updateCrispWorkspaceAutoGreet({
+        data: {
+          websiteId: autoGreetWs.crisp_website_id,
+          enabled: autoGreetEnabled,
+          message: autoGreetMessage.trim(),
+        },
+      });
+      if (!res.ok) {
+        toast.error(res.error || "Could not save auto-greeting");
+      } else {
+        toast.success(
+          autoGreetEnabled
+            ? "Auto-greeting is on for new live visitors"
+            : "Auto-greeting turned off",
+        );
+        setAutoGreetWs(null);
+        loadWorkspaces();
+      }
+    } catch (err: unknown) {
+      toast.error((err as Error).message || "Failed to save auto-greeting");
+    } finally {
+      setIsSavingAutoGreet(false);
+    }
+  };
+
   const handleCopyText = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedUrl(true);
@@ -1861,6 +1911,14 @@ function CrispInboxInner() {
                             >
                               <RefreshCw className="w-3.5 h-3.5 mr-2 text-amber-500" />
                               <span>Regenerate Webhook URL</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => openAutoGreet(ws)}
+                              className="cursor-pointer"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 mr-2 text-primary" />
+                              <span>Auto-greeting{ws.auto_greet_enabled ? " (on)" : ""}</span>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -2733,6 +2791,88 @@ function CrispInboxInner() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ========================================================================= */}
+      {/* ADMIN AUTO-GREETING MODAL */}
+      {/* ========================================================================= */}
+      {isAdmin && (
+        <Dialog open={!!autoGreetWs} onOpenChange={(open) => !open && setAutoGreetWs(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+                <Sparkles className="w-5 h-5 text-primary" />
+                <span>Auto-greeting</span>
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Automatically send this message to a visitor the first time they go live on{" "}
+                <strong>
+                  {autoGreetWs
+                    ? getWorkspaceDisplayName(autoGreetWs.crisp_website_id, workspacesMap)
+                    : "this workspace"}
+                </strong>
+                . It fires once per visitor and skips anyone who already started a chat.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
+                <div>
+                  <Label className="text-xs font-semibold">Enable auto-greeting</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Send automatically to new live visitors.
+                  </p>
+                </div>
+                <Switch checked={autoGreetEnabled} onCheckedChange={setAutoGreetEnabled} />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="auto-greet-message" className="text-xs font-semibold">
+                  Greeting message
+                </Label>
+                <Textarea
+                  id="auto-greet-message"
+                  placeholder="Hi there! 👋 Thanks for visiting — can we help you find anything?"
+                  value={autoGreetMessage}
+                  onChange={(e) => setAutoGreetMessage(e.target.value)}
+                  className="min-h-28 text-xs resize-none"
+                  maxLength={2000}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Use <code className="font-mono">{"{{name}}"}</code> for the visitor&apos;s name and{" "}
+                  <code className="font-mono">{"{{city}}"}</code> for their city.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAutoGreetWs(null)}
+                  disabled={isSavingAutoGreet}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleSaveAutoGreet}
+                  disabled={isSavingAutoGreet}
+                >
+                  {isSavingAutoGreet ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save</span>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* ========================================================================= */}
       {/* ADMIN ADD WORKSPACE MODAL */}
