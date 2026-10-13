@@ -50,10 +50,12 @@ import {
   BookOpen,
   Copy,
   Megaphone,
+  MessageSquare,
   RefreshCw,
 } from "lucide-react";
 import { DocumentationTab } from "@/components/settings/documentation-tab";
 import { CrmUpdatesTab } from "@/components/settings/crm-updates-tab";
+import { CrispSettingsTab } from "@/components/settings/crisp-settings-tab";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import {
@@ -73,9 +75,16 @@ import {
 } from "@/lib/user-management-permissions";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "general" | "updates" | "users" | "docs" | "crm-updates";
+type SettingsTab = "general" | "updates" | "users" | "docs" | "crm-updates" | "crisp";
 
-const SETTINGS_TABS = new Set<SettingsTab>(["general", "updates", "users", "docs", "crm-updates"]);
+const SETTINGS_TABS = new Set<SettingsTab>([
+  "general",
+  "updates",
+  "users",
+  "docs",
+  "crm-updates",
+  "crisp",
+]);
 
 function isSettingsTab(value: unknown): value is SettingsTab {
   return typeof value === "string" && SETTINGS_TABS.has(value as SettingsTab);
@@ -184,6 +193,13 @@ function Page() {
                 >
                   CRM Updates
                 </TabBtn>
+                <TabBtn
+                  active={tab === "crisp"}
+                  onClick={() => setTab("crisp")}
+                  icon={<MessageSquare className="h-3.5 w-3.5" />}
+                >
+                  Crisp
+                </TabBtn>
               </div>
             </div>
           )}
@@ -192,6 +208,7 @@ function Page() {
           {tab === "users" && <UsersTab managerRole={auth.primaryRole as UserManagerRole} />}
           {isAdmin && tab === "docs" && <DocumentationTab />}
           {isAdmin && tab === "crm-updates" && <CrmUpdatesTab />}
+          {isAdmin && tab === "crisp" && <CrispSettingsTab />}
         </RoleGate>
       </PageBody>
     </div>
