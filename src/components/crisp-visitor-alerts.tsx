@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { Radio, Send, MapPin } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { useCrispVisitors } from "@/hooks/use-crisp-visitors";
+import { supabase } from "@/integrations/supabase/client";
+import { useCrispVisitors, CRISP_VISITORS_QUERY_KEY } from "@/hooks/use-crisp-visitors";
 import type { CrispVisitor } from "@/lib/crisp.functions";
 
 function playVisitorChime() {
@@ -53,10 +55,11 @@ function visitorLocation(visitor: CrispVisitor): string {
  * Unlike the message notifier, these are not a dismissable queue: there is one
  * card per visitor who is currently live on a connected Crisp website, pinned
  * to the top of the screen (not the bottom-right corner). A card stays on
- * screen for exactly as long as that visitor is live — when the visitor leaves,
- * the next 10s refresh drops them from `liveVisitors` and their card disappears
- * on its own. The only action is "Send Message", which jumps straight into the
- * Crisp chat tab deep-linked to that visitor so an operator can reach out.
+ * screen for exactly as long as that visitor is live — a realtime change on
+ * crisp_visitors (with a slow poll fallback) refreshes the list, so when the
+ * visitor leaves their card disappears on its own. The only action is "Send
+ * Message", which jumps straight into the Crisp chat tab deep-linked to that
+ * visitor so an operator can reach out.
  */
 export function CrispVisitorAlerts() {
   const { roles, primaryRole, user } = useAuth();
@@ -70,6 +73,37 @@ export function CrispVisitorAlerts() {
   // corner toasts would be redundant there — hide them on that route only.
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const onCrispTab = pathname.startsWith("/app/crisp-chat");
+
+  const queryClient = useQueryClient();
+
+  // Realtime: push live-visitor changes instead of polling hard. Whenever a
+  // crisp_visitors row changes (the sync/sweeper flips presence), refresh the
+  // shared overview query once — debounced so a burst of row upserts coalesces
+  // into a single refetch. This keeps the rail and corner alerts near-instant
+  // while letting the fallback poll run slowly.
+  useEffect(() => {
+    if (!canUseCrisp || !user?.id) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const invalidateSoon = () => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        void queryClient.invalidateQueries({ queryKey: CRISP_VISITORS_QUERY_KEY });
+      }, 400);
+    };
+    const channel = supabase
+      .channel("crisp-visitors-live-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "crisp_visitors" },
+        invalidateSoon,
+      )
+      .subscribe();
+    return () => {
+      if (timer) clearTimeout(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [canUseCrisp, user?.id, queryClient]);
 
   const visitorOverview = useCrispVisitors(canUseCrisp && Boolean(user?.id));
   const liveVisitors = useMemo(
