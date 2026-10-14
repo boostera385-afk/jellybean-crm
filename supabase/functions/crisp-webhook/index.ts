@@ -148,29 +148,17 @@ serve(async (req) => {
       .update({ last_seen_at: new Date().toISOString() })
       .eq("id", wsRecord.id);
 
-    // ─── TRIGGER AUTO-GREET SWEEP ────────────────────────────────────────────
-    // Kick the server-side auto-greet sweeper the moment Crisp tells us a visitor
-    // is present, so a greeting goes out on arrival instead of waiting for the
-    // next scheduled pg_cron tick (which was the source of the ~20s delay).
+    // ─── AUTO-GREET SWEEP TRIGGER ────────────────────────────────────────────
+    // Kick the server-side auto-greet sweeper the moment Crisp reports a visitor,
+    // so a greeting goes out on arrival instead of waiting for the next pg_cron
+    // tick. Fire-and-forget (immediate: true → 3s sync window) so it never blocks
+    // or fails this webhook response.
     //
-    // Crisp's documented signal here is `website:update_visitors_count`, but on
-    // many plans that event is NEVER delivered — the real arrival signals are the
+    // Crisp's documented signal is `website:update_visitors_count`, but on many
+    // plans that event is NEVER delivered — the real arrival signals are the
     // per-session presence events (session:sync:*, session:set_*,
-    // session:request:initiated, session:removed). We trigger on BOTH so arrival
-    // detection no longer depends on an event the plan may never send.
-    //
-    // The sweep is fire-and-forget (void fetch, immediate: true → 3s sync window)
-    // so it never blocks or fails this webhook response. For presence events we do
-    // NOT return early: the handler below still upserts visitor presence inline,
-    // which keeps the live rail fast without an extra Crisp API call.
-    const isVisitorCountEvent = eventType.includes("visitors") && eventType.includes("count");
-    const isSessionPresenceEvent =
-      eventType.startsWith("session:sync:") ||
-      eventType.startsWith("session:set_") ||
-      eventType === "session:request:initiated" ||
-      eventType === "session:removed";
-
-    if ((isVisitorCountEvent || isSessionPresenceEvent) && wsRecord.auto_greet_enabled) {
+    // session:request:initiated, session:removed). We trigger on BOTH.
+    const triggerAutoGreetSweep = () => {
       void fetch(`${supabaseUrl}/functions/v1/crisp-auto-greet`, {
         method: "POST",
         headers: {
@@ -179,15 +167,31 @@ serve(async (req) => {
         },
         body: JSON.stringify({ websiteId, immediate: true }),
       }).catch((err) => console.error("Failed to trigger auto-greet sweep:", err));
-    }
+    };
 
-    // Pure visitor-count events carry no session to process — acknowledge and stop.
+    const isVisitorCountEvent = eventType.includes("visitors") && eventType.includes("count");
+    const isSessionPresenceEvent =
+      eventType.startsWith("session:sync:") ||
+      eventType.startsWith("session:set_") ||
+      eventType === "session:request:initiated" ||
+      eventType === "session:removed";
+
+    // A pure visitor-count event carries no session to upsert, so this kick is its
+    // only chance — fire it now, then acknowledge.
     if (isVisitorCountEvent && !(data.session_id || body.session_id)) {
+      if (wsRecord.auto_greet_enabled) triggerAutoGreetSweep();
       return new Response(JSON.stringify({ status: "success", event: "visitors-count" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // For session-presence events we deliberately DON'T kick here. The sweeper
+    // greets from the visitor's DB presence row, and this request is often the one
+    // that first marks the visitor online — kicking before that write commits
+    // races our own upsert, and the sweeper misses the visitor (greeting then
+    // waits for cron, which felt fast sometimes and slow others). We kick AFTER
+    // the presence upsert below instead, once the row is committed and visible.
 
     const sessionId = data.session_id || body.session_id;
 
@@ -441,6 +445,14 @@ serve(async (req) => {
 
       if (visitorUpsertError && visitorUpsertError.code !== "42P01") {
         console.error("Failed to update Crisp visitor:", visitorUpsertError.message);
+      }
+
+      // The visitor's presence row is now committed and visible to a separate
+      // connection, so kick the auto-greet sweep: it will see this visitor online
+      // and can greet on THIS arrival. Doing it here (not before the upsert)
+      // removes the race that made greetings feel fast sometimes and slow others.
+      if (isSessionPresenceEvent && wsRecord.auto_greet_enabled && !visitorUpsertError) {
+        triggerAutoGreetSweep();
       }
 
       if (isVisitorActivity) {
