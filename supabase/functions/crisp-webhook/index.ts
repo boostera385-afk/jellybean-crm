@@ -176,16 +176,23 @@ serve(async (req) => {
       }).catch((err) => console.error("Failed to trigger visitor sweep:", err));
     };
 
-    const isVisitorCountEvent = eventType.includes("visitors") && eventType.includes("count");
+    // Website-level visitor broadcasts carry the live set directly:
+    // `website:update_visitors_count` and `website:update_visitors_list` (plus any
+    // legacy name containing "visitors" + count/list). These are the best presence
+    // signals when the plan/webhook subscription provides them.
+    const isWebsiteVisitorsEvent =
+      eventType.startsWith("website:update_visitors") ||
+      (eventType.includes("visitors") &&
+        (eventType.includes("count") || eventType.includes("list")));
     const isSessionPresenceEvent =
       eventType.startsWith("session:sync:") ||
       eventType.startsWith("session:set_") ||
       eventType === "session:request:initiated" ||
       eventType === "session:removed";
 
-    // A pure visitor-count event carries no session to upsert, so this kick is its
-    // only chance — fire it now, then acknowledge.
-    if (isVisitorCountEvent && !(data.session_id || body.session_id)) {
+    // A website-level visitor broadcast carries no session to upsert, so this kick
+    // is its only chance — fire it now, then acknowledge.
+    if (isWebsiteVisitorsEvent && !(data.session_id || body.session_id)) {
       triggerVisitorSweep();
       return new Response(JSON.stringify({ status: "success", event: "visitors-count" }), {
         status: 200,
