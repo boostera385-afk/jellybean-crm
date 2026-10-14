@@ -148,6 +148,27 @@ serve(async (req) => {
       .update({ last_seen_at: new Date().toISOString() })
       .eq("id", wsRecord.id);
 
+    // Diagnostic: record EVERY authenticated event so we can see exactly what
+    // Crisp delivers — including the session-less broadcasts
+    // (website:update_visitors_*) and acknowledge events that return early below
+    // and therefore never reach the main crisp_webhook_events logging. The
+    // collision-safe fingerprint avoids clashing with the main log's rows. This
+    // is best-effort and never blocks processing; it can be removed once the
+    // event stream is understood.
+    const logEventSeen = async () => {
+      try {
+        await supabase.from("crisp_webhook_events").insert({
+          crisp_website_id: websiteId,
+          event_fingerprint: `seen_${eventType}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+          event_type: eventType,
+          payload: body,
+          processed: true,
+        });
+      } catch (_) {
+        // Diagnostic only — ignore failures (e.g. table/column differences).
+      }
+    };
+
     // ─── VISITOR SWEEP TRIGGER ───────────────────────────────────────────────
     // This is the webhook-driven core: the moment Crisp sends us an event, kick
     // the server-side sweeper with immediate: true (a 3s sync window, not the
@@ -193,6 +214,7 @@ serve(async (req) => {
     // A website-level visitor broadcast carries no session to upsert, so this kick
     // is its only chance — fire it now, then acknowledge.
     if (isWebsiteVisitorsEvent && !(data.session_id || body.session_id)) {
+      await logEventSeen();
       triggerVisitorSweep();
       return new Response(JSON.stringify({ status: "success", event: "visitors-count" }), {
         status: 200,
@@ -210,6 +232,7 @@ serve(async (req) => {
     const sessionId = data.session_id || body.session_id;
 
     if (!sessionId) {
+      await logEventSeen();
       return new Response(
         JSON.stringify({ status: "success", message: "Event processed (no session_id)" }),
         {
