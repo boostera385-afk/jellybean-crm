@@ -460,9 +460,7 @@ function SidebarVisitorCard({
     <div
       className={cn(
         "min-w-0 rounded-xl border px-3.5 py-3.5 transition-colors",
-        tone === "hot"
-          ? "border-orange-500/30 bg-orange-500/5"
-          : "border-sky-500/30 bg-sky-500/5",
+        tone === "hot" ? "border-orange-500/30 bg-orange-500/5" : "border-sky-500/30 bg-sky-500/5",
       )}
     >
       <div className="flex items-start gap-2.5">
@@ -474,7 +472,10 @@ function SidebarVisitorCard({
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-sm font-semibold" title={getVisitorDisplayName(visitor)}>
+            <span
+              className="min-w-0 truncate text-sm font-semibold"
+              title={getVisitorDisplayName(visitor)}
+            >
               {getVisitorDisplayName(visitor)}
             </span>
             <span className="shrink-0 text-[10px] text-muted-foreground">
@@ -624,7 +625,6 @@ function CrispInboxInner() {
   // Delete Workspace Dialog
   const [deleteWs, setDeleteWs] = useState<WorkspaceRecord | null>(null);
   const [isDeletingWs, setIsDeletingWs] = useState(false);
-
 
   // Refs for message container, conversation scroll container, and stable realtime access
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -1066,8 +1066,7 @@ function CrispInboxInner() {
           if (newMsg?.crisp_website_id && newMsg?.crisp_session_id) {
             const msgKey = `${newMsg.crisp_website_id}:${newMsg.crisp_session_id}`;
             if (liveSessionKeysRef.current.has(msgKey)) {
-              const isOut =
-                newMsg.direction === "outgoing" || newMsg.sender_type === "operator";
+              const isOut = newMsg.direction === "outgoing" || newMsg.sender_type === "operator";
               setVisitorMsgState((prev) => {
                 const nextState = isOut ? "warm" : "replied";
                 if (prev.get(msgKey) === nextState) return prev;
@@ -1200,9 +1199,9 @@ function CrispInboxInner() {
         .join(","),
     [allLiveVisitors],
   );
-  const [visitorMsgState, setVisitorMsgState] = useState<
-    Map<string, "hot" | "warm" | "replied">
-  >(new Map());
+  const [visitorMsgState, setVisitorMsgState] = useState<Map<string, "hot" | "warm" | "replied">>(
+    new Map(),
+  );
 
   // Classify each live visitor (hot / warm / replied) with ONE query per
   // set-change. Between changes the realtime crisp_messages subscription patches
@@ -1276,8 +1275,7 @@ function CrispInboxInner() {
     () =>
       sortVisitorsNewestFirst(
         liveVisitors.filter(
-          (v) =>
-            visitorMsgState.get(`${v.crisp_website_id}:${v.crisp_session_id}`) === "warm",
+          (v) => visitorMsgState.get(`${v.crisp_website_id}:${v.crisp_session_id}`) === "warm",
         ),
       ),
     [liveVisitors, visitorMsgState],
@@ -1920,528 +1918,532 @@ function CrispInboxInner() {
         {/* COLUMN 2: CONVERSATIONS LIST (~320px) */}
         {/* ========================================================================= */}
         <div className="w-64 xl:w-72 2xl:w-80 shrink-0 border-r border-border/40 bg-card/20 flex flex-col h-full overflow-hidden">
-        {/* Search & Sync Header */}
-        <div className="p-3 border-b border-border/40 shrink-0 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-muted-foreground" />
-              <Input
-                placeholder="Search chats..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 h-9 text-xs"
-              />
-            </div>
-            <Button
-              variant={isSyncing && isHoveringSync ? "destructive" : "outline"}
-              size="icon"
-              onClick={isSyncing ? handleStopSync : handleSyncHistory}
-              onMouseEnter={() => isSyncing && setIsHoveringSync(true)}
-              onMouseLeave={() => setIsHoveringSync(false)}
-              title={
-                isSyncing
-                  ? isHoveringSync
-                    ? "Stop syncing"
-                    : "Syncing in progress... (click to stop)"
-                  : "Sync Crisp History"
-              }
-              className={cn(
-                "h-9 w-9 shrink-0 transition-colors duration-150",
-                isSyncing &&
-                  isHoveringSync &&
-                  "bg-destructive/15 text-destructive border-destructive/40 hover:bg-destructive/25",
-              )}
-            >
-              {isSyncing ? (
-                isHoveringSync ? (
-                  <X className="w-4 h-4 text-destructive animate-in fade-in zoom-in-75 duration-150" />
-                ) : (
-                  <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-                )
-              ) : (
-                <RefreshCw className="w-4 h-4" />
-              )}
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2 px-1 pt-0.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <MessageSquare className="h-3.5 w-3.5 text-primary" />
-            <span>All messages</span>
-          </div>
-        </div>
-
-        {/* Conversations Scroll Area with Infinite Scroll */}
-        <div
-          ref={convScrollRef}
-          onScroll={handleConvScroll}
-          className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1 overscroll-contain"
-        >
-          {filteredConversations.length === 0 ? (
-            <div className="p-6 text-center text-muted-foreground text-xs">
-              {isLoadingConvs ? "Loading conversations..." : "No conversations found."}
-            </div>
-          ) : (
-            <>
-              {filteredConversations.map((conv) => {
-                const isSelected = selectedConversationId === conv.id;
-                const isMaskedPreview = isCrispMaskedMessage(conv.last_message);
-                const isUnread = (conv.unread_count || 0) > 0 && !isMaskedPreview;
-                const isLive = liveSessionKeys.has(
-                  `${conv.crisp_website_id}:${conv.crisp_session_id}`,
-                );
-
-                return (
-                  <button
-                    key={conv.id}
-                    onClick={() => handleSelectConversation(conv.id)}
-                    className={cn(
-                      "w-full text-left p-3 rounded-lg border transition-all space-y-1.5",
-                      isSelected
-                        ? "bg-accent/80 border-primary/50 shadow-sm"
-                        : isLive
-                          ? "bg-emerald-500/10 border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/30 hover:bg-emerald-500/15"
-                          : isUnread
-                            ? "bg-primary/10 border-primary/30 shadow-xs hover:bg-accent/40"
-                            : "border-border/20 hover:bg-accent/40",
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        {isLive ? (
-                          <span
-                            className="relative flex h-2.5 w-2.5 shrink-0"
-                            title="Visitor is live now"
-                          >
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
-                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                          </span>
-                        ) : (
-                          isUnread && (
-                            <span
-                              className="w-2.5 h-2.5 rounded-full bg-primary shrink-0 animate-pulse"
-                              title="Needs operator reply"
-                            />
-                          )
-                        )}
-                        <span
-                          className={cn(
-                            "text-sm truncate text-foreground",
-                            isUnread || isLive ? "font-bold" : "font-medium",
-                          )}
-                        >
-                          {conv.customer_name || "Visitor"}
-                        </span>
-                        {isLive && (
-                          <Badge
-                            variant="outline"
-                            className="shrink-0 gap-0.5 border-emerald-500/40 bg-emerald-500/10 px-1 py-0 text-[9px] font-semibold text-emerald-500"
-                          >
-                            <Radio className="h-2.5 w-2.5" />
-                            LIVE
-                          </Badge>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-muted-foreground shrink-0 font-medium">
-                        {formatConversationTime(conv.last_message_at)}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1 text-[10px] font-medium text-emerald-500/90">
-                      <Building2 className="h-3 w-3 shrink-0" />
-                      <span className="truncate">
-                        {getWorkspaceDisplayName(conv.crisp_website_id, workspacesMap)}
-                      </span>
-                    </div>
-
-                    <p
-                      className={cn(
-                        "text-xs line-clamp-2 break-words leading-relaxed",
-                        isUnread ? "text-foreground font-medium" : "text-muted-foreground",
-                      )}
-                    >
-                      {isMaskedPreview ? (
-                        <span className="italic opacity-75">
-                          Message unavailable (Crisp free plan)
-                        </span>
-                      ) : (
-                        conv.last_message || "No messages yet"
-                      )}
-                    </p>
-                  </button>
-                );
-              })}
-
-              {isLoadingConvs && (
-                <div className="p-3 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                  <span>Loading more...</span>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* COLUMN 3: ACTIVE CHAT THREAD (Flex-1) */}
-      {/* ========================================================================= */}
-      <div className="flex-1 flex flex-col bg-background min-w-0 h-full overflow-hidden">
-        {activeConversation ? (
-          <>
-            {/* Chat Header (Clean Customer Identity - No Session ID, No Workspace Tag) */}
-            <div className="p-3 border-b border-border/40 flex items-center justify-between bg-card/20 shrink-0">
-              <div className="flex items-center gap-3 truncate">
-                <Avatar className="w-8 h-8">
-                  <AvatarImage src={activeConversation.customer_avatar || undefined} />
-                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                    {(activeConversation.customer_name || "V")[0].toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="truncate">
-                  <div className="flex items-center gap-2 truncate">
-                    <h3 className="font-semibold text-sm truncate">
-                      {activeConversation.customer_name || "Visitor"}
-                    </h3>
-                    <Badge
-                      variant="outline"
-                      className="shrink-0 gap-1 border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0 text-[10px] font-medium text-emerald-500"
-                    >
-                      <Building2 className="h-3 w-3" />
-                      <span className="max-w-[12rem] truncate">
-                        {getWorkspaceDisplayName(activeConversation.crisp_website_id, workspacesMap)}
-                      </span>
-                    </Badge>
-                  </div>
-                  {(activeConversation.customer_email || activeConversation.customer_phone) && (
-                    <p className="text-xs text-muted-foreground truncate">
-                      {activeConversation.customer_email || activeConversation.customer_phone}
-                    </p>
-                  )}
-                </div>
+          {/* Search & Sync Header */}
+          <div className="p-3 border-b border-border/40 shrink-0 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search chats..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 h-9 text-xs"
+                />
               </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                {activeConversation.unread_count ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs gap-1.5"
-                    onClick={handleMarkAsRead}
-                    disabled={isMarkingRead}
-                    title="Mark conversation as read without sending a reply"
-                  >
-                    {isMarkingRead ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                    )}
-                    <span>Mark as Read</span>
-                  </Button>
-                ) : null}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-foreground hidden lg:flex"
-                  onClick={() => setShowRightPanel((prev) => !prev)}
-                  title={showRightPanel ? "Hide visitors & details" : "Show visitors & details"}
-                >
-                  {showRightPanel ? (
-                    <PanelRightClose className="w-4 h-4" />
-                  ) : (
-                    <PanelRightOpen className="w-4 h-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            {/* Messages Scroll Area with Pagination */}
-            <div
-              ref={messagesContainerRef}
-              className="flex-1 min-h-0 overflow-y-auto p-4 overscroll-contain"
-            >
-              <div className="space-y-3 max-w-3xl mx-auto">
-                {/* Load Older Messages Button */}
-                {hasMoreMessages && (
-                  <div className="text-center py-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={loadOlderMessages}
-                      disabled={isLoadingOlderMsgs}
-                      className="text-xs text-muted-foreground hover:text-foreground h-7 gap-1.5"
-                    >
-                      {isLoadingOlderMsgs ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      )}
-                      <span>Load Older Messages</span>
-                    </Button>
-                  </div>
+              <Button
+                variant={isSyncing && isHoveringSync ? "destructive" : "outline"}
+                size="icon"
+                onClick={isSyncing ? handleStopSync : handleSyncHistory}
+                onMouseEnter={() => isSyncing && setIsHoveringSync(true)}
+                onMouseLeave={() => setIsHoveringSync(false)}
+                title={
+                  isSyncing
+                    ? isHoveringSync
+                      ? "Stop syncing"
+                      : "Syncing in progress... (click to stop)"
+                    : "Sync Crisp History"
+                }
+                className={cn(
+                  "h-9 w-9 shrink-0 transition-colors duration-150",
+                  isSyncing &&
+                    isHoveringSync &&
+                    "bg-destructive/15 text-destructive border-destructive/40 hover:bg-destructive/25",
                 )}
+              >
+                {isSyncing ? (
+                  isHoveringSync ? (
+                    <X className="w-4 h-4 text-destructive animate-in fade-in zoom-in-75 duration-150" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+                  )
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
 
-                {messages.map((msg) => {
-                  const isOperator = msg.sender_type === "operator" || msg.direction === "outgoing";
-                  const isMasked = isCrispMaskedMessage(msg.content);
-                  const attachment = !isOperator && !isMasked ? getCustomerAttachment(msg) : null;
-                  const caption = getDisplayableCaption(msg.content, attachment);
+            <div className="flex items-center gap-2 px-1 pt-0.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <MessageSquare className="h-3.5 w-3.5 text-primary" />
+              <span>All messages</span>
+            </div>
+          </div>
+
+          {/* Conversations Scroll Area with Infinite Scroll */}
+          <div
+            ref={convScrollRef}
+            onScroll={handleConvScroll}
+            className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1 overscroll-contain"
+          >
+            {filteredConversations.length === 0 ? (
+              <div className="p-6 text-center text-muted-foreground text-xs">
+                {isLoadingConvs ? "Loading conversations..." : "No conversations found."}
+              </div>
+            ) : (
+              <>
+                {filteredConversations.map((conv) => {
+                  const isSelected = selectedConversationId === conv.id;
+                  const isMaskedPreview = isCrispMaskedMessage(conv.last_message);
+                  const isUnread = (conv.unread_count || 0) > 0 && !isMaskedPreview;
+                  const isLive = liveSessionKeys.has(
+                    `${conv.crisp_website_id}:${conv.crisp_session_id}`,
+                  );
 
                   return (
-                    <div
-                      key={msg.id}
+                    <button
+                      key={conv.id}
+                      onClick={() => handleSelectConversation(conv.id)}
                       className={cn(
-                        "flex flex-col max-w-[75%]",
-                        isOperator ? "ml-auto items-end" : "mr-auto items-start",
+                        "w-full text-left p-3 rounded-lg border transition-all space-y-1.5",
+                        isSelected
+                          ? "bg-accent/80 border-primary/50 shadow-sm"
+                          : isLive
+                            ? "bg-emerald-500/10 border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/30 hover:bg-emerald-500/15"
+                            : isUnread
+                              ? "bg-primary/10 border-primary/30 shadow-xs hover:bg-accent/40"
+                              : "border-border/20 hover:bg-accent/40",
                       )}
                     >
-                      <div
-                        className={cn(
-                          "px-3.5 py-2.5 rounded-2xl text-xs break-words shadow-xs space-y-1",
-                          isMasked
-                            ? "bg-muted/80 border border-border text-foreground rounded-2xl"
-                            : isOperator
-                              ? "bg-primary text-primary-foreground rounded-br-xs"
-                              : "bg-muted text-foreground rounded-bl-xs",
-                        )}
-                      >
-                        {isMasked ? (
-                          <div className="flex items-start gap-2 py-0.5 text-foreground">
-                            <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-muted-foreground" />
-                            <p className="italic text-xs leading-relaxed text-foreground">
-                              Message unavailable — older message history is hidden by the current
-                              Crisp plan.
-                            </p>
-                          </div>
-                        ) : attachment?.isImage ? (
-                          <div className="space-y-1.5">
-                            <a
-                              href={attachment.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block group overflow-hidden rounded-xl border border-border/80 bg-background/50 hover:opacity-95 transition-all shadow-xs"
-                              title="Click to view full image in a new tab"
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {isLive ? (
+                            <span
+                              className="relative flex h-2.5 w-2.5 shrink-0"
+                              title="Visitor is live now"
                             >
-                              <img
-                                src={attachment.url}
-                                alt={attachment.name || "Customer attached photo"}
-                                className="max-h-72 max-w-full rounded-xl object-contain bg-muted/30 group-hover:scale-[1.01] transition-transform duration-150"
-                                loading="lazy"
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
+                              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                            </span>
+                          ) : (
+                            isUnread && (
+                              <span
+                                className="w-2.5 h-2.5 rounded-full bg-primary shrink-0 animate-pulse"
+                                title="Needs operator reply"
                               />
-                            </a>
-                            {caption && (
-                              <p className="whitespace-pre-wrap leading-relaxed px-0.5">
-                                {caption}
-                              </p>
+                            )
+                          )}
+                          <span
+                            className={cn(
+                              "text-sm truncate text-foreground",
+                              isUnread || isLive ? "font-bold" : "font-medium",
                             )}
-                          </div>
-                        ) : attachment?.isAudio ? (
-                          <div className="space-y-1.5 py-0.5">
-                            <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                              <Volume2 className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <span>{attachment.name}</span>
-                            </div>
-                            <audio
-                              controls
-                              className="w-full max-w-[280px] h-8 rounded mt-1"
-                              src={attachment.url}
+                          >
+                            {conv.customer_name || "Visitor"}
+                          </span>
+                          {isLive && (
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 gap-0.5 border-emerald-500/40 bg-emerald-500/10 px-1 py-0 text-[9px] font-semibold text-emerald-500"
                             >
-                              Your browser does not support the audio element.
-                            </audio>
-                            {caption && (
-                              <p className="whitespace-pre-wrap leading-relaxed">{caption}</p>
-                            )}
-                          </div>
-                        ) : attachment?.isFile ? (
-                          <div className="space-y-1.5">
-                            <a
-                              href={attachment.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              download={attachment.name}
-                              className="flex items-center gap-2.5 p-2.5 rounded-xl border border-border/80 bg-background/70 hover:bg-accent/40 text-foreground transition-all group shadow-2xs"
-                            >
-                              <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20">
-                                <FileText className="w-4 h-4" />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="font-medium text-xs truncate group-hover:underline text-foreground">
-                                  {attachment.name || "Download Attachment"}
-                                </p>
-                                <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
-                                  {attachment.size ? (
-                                    <span>{formatFileSize(attachment.size)}</span>
-                                  ) : null}
-                                  <span className="flex items-center gap-1 text-primary group-hover:underline font-medium">
-                                    <Download className="w-3 h-3" /> Download
-                                  </span>
-                                </div>
-                              </div>
-                            </a>
-                            {caption && (
-                              <p className="whitespace-pre-wrap leading-relaxed">{caption}</p>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-                        )}
+                              <Radio className="h-2.5 w-2.5" />
+                              LIVE
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-muted-foreground shrink-0 font-medium">
+                          {formatConversationTime(conv.last_message_at)}
+                        </span>
                       </div>
-                      <div
+
+                      <div className="flex items-center gap-1 text-[10px] font-medium text-emerald-500/90">
+                        <Building2 className="h-3 w-3 shrink-0" />
+                        <span className="truncate">
+                          {getWorkspaceDisplayName(conv.crisp_website_id, workspacesMap)}
+                        </span>
+                      </div>
+
+                      <p
                         className={cn(
-                          "flex items-center gap-1.5 px-1 mt-0.5",
-                          isOperator ? "flex-row-reverse" : "flex-row",
+                          "text-xs line-clamp-2 break-words leading-relaxed",
+                          isUnread ? "text-foreground font-medium" : "text-muted-foreground",
                         )}
                       >
-                        <span className="text-[10px] text-muted-foreground font-medium">
-                          {formatMessageDateTime(msg.sent_at)}
-                        </span>
-                        {isOperator && !isMasked && (
-                          <MessageDeliveryStatus state={msg.delivery_state} />
+                        {isMaskedPreview ? (
+                          <span className="italic opacity-75">
+                            Message unavailable (Crisp free plan)
+                          </span>
+                        ) : (
+                          conv.last_message || "No messages yet"
                         )}
-                      </div>
-                    </div>
+                      </p>
+                    </button>
                   );
                 })}
-              </div>
-            </div>
 
-            {/* Message Composer - Anchored to Bottom */}
-            <form
-              onSubmit={handleSendMessage}
-              className="p-3 border-t border-border/40 flex items-center gap-2 bg-card/20 shrink-0 mt-auto"
-            >
-              <Textarea
-                placeholder="Type a message to send to Crisp visitor..."
-                value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage(e);
-                  }
-                }}
-                className="min-h-[44px] max-h-32 text-xs resize-none flex-1 py-2.5"
-              />
-              <Button
-                type="submit"
-                disabled={isSending || !messageInput.trim()}
-                className="self-end h-11 px-4 gap-1.5"
-              >
-                {isSending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    <span>Send</span>
-                    <Send className="w-3.5 h-3.5" />
-                  </>
+                {isLoadingConvs && (
+                  <div className="p-3 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                    <span>Loading more...</span>
+                  </div>
                 )}
-              </Button>
-            </form>
-          </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-muted-foreground text-center">
-            <MessageSquare className="w-10 h-10 mb-2 stroke-1 opacity-50" />
-            <p className="text-sm font-medium">No conversation selected</p>
-          </div>
-        )}
-      </div>
-
-      {/* ========================================================================= */}
-      {/* Visitor groups stack until both columns have enough room to stay readable. */}
-      {/* ========================================================================= */}
-      {showRightPanel && (
-        <div className="w-72 xl:w-80 2xl:w-[clamp(36rem,38vw,44rem)] shrink-0 border-l border-border/40 bg-card/30 flex-col 2xl:flex-row h-full overflow-hidden hidden lg:flex">
-          {/* HOT SECTION (left column) — live visitors nobody has messaged yet */}
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col border-b 2xl:border-b-0 2xl:border-r border-border/40">
-            <div className="flex h-14 shrink-0 items-center justify-between gap-3 px-4 border-b border-border/40">
-              <div className="flex items-center gap-2 min-w-0">
-                <Flame className="h-4 w-4 shrink-0 text-orange-500" />
-                <span className="truncate text-xs font-semibold uppercase tracking-wider text-foreground">
-                  Hot Section ({hotVisitors.length})
-                </span>
-              </div>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6 shrink-0"
-                onClick={() => visitorOverview.refetch()}
-                disabled={visitorOverview.isFetching}
-                title="Refresh visitors"
-              >
-                <RefreshCw
-                  className={cn("h-3.5 w-3.5", visitorOverview.isFetching && "animate-spin")}
-                />
-              </Button>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 overscroll-contain">
-              {hotVisitors.length === 0 ? (
-                <div className="flex h-full min-h-24 flex-col items-center justify-center px-4 text-center">
-                  <Flame className="mb-2 h-6 w-6 text-muted-foreground/40" />
-                  <p className="text-xs text-muted-foreground">
-                    No new live visitors to reach out to.
-                  </p>
-                </div>
-              ) : (
-                hotVisitors.map((visitor) => (
-                  <SidebarVisitorCard
-                    key={`${visitor.crisp_website_id}:${visitor.crisp_session_id}`}
-                    visitor={visitor}
-                    tone="hot"
-                    workspaceName={
-                      visitor.workspace_name ||
-                      getWorkspaceDisplayName(visitor.crisp_website_id, workspacesMap)
-                    }
-                    onSend={() => {
-                      setSelectedVisitor(visitor);
-                      setVisitorMessage("");
-                      setVisitorDialogOpen(true);
-                    }}
-                  />
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* AWAITING REPLY (right column) — we sent first message, no reply yet */}
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <div className="flex h-14 shrink-0 items-center justify-between gap-3 px-4 border-b border-border/40">
-              <div className="flex items-center gap-2 min-w-0">
-                <Clock className="h-4 w-4 shrink-0 text-sky-500" />
-                <span className="truncate text-xs font-semibold uppercase tracking-wider text-foreground">
-                  Awaiting reply ({warmVisitors.length})
-                </span>
-              </div>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 overscroll-contain">
-              {warmVisitors.length === 0 ? (
-                <div className="flex h-full min-h-24 flex-col items-center justify-center px-4 text-center">
-                  <Clock className="mb-2 h-6 w-6 text-muted-foreground/40" />
-                  <p className="text-xs text-muted-foreground">
-                    No live visitors awaiting a reply.
-                  </p>
-                </div>
-              ) : (
-                warmVisitors.map((visitor) => (
-                  <SidebarVisitorCard
-                    key={`${visitor.crisp_website_id}:${visitor.crisp_session_id}`}
-                    visitor={visitor}
-                    tone="warm"
-                    workspaceName={
-                      visitor.workspace_name ||
-                      getWorkspaceDisplayName(visitor.crisp_website_id, workspacesMap)
-                    }
-                    onSend={() => {
-                      setSelectedVisitor(visitor);
-                      setVisitorMessage("");
-                      setVisitorDialogOpen(true);
-                    }}
-                  />
-                ))
-              )}
-            </div>
+              </>
+            )}
           </div>
         </div>
-      )}
+
+        {/* ========================================================================= */}
+        {/* COLUMN 3: ACTIVE CHAT THREAD (Flex-1) */}
+        {/* ========================================================================= */}
+        <div className="flex-1 flex flex-col bg-background min-w-0 h-full overflow-hidden">
+          {activeConversation ? (
+            <>
+              {/* Chat Header (Clean Customer Identity - No Session ID, No Workspace Tag) */}
+              <div className="p-3 border-b border-border/40 flex items-center justify-between bg-card/20 shrink-0">
+                <div className="flex items-center gap-3 truncate">
+                  <Avatar className="w-8 h-8">
+                    <AvatarImage src={activeConversation.customer_avatar || undefined} />
+                    <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                      {(activeConversation.customer_name || "V")[0].toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="truncate">
+                    <div className="flex items-center gap-2 truncate">
+                      <h3 className="font-semibold text-sm truncate">
+                        {activeConversation.customer_name || "Visitor"}
+                      </h3>
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 gap-1 border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0 text-[10px] font-medium text-emerald-500"
+                      >
+                        <Building2 className="h-3 w-3" />
+                        <span className="max-w-[12rem] truncate">
+                          {getWorkspaceDisplayName(
+                            activeConversation.crisp_website_id,
+                            workspacesMap,
+                          )}
+                        </span>
+                      </Badge>
+                    </div>
+                    {(activeConversation.customer_email || activeConversation.customer_phone) && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {activeConversation.customer_email || activeConversation.customer_phone}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {activeConversation.unread_count ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs gap-1.5"
+                      onClick={handleMarkAsRead}
+                      disabled={isMarkingRead}
+                      title="Mark conversation as read without sending a reply"
+                    >
+                      {isMarkingRead ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      )}
+                      <span>Mark as Read</span>
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground hidden lg:flex"
+                    onClick={() => setShowRightPanel((prev) => !prev)}
+                    title={showRightPanel ? "Hide visitors & details" : "Show visitors & details"}
+                  >
+                    {showRightPanel ? (
+                      <PanelRightClose className="w-4 h-4" />
+                    ) : (
+                      <PanelRightOpen className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Messages Scroll Area with Pagination */}
+              <div
+                ref={messagesContainerRef}
+                className="flex-1 min-h-0 overflow-y-auto p-4 overscroll-contain"
+              >
+                <div className="space-y-3 max-w-3xl mx-auto">
+                  {/* Load Older Messages Button */}
+                  {hasMoreMessages && (
+                    <div className="text-center py-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={loadOlderMessages}
+                        disabled={isLoadingOlderMsgs}
+                        className="text-xs text-muted-foreground hover:text-foreground h-7 gap-1.5"
+                      >
+                        {isLoadingOlderMsgs ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        )}
+                        <span>Load Older Messages</span>
+                      </Button>
+                    </div>
+                  )}
+
+                  {messages.map((msg) => {
+                    const isOperator =
+                      msg.sender_type === "operator" || msg.direction === "outgoing";
+                    const isMasked = isCrispMaskedMessage(msg.content);
+                    const attachment = !isOperator && !isMasked ? getCustomerAttachment(msg) : null;
+                    const caption = getDisplayableCaption(msg.content, attachment);
+
+                    return (
+                      <div
+                        key={msg.id}
+                        className={cn(
+                          "flex flex-col max-w-[75%]",
+                          isOperator ? "ml-auto items-end" : "mr-auto items-start",
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "px-3.5 py-2.5 rounded-2xl text-xs break-words shadow-xs space-y-1",
+                            isMasked
+                              ? "bg-muted/80 border border-border text-foreground rounded-2xl"
+                              : isOperator
+                                ? "bg-primary text-primary-foreground rounded-br-xs"
+                                : "bg-muted text-foreground rounded-bl-xs",
+                          )}
+                        >
+                          {isMasked ? (
+                            <div className="flex items-start gap-2 py-0.5 text-foreground">
+                              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-muted-foreground" />
+                              <p className="italic text-xs leading-relaxed text-foreground">
+                                Message unavailable — older message history is hidden by the current
+                                Crisp plan.
+                              </p>
+                            </div>
+                          ) : attachment?.isImage ? (
+                            <div className="space-y-1.5">
+                              <a
+                                href={attachment.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block group overflow-hidden rounded-xl border border-border/80 bg-background/50 hover:opacity-95 transition-all shadow-xs"
+                                title="Click to view full image in a new tab"
+                              >
+                                <img
+                                  src={attachment.url}
+                                  alt={attachment.name || "Customer attached photo"}
+                                  className="max-h-72 max-w-full rounded-xl object-contain bg-muted/30 group-hover:scale-[1.01] transition-transform duration-150"
+                                  loading="lazy"
+                                />
+                              </a>
+                              {caption && (
+                                <p className="whitespace-pre-wrap leading-relaxed px-0.5">
+                                  {caption}
+                                </p>
+                              )}
+                            </div>
+                          ) : attachment?.isAudio ? (
+                            <div className="space-y-1.5 py-0.5">
+                              <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                                <Volume2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                                <span>{attachment.name}</span>
+                              </div>
+                              <audio
+                                controls
+                                className="w-full max-w-[280px] h-8 rounded mt-1"
+                                src={attachment.url}
+                              >
+                                Your browser does not support the audio element.
+                              </audio>
+                              {caption && (
+                                <p className="whitespace-pre-wrap leading-relaxed">{caption}</p>
+                              )}
+                            </div>
+                          ) : attachment?.isFile ? (
+                            <div className="space-y-1.5">
+                              <a
+                                href={attachment.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                download={attachment.name}
+                                className="flex items-center gap-2.5 p-2.5 rounded-xl border border-border/80 bg-background/70 hover:bg-accent/40 text-foreground transition-all group shadow-2xs"
+                              >
+                                <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20">
+                                  <FileText className="w-4 h-4" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-medium text-xs truncate group-hover:underline text-foreground">
+                                    {attachment.name || "Download Attachment"}
+                                  </p>
+                                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
+                                    {attachment.size ? (
+                                      <span>{formatFileSize(attachment.size)}</span>
+                                    ) : null}
+                                    <span className="flex items-center gap-1 text-primary group-hover:underline font-medium">
+                                      <Download className="w-3 h-3" /> Download
+                                    </span>
+                                  </div>
+                                </div>
+                              </a>
+                              {caption && (
+                                <p className="whitespace-pre-wrap leading-relaxed">{caption}</p>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                          )}
+                        </div>
+                        <div
+                          className={cn(
+                            "flex items-center gap-1.5 px-1 mt-0.5",
+                            isOperator ? "flex-row-reverse" : "flex-row",
+                          )}
+                        >
+                          <span className="text-[10px] text-muted-foreground font-medium">
+                            {formatMessageDateTime(msg.sent_at)}
+                          </span>
+                          {isOperator && !isMasked && (
+                            <MessageDeliveryStatus state={msg.delivery_state} />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Message Composer - Anchored to Bottom */}
+              <form
+                onSubmit={handleSendMessage}
+                className="p-3 border-t border-border/40 flex items-center gap-2 bg-card/20 shrink-0 mt-auto"
+              >
+                <Textarea
+                  placeholder="Type a message to send to Crisp visitor..."
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage(e);
+                    }
+                  }}
+                  className="min-h-[44px] max-h-32 text-xs resize-none flex-1 py-2.5"
+                />
+                <Button
+                  type="submit"
+                  disabled={isSending || !messageInput.trim()}
+                  className="self-end h-11 px-4 gap-1.5"
+                >
+                  {isSending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <span>Send</span>
+                      <Send className="w-3.5 h-3.5" />
+                    </>
+                  )}
+                </Button>
+              </form>
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-muted-foreground text-center">
+              <MessageSquare className="w-10 h-10 mb-2 stroke-1 opacity-50" />
+              <p className="text-sm font-medium">No conversation selected</p>
+            </div>
+          )}
+        </div>
+
+        {/* ========================================================================= */}
+        {/* Visitor groups stack until both columns have enough room to stay readable. */}
+        {/* ========================================================================= */}
+        {showRightPanel && (
+          <div className="w-72 xl:w-80 2xl:w-[clamp(36rem,38vw,44rem)] shrink-0 border-l border-border/40 bg-card/30 flex-col 2xl:flex-row h-full overflow-hidden hidden lg:flex">
+            {/* HOT SECTION (left column) — live visitors nobody has messaged yet */}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col border-b 2xl:border-b-0 2xl:border-r border-border/40">
+              <div className="flex h-14 shrink-0 items-center justify-between gap-3 px-4 border-b border-border/40">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Flame className="h-4 w-4 shrink-0 text-orange-500" />
+                  <span className="truncate text-xs font-semibold uppercase tracking-wider text-foreground">
+                    Hot Section ({hotVisitors.length})
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 shrink-0"
+                  onClick={() => visitorOverview.refetch()}
+                  disabled={visitorOverview.isFetching}
+                  title="Refresh visitors"
+                >
+                  <RefreshCw
+                    className={cn("h-3.5 w-3.5", visitorOverview.isFetching && "animate-spin")}
+                  />
+                </Button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 overscroll-contain">
+                {hotVisitors.length === 0 ? (
+                  <div className="flex h-full min-h-24 flex-col items-center justify-center px-4 text-center">
+                    <Flame className="mb-2 h-6 w-6 text-muted-foreground/40" />
+                    <p className="text-xs text-muted-foreground">
+                      No new live visitors to reach out to.
+                    </p>
+                  </div>
+                ) : (
+                  hotVisitors.map((visitor) => (
+                    <SidebarVisitorCard
+                      key={`${visitor.crisp_website_id}:${visitor.crisp_session_id}`}
+                      visitor={visitor}
+                      tone="hot"
+                      workspaceName={
+                        visitor.workspace_name ||
+                        getWorkspaceDisplayName(visitor.crisp_website_id, workspacesMap)
+                      }
+                      onSend={() => {
+                        setSelectedVisitor(visitor);
+                        setVisitorMessage("");
+                        setVisitorDialogOpen(true);
+                      }}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* AWAITING REPLY (right column) — we sent first message, no reply yet */}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <div className="flex h-14 shrink-0 items-center justify-between gap-3 px-4 border-b border-border/40">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Clock className="h-4 w-4 shrink-0 text-sky-500" />
+                  <span className="truncate text-xs font-semibold uppercase tracking-wider text-foreground">
+                    Awaiting reply ({warmVisitors.length})
+                  </span>
+                </div>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 overscroll-contain">
+                {warmVisitors.length === 0 ? (
+                  <div className="flex h-full min-h-24 flex-col items-center justify-center px-4 text-center">
+                    <Clock className="mb-2 h-6 w-6 text-muted-foreground/40" />
+                    <p className="text-xs text-muted-foreground">
+                      No live visitors awaiting a reply.
+                    </p>
+                  </div>
+                ) : (
+                  warmVisitors.map((visitor) => (
+                    <SidebarVisitorCard
+                      key={`${visitor.crisp_website_id}:${visitor.crisp_session_id}`}
+                      visitor={visitor}
+                      tone="warm"
+                      workspaceName={
+                        visitor.workspace_name ||
+                        getWorkspaceDisplayName(visitor.crisp_website_id, workspacesMap)
+                      }
+                      onSend={() => {
+                        setSelectedVisitor(visitor);
+                        setVisitorMessage("");
+                        setVisitorDialogOpen(true);
+                      }}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <Dialog
