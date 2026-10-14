@@ -1,5 +1,6 @@
 // Server-only Crisp helpers. These run inside the app server runtime and talk
 // to the Crisp REST API directly using per-workspace credentials stored in Vault.
+import { crispFetch } from "../../supabase/functions/_shared/crisp-api";
 
 /**
  * Query-builder shape used by the helpers below.
@@ -32,6 +33,38 @@ type AnyClient = {
 };
 
 export type CrispCreds = { tokenId: string; tokenKey: string };
+
+export async function markCrispReadLocal(
+  admin: AnyClient,
+  conversationId: string,
+  observedAt: string,
+) {
+  const { error } = await admin.rpc("crisp_mark_read_local", {
+    p_conversation_id: conversationId,
+    p_observed_at: observedAt,
+  });
+  if (error) throw new Error(`Could not mark conversation read: ${error.message}`);
+}
+
+export async function recordCrispOutgoing(
+  admin: AnyClient,
+  websiteId: string,
+  sessionId: string,
+  content: string,
+  payload: unknown,
+) {
+  const { data, error } = await admin.rpc("crisp_record_outgoing", {
+    p_website_id: websiteId,
+    p_session_id: sessionId,
+    p_content: content,
+    p_payload: payload,
+  });
+  if (error)
+    throw new Error(
+      "Message was accepted by Crisp but could not be mirrored. Refresh before retrying.",
+    );
+  return data as unknown as string;
+}
 
 export function crispHeaders(creds: CrispCreds) {
   const auth = btoa(`${creds.tokenId}:${creds.tokenKey}`);
@@ -116,7 +149,9 @@ export async function syncWorkspace(
 
   if (!ws.workspace_name) {
     try {
-      const infoRes = await fetch(`https://api.crisp.chat/v1/website/${websiteId}`, { headers });
+      const infoRes = await crispFetch(admin, `https://api.crisp.chat/v1/website/${websiteId}`, {
+        headers,
+      });
       if (infoRes.ok) {
         const info = (await infoRes.json()) as { data?: { name?: string } } & Record<
           string,
@@ -132,7 +167,8 @@ export async function syncWorkspace(
   }
 
   for (let page = 1; page <= opts.maxPages; page++) {
-    const listRes = await fetch(
+    const listRes = await crispFetch(
+      admin,
       `https://api.crisp.chat/v1/website/${websiteId}/conversations/${page}`,
       { headers },
     );
@@ -158,7 +194,7 @@ export async function syncWorkspace(
 
     const CHUNK = 5;
     for (let i = 0; i < sessions.length; i += CHUNK) {
-      await Promise.allSettled(
+      const results = await Promise.allSettled(
         sessions.slice(i, i + CHUNK).map(async (session) => {
           const sessionId = session?.session_id;
           if (!sessionId) return;
@@ -192,7 +228,8 @@ export async function syncWorkspace(
           if (convErr || !conv) return;
           conversations++;
 
-          const msgsRes = await fetch(
+          const msgsRes = await crispFetch(
+            admin,
             `https://api.crisp.chat/v1/website/${websiteId}/conversation/${sessionId}/messages`,
             { headers },
           );
@@ -209,41 +246,11 @@ export async function syncWorkspace(
           >;
 
           if (list.length === 0) {
-            await admin
-              .from("crisp_conversations")
-              .update({
-                unread_count: 0,
-                last_customer_unread_at: null,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", conv.id);
+            // An empty/limited remote history cannot erase a newer local message.
             return;
           }
 
           list.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-
-          let lastCustomerAt: string | null = null;
-          let lastCustomerText: string | null = null;
-          let lastCustomerTs = 0;
-          let lastOperatorTs = 0;
-          for (let k = list.length - 1; k >= 0; k--) {
-            const m = list[k];
-            const from = String(m.from || "user").toLowerCase();
-            const ts = m.timestamp || 0;
-            if (from !== "operator" && !lastCustomerAt) {
-              lastCustomerAt = m.timestamp ? new Date(m.timestamp).toISOString() : null;
-              lastCustomerText = parseMessageContent(m);
-              lastCustomerTs = ts;
-            } else if (from === "operator" && !lastOperatorTs) {
-              lastOperatorTs = ts;
-            }
-          }
-
-          const needsReply = Boolean(
-            lastCustomerAt &&
-            !isCrispMaskedMessage(lastCustomerText) &&
-            (!lastOperatorTs || lastCustomerTs > lastOperatorTs),
-          );
 
           const rows = list.map((msg) => {
             const isOperator = String(msg.from).toLowerCase() === "operator";
@@ -263,31 +270,17 @@ export async function syncWorkspace(
             };
           });
 
-          // Bulk insert; duplicates are ignored by the existing table trigger/constraint.
-          const { error: insErr, data: inserted } = await admin
-            .from("crisp_messages")
-            .upsert(rows, {
-              onConflict: "crisp_website_id,crisp_message_id",
-              ignoreDuplicates: true,
-            })
-            .select("id");
-          if (!insErr) messages += inserted?.length ?? 0;
-
-          const newest = list[list.length - 1];
-          await admin
-            .from("crisp_conversations")
-            .update({
-              last_message: parseMessageContent(newest),
-              last_message_at: newest.timestamp
-                ? new Date(newest.timestamp).toISOString()
-                : new Date().toISOString(),
-              unread_count: needsReply ? 1 : 0,
-              last_customer_unread_at: needsReply ? lastCustomerAt : null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", conv.id);
+          for (let offset = 0; offset < rows.length; offset += 500) {
+            const { data, error } = await admin.rpc("crisp_import_messages", {
+              p_rows: rows.slice(offset, offset + 500),
+            });
+            if (error) throw error;
+            messages += Number(data) || 0;
+          }
         }),
       );
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
     }
   }
 

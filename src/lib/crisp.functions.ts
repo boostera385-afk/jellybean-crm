@@ -2,9 +2,9 @@ import { createServerFn } from "@tanstack/react-start";
 
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { crispFetch } from "../../supabase/functions/_shared/crisp-api";
 
 const CRISP_ROLES = ["admin", "cs_admin", "cs"];
-const CRISP_VISITOR_PAGE_LIMIT = 10;
 const CRISP_VISITOR_TIME_ZONE = "Asia/Karachi";
 
 export type CrispVisitor = {
@@ -45,26 +45,6 @@ export type CrispVisitorOverview = {
   error?: string;
 };
 
-type CrispApiVisitor = {
-  session_id?: string;
-  nickname?: string;
-  email?: string;
-  avatar?: string;
-  useragent?: string;
-  initiated?: boolean;
-  active?: boolean;
-  last_page?: { page_title?: string; page_url?: string };
-  geolocation?: {
-    country?: string;
-    region?: string;
-    city?: string;
-    coordinates?: { latitude?: number; longitude?: number };
-  };
-  timezone?: number;
-  capabilities?: string[];
-  locales?: string[];
-};
-
 type CrispWorkspaceRow = {
   crisp_website_id: string;
   workspace_name: string;
@@ -72,6 +52,8 @@ type CrispWorkspaceRow = {
   live_visitor_count: number;
   active_visitor_count: number;
   visitors_limited: boolean;
+  visitor_sync_succeeded_at: string | null;
+  visitor_sync_error: string | null;
 };
 
 // Generated types lag behind the live-visitor migration, so the row is declared here.
@@ -212,178 +194,6 @@ export const syncCrispHistory = createServerFn({ method: "POST" })
     };
   });
 
-/**
- * Send the per-workspace auto-greeting to eligible live visitors.
- *
- * Runs server-side from the visitor-overview sync (the authoritative source of
- * who is live). For each live visitor that has not been greeted, has no ongoing
- * conversation, and whose optional delay has elapsed, it posts the greeting to
- * Crisp, records the message, and marks the visitor greeted. The per-visitor
- * `auto_greeted_at` claim (NULL -> now) makes it safe against concurrent syncs.
- */
-async function autoGreetLiveVisitors({
-  supabaseAdmin,
-  websiteId,
-  headers,
-  message,
-  delaySeconds,
-  liveVisitors,
-  nowIso,
-}: {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabaseAdmin: any;
-  websiteId: string;
-  headers: Record<string, string>;
-  message: string;
-  delaySeconds: number;
-  liveVisitors: CrispVisitor[];
-  nowIso: string;
-}): Promise<void> {
-  if (liveVisitors.length === 0) return;
-  const sessionIds = liveVisitors.map((v) => v.crisp_session_id);
-
-  type GreetRow = {
-    crisp_session_id: string;
-    auto_greeted_at: string | null;
-    auto_greet_due_at: string | null;
-  };
-  const { data: visitorRows } = await supabaseAdmin
-    .from("crisp_visitors")
-    .select("crisp_session_id, auto_greeted_at, auto_greet_due_at")
-    .eq("crisp_website_id", websiteId)
-    .in("crisp_session_id", sessionIds);
-  const greetState = new Map<string, GreetRow>(
-    ((visitorRows ?? []) as GreetRow[]).map((r) => [r.crisp_session_id, r]),
-  );
-
-  type ConvRow = { crisp_session_id: string; last_message: string | null };
-  const { data: convRows } = await supabaseAdmin
-    .from("crisp_conversations")
-    .select("crisp_session_id, last_message")
-    .eq("crisp_website_id", websiteId)
-    .in("crisp_session_id", sessionIds);
-  const convBySession = new Map<string, ConvRow>(
-    ((convRows ?? []) as ConvRow[]).map((c) => [c.crisp_session_id, c]),
-  );
-
-  const nowMs = Date.now();
-
-  for (const visitor of liveVisitors) {
-    const sessionId = visitor.crisp_session_id;
-    const state = greetState.get(sessionId);
-    if (state?.auto_greeted_at) continue; // already greeted
-    const conv = convBySession.get(sessionId);
-    if (conv && conv.last_message) continue; // already in a conversation
-
-    const dueAtMs = state?.auto_greet_due_at ? new Date(state.auto_greet_due_at).getTime() : null;
-    if (dueAtMs == null) {
-      if (delaySeconds > 0) {
-        // First time we see them live with a delay set — schedule, send later.
-        await supabaseAdmin
-          .from("crisp_visitors")
-          .update({ auto_greet_due_at: new Date(nowMs + delaySeconds * 1000).toISOString() })
-          .eq("crisp_website_id", websiteId)
-          .eq("crisp_session_id", sessionId)
-          .is("auto_greet_due_at", null);
-        continue;
-      }
-      // delaySeconds === 0 → send now.
-    } else if (nowMs < dueAtMs) {
-      continue; // scheduled, not due yet
-    }
-
-    // Atomically claim so overlapping syncs can't double-send.
-    const { data: claimed } = await supabaseAdmin
-      .from("crisp_visitors")
-      .update({ auto_greeted_at: new Date().toISOString() })
-      .eq("crisp_website_id", websiteId)
-      .eq("crisp_session_id", sessionId)
-      .is("auto_greeted_at", null)
-      .select("crisp_session_id")
-      .maybeSingle();
-    if (!claimed) continue;
-
-    const content = message
-      .replace(/\{\{\s*name\s*\}\}/gi, visitor.nickname || "there")
-      .replace(/\{\{\s*city\s*\}\}/gi, visitor.city || "");
-
-    try {
-      const res = await fetch(
-        `https://api.crisp.chat/v1/website/${websiteId}/conversation/${sessionId}/message`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ type: "text", from: "operator", origin: "chat", content }),
-        },
-      );
-      const resData = (await res.json().catch(() => ({}))) as {
-        data?: { fingerprint?: number; timestamp?: number };
-        fingerprint?: number;
-        timestamp?: number;
-      };
-
-      if (!res.ok) {
-        // Release the claim so a later sync can retry.
-        await supabaseAdmin
-          .from("crisp_visitors")
-          .update({ auto_greeted_at: null })
-          .eq("crisp_website_id", websiteId)
-          .eq("crisp_session_id", sessionId);
-        continue;
-      }
-
-      const msg = resData.data || resData;
-      const crispMsgId = String(msg.fingerprint || `autogreet_${Date.now()}`);
-      const sentAt = msg.timestamp
-        ? new Date(msg.timestamp).toISOString()
-        : new Date().toISOString();
-
-      // Upsert the conversation so the greeting shows up in the inbox even if
-      // the webhook does not relay our own outgoing message.
-      const { data: convRow } = await supabaseAdmin
-        .from("crisp_conversations")
-        .upsert(
-          {
-            crisp_website_id: websiteId,
-            crisp_session_id: sessionId,
-            customer_name: visitor.nickname || null,
-            customer_email: visitor.email || null,
-            customer_avatar: visitor.avatar || null,
-            last_message: content,
-            last_message_at: sentAt,
-            unread_count: 0,
-            updated_at: nowIso,
-          },
-          { onConflict: "crisp_website_id,crisp_session_id" },
-        )
-        .select("id")
-        .maybeSingle();
-
-      if (convRow?.id) {
-        await supabaseAdmin.from("crisp_messages").insert({
-          conversation_id: convRow.id,
-          crisp_website_id: websiteId,
-          crisp_session_id: sessionId,
-          crisp_message_id: crispMsgId,
-          sender_type: "operator",
-          direction: "outgoing",
-          content,
-          message_type: "text",
-          sent_at: sentAt,
-          raw_payload: resData,
-        });
-      }
-    } catch {
-      // Network/Crisp error — release the claim so it can retry next sync.
-      await supabaseAdmin
-        .from("crisp_visitors")
-        .update({ auto_greeted_at: null })
-        .eq("crisp_website_id", websiteId)
-        .eq("crisp_session_id", sessionId);
-    }
-  }
-}
-
 export const getCrispVisitorOverview = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input?: { websiteId?: string }) => ({
@@ -396,15 +206,13 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
     const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const supabaseAdmin = typedAdmin as any; // generated types lag behind the live-visitor migration
-    const { getWorkspaceCreds, crispHeaders, crispErrorReason } = await import("./crisp.server");
     const now = new Date();
     const nowIso = now.toISOString();
-    const visitDate = pakistanDayKey(now);
 
     let workspaceQuery = supabaseAdmin
       .from("crisp_workspaces")
       .select(
-        "crisp_website_id, workspace_name, credential_secret_id, live_visitor_count, active_visitor_count, visitors_limited, auto_greet_enabled, auto_greet_message, auto_greet_delay_seconds",
+        "crisp_website_id, workspace_name, live_visitor_count, active_visitor_count, visitors_limited, visitor_sync_succeeded_at, visitor_sync_error",
       )
       .eq("enabled", true);
     if (data.websiteId) workspaceQuery = workspaceQuery.eq("crisp_website_id", data.websiteId);
@@ -425,225 +233,37 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
     }
 
     const workspaceNames = new Map<string, string>(
-      (workspaces ?? []).map((workspace: CrispWorkspaceRow) => [workspace.crisp_website_id, workspace.workspace_name]),
+      (workspaces ?? []).map((workspace: CrispWorkspaceRow) => [
+        workspace.crisp_website_id,
+        workspace.workspace_name,
+      ]),
     );
     const errors: string[] = [];
     let reportedLiveCount = 0;
     let reportedActiveCount = 0;
     let limited = false;
 
-    const staleBefore = new Date(now.getTime() - 60_000).toISOString();
-    await Promise.all(
-      (workspaces ?? []).map(async (workspace: CrispWorkspaceRow): Promise<CrispVisitor[]> => {
-        try {
-          const { data: claimed } = await supabaseAdmin.rpc("claim_crisp_visitor_sync", {
-            p_website_id: workspace.crisp_website_id,
-            p_stale_before: staleBefore,
-          });
-          if (!claimed) {
-            reportedLiveCount += workspace.live_visitor_count;
-            reportedActiveCount += workspace.active_visitor_count;
-            limited = limited || workspace.visitors_limited;
-            return [];
-          }
-
-          if (!workspace.credential_secret_id) {
-            errors.push(
-              `${workspace.workspace_name || workspace.crisp_website_id}: missing credentials`,
-            );
-            return [];
-          }
-
-          const credsResult = await getWorkspaceCreds(
-            supabaseAdmin as never,
-            workspace.credential_secret_id,
-          );
-          if (!credsResult.ok) {
-            errors.push(
-              `${workspace.workspace_name || workspace.crisp_website_id}: ${credsResult.error}`,
-            );
-            return [];
-          }
-
-          const headers = crispHeaders(credsResult.creds);
-          const countResponse = await fetch(
-            `https://api.crisp.chat/v1/website/${workspace.crisp_website_id}/visitors/count`,
-            { headers },
-          ).catch(() => null);
-          let countedLive: number | null = null;
-          let countedActive: number | null = null;
-          let workspaceLimited = false;
-          if (countResponse?.ok) {
-            const countPayload = (await countResponse.json().catch(() => ({}))) as {
-              data?: { count?: number; active?: number; limited?: boolean };
-            };
-            countedLive = Number(countPayload.data?.count ?? 0);
-            countedActive = Number(countPayload.data?.active ?? 0);
-            workspaceLimited = Boolean(countPayload.data?.limited);
-          }
-
-          const visitorRows: CrispApiVisitor[] = [];
-          let listSucceeded = true;
-
-          for (
-            let page = 1;
-            page <= CRISP_VISITOR_PAGE_LIMIT && (countedLive === null || countedLive > 0);
-            page++
-          ) {
-            const response = await fetch(
-              `https://api.crisp.chat/v1/website/${workspace.crisp_website_id}/visitors/list/${page}`,
-              { headers },
-            );
-            if (!response.ok) {
-              errors.push(
-                `${workspace.workspace_name || workspace.crisp_website_id}: ${await crispErrorReason(response)}`,
-              );
-              listSucceeded = false;
-              break;
-            }
-            const payload = (await response.json().catch(() => ({}))) as {
-              data?: CrispApiVisitor[];
-            };
-            const pageRows = Array.isArray(payload.data) ? payload.data : [];
-            visitorRows.push(...pageRows);
-            if (
-              pageRows.length === 0 ||
-              (countedLive !== null && visitorRows.length >= countedLive)
-            ) {
-              break;
-            }
-          }
-
-          const workspaceLiveCount = countedLive ?? visitorRows.length;
-          const workspaceActiveCount =
-            countedActive ?? visitorRows.filter((visitor) => visitor.active).length;
-          reportedLiveCount += workspaceLiveCount;
-          reportedActiveCount += workspaceActiveCount;
-          limited = limited || workspaceLimited;
-          await supabaseAdmin
-            .from("crisp_workspaces")
-            .update({
-              live_visitor_count: workspaceLiveCount,
-              active_visitor_count: workspaceActiveCount,
-              visitors_limited: workspaceLimited,
-              visitor_synced_at: nowIso,
-              updated_at: nowIso,
-            })
-            .eq("crisp_website_id", workspace.crisp_website_id);
-
-          const normalized = visitorRows
-            .filter((visitor): visitor is CrispApiVisitor & { session_id: string } =>
-              Boolean(visitor.session_id),
-            )
-            .map((visitor): CrispVisitor => ({
-              crisp_website_id: workspace.crisp_website_id,
-              workspace_name: workspace.workspace_name,
-              crisp_session_id: visitor.session_id,
-              nickname: visitor.nickname || null,
-              email: visitor.email || null,
-              avatar: visitor.avatar || null,
-              user_agent: visitor.useragent || null,
-              initiated: Boolean(visitor.initiated),
-              active: Boolean(visitor.active),
-              is_online: true,
-              last_page_title: visitor.last_page?.page_title || null,
-              last_page_url: visitor.last_page?.page_url || null,
-              country: visitor.geolocation?.country || null,
-              region: visitor.geolocation?.region || null,
-              city: visitor.geolocation?.city || null,
-              latitude: visitor.geolocation?.coordinates?.latitude ?? null,
-              longitude: visitor.geolocation?.coordinates?.longitude ?? null,
-              timezone_minutes: visitor.timezone ?? null,
-              capabilities: Array.isArray(visitor.capabilities) ? visitor.capabilities : [],
-              locales: Array.isArray(visitor.locales) ? visitor.locales : [],
-              first_seen_at: nowIso,
-              last_seen_at: nowIso,
-            }));
-
-          if (listSucceeded) {
-            await supabaseAdmin
-              .from("crisp_visitors")
-              .update({ is_online: false, active: false, updated_at: nowIso })
-              .eq("crisp_website_id", workspace.crisp_website_id)
-              .eq("is_online", true);
-          }
-
-          if (normalized.length > 0) {
-            const { error: visitorError } = await supabaseAdmin.from("crisp_visitors").upsert(
-              normalized.map(
-                ({ workspace_name: _workspaceName, first_seen_at: _firstSeen, ...visitor }) => ({
-                  ...visitor,
-                  last_online_at: nowIso,
-                  updated_at: nowIso,
-                }),
-              ),
-              { onConflict: "crisp_website_id,crisp_session_id" },
-            );
-            if (visitorError) {
-              errors.push(
-                `${workspace.workspace_name || workspace.crisp_website_id}: visitor history is unavailable (${visitorError.message})`,
-              );
-            }
-
-            await supabaseAdmin.from("crisp_visitor_daily_visits").upsert(
-              normalized.map((visitor) => ({
-                crisp_website_id: visitor.crisp_website_id,
-                crisp_session_id: visitor.crisp_session_id,
-                visit_date: visitDate,
-                last_seen_at: nowIso,
-                updated_at: nowIso,
-              })),
-              { onConflict: "crisp_website_id,crisp_session_id,visit_date" },
-            );
-          }
-
-          // Auto-greet eligible live visitors. This runs inside the claim-won
-          // branch, so it fires at most once per sync window per workspace —
-          // and, crucially, from the same path that actually detects who is
-          // live (the webhook may never see presence events).
-          const autoGreetMessage =
-            typeof workspace.auto_greet_message === "string"
-              ? workspace.auto_greet_message.trim()
-              : "";
-          if (workspace.auto_greet_enabled && autoGreetMessage) {
-            try {
-              await autoGreetLiveVisitors({
-                supabaseAdmin,
-                websiteId: workspace.crisp_website_id,
-                headers,
-                message: autoGreetMessage,
-                delaySeconds: Math.max(
-                  0,
-                  Math.min(3600, Number(workspace.auto_greet_delay_seconds) || 0),
-                ),
-                liveVisitors: normalized,
-                nowIso,
-              });
-            } catch (greetError) {
-              errors.push(
-                `${workspace.workspace_name || workspace.crisp_website_id}: auto-greet failed (${
-                  greetError instanceof Error ? greetError.message : "unknown error"
-                })`,
-              );
-            }
-          }
-
-          return normalized;
-        } catch (error) {
-          reportedLiveCount += workspace.live_visitor_count;
-          reportedActiveCount += workspace.active_visitor_count;
-          limited = limited || workspace.visitors_limited;
-          errors.push(
-            `${workspace.workspace_name || workspace.crisp_website_id}: ${error instanceof Error ? error.message : "visitor refresh failed"}`,
-          );
-          return [];
-        }
-      }),
-    );
+    // Reads never synchronize or send greetings. The durable worker owns those
+    // side effects, independently of operator tabs and overview refreshes.
+    for (const workspace of (workspaces ?? []) as CrispWorkspaceRow[]) {
+      reportedLiveCount += workspace.live_visitor_count;
+      reportedActiveCount += workspace.active_visitor_count;
+      limited ||= workspace.visitors_limited;
+      if (workspace.visitor_sync_error) {
+        errors.push(`${workspace.workspace_name}: ${workspace.visitor_sync_error}`);
+      } else if (
+        !workspace.visitor_sync_succeeded_at ||
+        now.getTime() - new Date(workspace.visitor_sync_succeeded_at).getTime() > 60_000
+      ) {
+        errors.push(`${workspace.workspace_name}: visitor reconciliation is delayed`);
+      }
+    }
+    const websiteIds = (workspaces ?? []).map((w: CrispWorkspaceRow) => w.crisp_website_id);
 
     let liveQuery = supabaseAdmin
       .from("crisp_visitors")
       .select("*")
+      .in("crisp_website_id", websiteIds)
       .eq("is_online", true)
       .order("active", { ascending: false })
       .order("last_seen_at", { ascending: false });
@@ -680,6 +300,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
     let todayQuery = supabaseAdmin
       .from("crisp_visitors")
       .select("*")
+      .in("crisp_website_id", websiteIds)
       .gte("last_seen_at", pakistanDayStartIso(now))
       .order("last_seen_at", { ascending: false });
     if (data.websiteId) todayQuery = todayQuery.eq("crisp_website_id", data.websiteId);
@@ -743,7 +364,8 @@ export const sendCrispMessageToVisitor = createServerFn({ method: "POST" })
     );
     if (!credsResult.ok) return { ok: false as const, error: credsResult.error };
 
-    const response = await fetch(
+    const response = await crispFetch(
+      supabaseAdmin as never,
       `https://api.crisp.chat/v1/website/${data.websiteId}/conversation/${data.sessionId}/message`,
       {
         method: "POST",
@@ -755,6 +377,7 @@ export const sendCrispMessageToVisitor = createServerFn({ method: "POST" })
           content: data.content,
         }),
       },
+      "interactive",
     );
     if (!response.ok) {
       return { ok: false as const, error: `Crisp API error: ${await crispErrorReason(response)}` };
@@ -766,72 +389,22 @@ export const sendCrispMessageToVisitor = createServerFn({ method: "POST" })
       timestamp?: string | number;
     };
     const message = payload.data ?? payload;
-    const crispMessageId = String(message.fingerprint ?? Date.now());
+    const crispMessageId = message.fingerprint == null ? null : String(message.fingerprint);
     const sentAt = message.timestamp
       ? new Date(message.timestamp).toISOString()
       : new Date().toISOString();
-    const [{ data: visitor }, { data: existingConversation }] = await Promise.all([
-      (supabaseAdmin as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-
-        .from("crisp_visitors")
-        .select("nickname, email, avatar")
-        .eq("crisp_website_id", data.websiteId)
-        .eq("crisp_session_id", data.sessionId)
-        .maybeSingle(),
-      supabaseAdmin
-        .from("crisp_conversations")
-        .select("customer_name, customer_email, customer_avatar")
-        .eq("crisp_website_id", data.websiteId)
-        .eq("crisp_session_id", data.sessionId)
-        .maybeSingle(),
-    ]);
-
-    const { data: conversation, error: conversationError } = await supabaseAdmin
-      .from("crisp_conversations")
-      .upsert(
-        {
-          crisp_website_id: data.websiteId,
-          crisp_session_id: data.sessionId,
-          customer_name: visitor?.nickname || existingConversation?.customer_name || null,
-          customer_email: visitor?.email || existingConversation?.customer_email || null,
-          customer_avatar: visitor?.avatar || existingConversation?.customer_avatar || null,
-          status: "unresolved",
-          last_message: data.content,
-          last_message_at: sentAt,
-          unread_count: 0,
-          last_customer_unread_at: null,
-          updated_at: sentAt,
-        },
-        { onConflict: "crisp_website_id,crisp_session_id" },
-      )
-      .select("id")
-      .single();
-    if (conversationError || !conversation) {
-      return {
-        ok: false as const,
-        error: `Message reached Crisp but could not be added to the CRM: ${conversationError?.message || "conversation unavailable"}`,
-      };
-    }
-
-    await supabaseAdmin.from("crisp_messages").upsert(
-      {
-        conversation_id: conversation.id,
-        crisp_website_id: data.websiteId,
-        crisp_session_id: data.sessionId,
-        crisp_message_id: crispMessageId,
-        sender_type: "operator",
-        direction: "outgoing",
-        content: data.content,
-        message_type: "text",
-        sent_at: sentAt,
-        raw_payload: payload as Json,
-      },
-      { onConflict: "crisp_website_id,crisp_message_id", ignoreDuplicates: true },
+    const { recordCrispOutgoing } = await import("./crisp.server");
+    const conversationId = await recordCrispOutgoing(
+      supabaseAdmin as never,
+      data.websiteId,
+      data.sessionId,
+      data.content,
+      payload,
     );
 
     return {
       ok: true as const,
-      conversationId: conversation.id,
+      conversationId,
       crisp_message_id: crispMessageId,
       sent_at: sentAt,
     };
@@ -872,7 +445,8 @@ export const sendCrispMessage = createServerFn({ method: "POST" })
     const credsRes = await getWorkspaceCreds(supabaseAdmin as never, ws.credential_secret_id);
     if (!credsRes.ok) return { ok: false as const, error: credsRes.error };
 
-    const res = await fetch(
+    const res = await crispFetch(
+      supabaseAdmin as never,
       `https://api.crisp.chat/v1/website/${conv.crisp_website_id}/conversation/${conv.crisp_session_id}/message`,
       {
         method: "POST",
@@ -884,6 +458,7 @@ export const sendCrispMessage = createServerFn({ method: "POST" })
           content: data.content,
         }),
       },
+      "interactive",
     );
 
     if (!res.ok) {
@@ -895,36 +470,21 @@ export const sendCrispMessage = createServerFn({ method: "POST" })
     } & Record<string, unknown>;
     const msg =
       (payload?.data as
-        { fingerprint?: string | number; timestamp?: string | number } | undefined) ??
-      (payload as { fingerprint?: string | number; timestamp?: string | number });
-    const crispMessageId = String(msg?.fingerprint ?? Date.now());
+        | { fingerprint?: string | number; timestamp?: string | number }
+        | undefined) ?? (payload as { fingerprint?: string | number; timestamp?: string | number });
+    const crispMessageId = msg?.fingerprint == null ? null : String(msg.fingerprint);
     const sentAt = msg?.timestamp
       ? new Date(msg.timestamp).toISOString()
       : new Date().toISOString();
 
-    await supabaseAdmin
-      .from("crisp_conversations")
-      .update({
-        last_message: data.content,
-        last_message_at: sentAt,
-        unread_count: 0,
-        last_customer_unread_at: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", conv.id);
-
-    await supabaseAdmin.from("crisp_messages").insert({
-      conversation_id: conv.id,
-      crisp_website_id: conv.crisp_website_id,
-      crisp_session_id: conv.crisp_session_id,
-      crisp_message_id: crispMessageId,
-      sender_type: "operator",
-      direction: "outgoing",
-      content: data.content,
-      message_type: "text",
-      sent_at: sentAt,
-      raw_payload: payload as Json,
-    });
+    const { recordCrispOutgoing } = await import("./crisp.server");
+    await recordCrispOutgoing(
+      supabaseAdmin as never,
+      conv.crisp_website_id,
+      conv.crisp_session_id,
+      data.content,
+      payload,
+    );
 
     return { ok: true as const, crisp_message_id: crispMessageId, sent_at: sentAt };
   });
@@ -937,6 +497,7 @@ export const markCrispConversationRead = createServerFn({ method: "POST" })
     return { conversationId };
   })
   .handler(async ({ data, context }) => {
+    const observedAt = new Date().toISOString();
     const { supabase, userId } = context;
     await assertCrispAccess(supabase, userId);
 
@@ -962,27 +523,25 @@ export const markCrispConversationRead = createServerFn({ method: "POST" })
     const credsRes = await getWorkspaceCreds(supabaseAdmin as never, ws.credential_secret_id);
     if (!credsRes.ok) return { ok: false as const, error: credsRes.error };
 
-    const res = await fetch(
+    const res = await crispFetch(
+      supabaseAdmin as never,
       `https://api.crisp.chat/v1/website/${conv.crisp_website_id}/conversation/${conv.crisp_session_id}/read`,
       {
         method: "PATCH",
         headers: crispHeaders(credsRes.creds),
         body: JSON.stringify({ from: "user", origin: "chat" }),
       },
-    );
+    ).catch(() => null);
 
     // A Crisp-side failure should not block clearing the local unread state.
-    const crispError = res.ok ? null : await crispErrorReason(res);
+    const crispError = res?.ok
+      ? null
+      : res
+        ? await crispErrorReason(res)
+        : "Crisp request unavailable";
 
-    const { error: updErr } = await supabaseAdmin
-      .from("crisp_conversations")
-      .update({
-        unread_count: 0,
-        last_customer_unread_at: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", conv.id);
-    if (updErr) return { ok: false as const, error: `Database update failed: ${updErr.message}` };
+    const { markCrispReadLocal } = await import("./crisp.server");
+    await markCrispReadLocal(supabaseAdmin as never, conv.id, observedAt);
 
     if (crispError) console.error("Crisp mark-read failed:", crispError);
     return { ok: true as const };

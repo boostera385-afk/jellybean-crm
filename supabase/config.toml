@@ -1,1 +1,19 @@
 project_id = "fjscqsatzsmfivpczaud"
+
+# Authentication is enforced inside each handler: exact trusted worker key,
+# workspace webhook secret, or Auth.getUser plus the Crisp role check. Keep
+# this consistent with the MCP deployments and the existing Vault cron key.
+[functions.crisp-auto-greet]
+verify_jwt = false
+
+[functions.crisp-webhook]
+verify_jwt = false
+
+[functions.crisp-send-message]
+verify_jwt = false
+
+[functions.crisp-mark-read]
+verify_jwt = false
+
+[functions.crisp-sync-history]
+verify_jwt = false

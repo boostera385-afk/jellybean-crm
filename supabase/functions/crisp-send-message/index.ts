@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { crispFetch } from "../_shared/crisp-api.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -138,20 +139,25 @@ serve(async (req) => {
     const authString = btoa(`${tokenId}:${tokenKey}`);
     const crispUrl = `https://api.crisp.chat/v1/website/${websiteId}/conversation/${sessionId}/message`;
 
-    const crispResponse = await fetch(crispUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${authString}`,
-        "X-Crisp-Tier": "website",
-        "Content-Type": "application/json",
+    const crispResponse = await crispFetch(
+      supabase,
+      crispUrl,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${authString}`,
+          "X-Crisp-Tier": "website",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "text",
+          from: "operator",
+          origin: "chat",
+          content: content,
+        }),
       },
-      body: JSON.stringify({
-        type: "text",
-        from: "operator",
-        origin: "chat",
-        content: content,
-      }),
-    });
+      "interactive",
+    );
 
     const responseData = await crispResponse.json().catch(() => ({}));
 
@@ -170,36 +176,19 @@ serve(async (req) => {
     }
 
     const crispMsgData = responseData.data || responseData;
-    const crispMsgId = String(crispMsgData.fingerprint || Date.now());
+    const crispMsgId = crispMsgData.fingerprint == null ? null : String(crispMsgData.fingerprint);
     const sentAt = crispMsgData.timestamp
       ? new Date(crispMsgData.timestamp).toISOString()
       : new Date().toISOString();
 
-    // Update conversation (clearing needs-reply state)
-    await supabase
-      .from("crisp_conversations")
-      .update({
-        last_message: content,
-        last_message_at: sentAt,
-        unread_count: 0,
-        last_customer_unread_at: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", conv.id);
-
-    // Insert outgoing message
-    await supabase.from("crisp_messages").insert({
-      conversation_id: conv.id,
-      crisp_website_id: websiteId,
-      crisp_session_id: sessionId,
-      crisp_message_id: crispMsgId,
-      sender_type: "operator",
-      direction: "outgoing",
-      content: content,
-      message_type: "text",
-      sent_at: sentAt,
-      raw_payload: responseData,
+    const { error: mirrorError } = await supabase.rpc("crisp_record_outgoing", {
+      p_website_id: websiteId,
+      p_session_id: sessionId,
+      p_content: content,
+      p_payload: responseData,
     });
+    if (mirrorError)
+      throw new Error("Crisp accepted this message but mirroring failed. Refresh before retrying.");
 
     return new Response(
       JSON.stringify({ status: "success", crisp_message_id: crispMsgId, sent_at: sentAt }),

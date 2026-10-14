@@ -69,8 +69,8 @@ export function CrispVisitorAlerts() {
     primaryRole === "cs_admin" || roles.includes("cs_admin") || roles.includes("admin");
   const canUseCrisp = isCsAdmin || primaryRole === "cs" || roles.includes("cs");
 
-  // The crisp chat tab shows live visitors in its own right-hand rail, so the
-  // corner toasts would be redundant there — hide them on that route only.
+  // The inbox rail replaces cards on desktop. Smaller screens still need cards
+  // because that rail is hidden. Arrival sounds remain enabled in the inbox.
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const onCrispTab = pathname.startsWith("/app/crisp-chat");
 
@@ -85,6 +85,7 @@ export function CrispVisitorAlerts() {
     if (!canUseCrisp || !user?.id) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const invalidateSoon = () => {
+      performance.mark("crisp-presence-update");
       if (timer) return;
       timer = setTimeout(() => {
         timer = null;
@@ -98,7 +99,13 @@ export function CrispVisitorAlerts() {
         { event: "*", schema: "public", table: "crisp_visitors" },
         invalidateSoon,
       )
-      .subscribe();
+      .subscribe((status) => {
+        // Recover any changes missed during reconnect; this is a database read.
+        if (status === "SUBSCRIBED") invalidateSoon();
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("Crisp presence connection interrupted; database refresh fallback active");
+        }
+      });
     return () => {
       if (timer) clearTimeout(timer);
       void supabase.removeChannel(channel);
@@ -118,12 +125,18 @@ export function CrispVisitorAlerts() {
 
   // Track which live visitors we have already chimed for so a fresh arrival
   // plays the sound once, while existing cards stay silent on each refresh.
-  const chimedKeysRef = useRef<Set<string>>(new Set());
+  const chimedKeysRef = useRef<Map<string, number>>(new Map());
+  const initializedRef = useRef(false);
+  useEffect(() => {
+    initializedRef.current = false;
+    chimedKeysRef.current.clear();
+  }, [user?.id]);
 
   useEffect(() => {
-    if (!canUseCrisp || !user?.id) return;
+    if (!canUseCrisp || !user?.id || !visitorOverview.dataUpdatedAt) return;
 
     const currentKeys = new Set(liveVisitors.map(visitorKey));
+    const now = Date.now();
 
     let hasNewVisitor = false;
     for (const key of currentKeys) {
@@ -133,18 +146,33 @@ export function CrispVisitorAlerts() {
       }
     }
 
-    // Drop keys for visitors that are no longer live so a returning visitor
-    // chimes again, and keep the set bounded.
-    chimedKeysRef.current = currentKeys;
-
-    // On the crisp tab the rail already surfaces visitors, so stay silent there
-    // (but keep the seen-set current so we don't chime a backlog on return).
-    if (hasNewVisitor && !onCrispTab) {
+    // Brief absence must not replay a sound during refresh/reconnect. A genuine
+    // return after the grace period can still alert, without an unbounded set.
+    for (const key of currentKeys) chimedKeysRef.current.set(key, now);
+    for (const [key, lastSeen] of chimedKeysRef.current) {
+      if (!currentKeys.has(key) && now - lastSeen > 5_000) chimedKeysRef.current.delete(key);
+    }
+    // Initial cached sessions are not new arrivals. Sounds remain enabled in
+    // the inbox; browser audio permissions may still require user interaction.
+    if (initializedRef.current && hasNewVisitor) {
       playVisitorChime();
     }
-  }, [liveVisitors, canUseCrisp, user?.id, onCrispTab]);
+    initializedRef.current = true;
+    if (performance.getEntriesByName("crisp-presence-update").length) {
+      const measurement = performance.measure(
+        "crisp-presence-update-to-view",
+        "crisp-presence-update",
+      );
+      console.debug("Crisp presence update to view", {
+        durationMs: Math.round(measurement.duration),
+      });
+      performance.clearMarks("crisp-presence-update");
+      // Browser-local measurement only; never include visitor/customer data.
+      performance.clearMeasures("crisp-presence-update-to-view");
+    }
+  }, [liveVisitors, canUseCrisp, user?.id, visitorOverview.dataUpdatedAt]);
 
-  if (!canUseCrisp || onCrispTab || liveVisitors.length === 0) {
+  if (!canUseCrisp || liveVisitors.length === 0) {
     return null;
   }
 
@@ -159,9 +187,10 @@ export function CrispVisitorAlerts() {
   };
 
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[95] flex max-w-[calc(100vw-2rem)] flex-col items-end">
+    <div
+      className={`pointer-events-none fixed bottom-4 right-4 z-[95] flex max-w-[calc(100vw-2rem)] flex-col items-end ${onCrispTab ? "lg:hidden" : ""}`}
+    >
       <div className="pointer-events-auto flex w-80 max-w-full flex-col gap-2 max-h-[50vh] overflow-y-auto overscroll-contain pr-0.5">
-
         {liveVisitors.map((visitor) => {
           const name = visitorName(visitor);
           const location = visitorLocation(visitor);
