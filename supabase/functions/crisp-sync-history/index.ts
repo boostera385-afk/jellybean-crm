@@ -1,14 +1,19 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { crispFetch, type RpcClient } from "../_shared/crisp-api.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-async function resolveWorkspaceName(websiteId: string, authString: string): Promise<string | null> {
+async function resolveWorkspaceName(
+  supabase: RpcClient,
+  websiteId: string,
+  authString: string,
+): Promise<string | null> {
   try {
-    const res = await fetch(`https://api.crisp.chat/v1/website/${websiteId}`, {
+    const res = await crispFetch(supabase, `https://api.crisp.chat/v1/website/${websiteId}`, {
       method: "GET",
       headers: {
         Authorization: `Basic ${authString}`,
@@ -93,6 +98,22 @@ serve(async (req) => {
     const targetWebsiteId = body.websiteId ? String(body.websiteId).trim() : null;
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+    if (authError || !user) return new Response("Unauthorized", { status: 401 });
+    const { data: roles, error: roleError } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id);
+    if (
+      roleError ||
+      !roles?.some((row: { role: string }) => ["admin", "cs_admin", "cs"].includes(row.role))
+    ) {
+      return new Response("Forbidden", { status: 403 });
+    }
 
     // Fetch registered and enabled workspaces only
     let wsQuery = supabase
@@ -163,7 +184,7 @@ serve(async (req) => {
 
         // Resolve workspace name if missing
         if (!ws.workspace_name) {
-          const wsName = await resolveWorkspaceName(websiteId, authString);
+          const wsName = await resolveWorkspaceName(supabase, websiteId, authString);
           if (wsName) {
             await supabase
               .from("crisp_workspaces")
@@ -178,7 +199,7 @@ serve(async (req) => {
         // Paginate Crisp history (safety cap: 10 pages per sync)
         for (let page = 1; page <= 10; page++) {
           const listUrl = `https://api.crisp.chat/v1/website/${websiteId}/conversations/${page}`;
-          const listRes = await fetch(listUrl, { headers });
+          const listRes = await crispFetch(supabase, listUrl, { headers });
           if (!listRes.ok) {
             const errJson = await listRes.json().catch(() => ({}));
             const reason = String(
@@ -205,7 +226,7 @@ serve(async (req) => {
           const SESSION_CHUNK = 5;
           for (let sIdx = 0; sIdx < sessions.length; sIdx += SESSION_CHUNK) {
             const sessionSlice = sessions.slice(sIdx, sIdx + SESSION_CHUNK);
-            await Promise.allSettled(
+            const results = await Promise.allSettled(
               sessionSlice.map(async (session: Record<string, unknown>) => {
                 const sessionId = session.session_id as string;
                 if (!sessionId) return;
@@ -216,17 +237,6 @@ serve(async (req) => {
                 const incomingPhone = customerMeta.phone || session.phone || null;
                 const incomingAvatar = customerMeta.avatar || session.avatar || null;
                 const state = session.state || "unresolved";
-
-                // Import Crisp native operator unread count (session.unread.operator)
-                const unreadObj = (session.unread as Record<string, unknown>) || {};
-                const operatorUnread =
-                  typeof unreadObj.operator === "number"
-                    ? unreadObj.operator
-                    : typeof session.unread_count === "number"
-                      ? session.unread_count
-                      : 0;
-
-                const unreadCount = Math.max(0, operatorUnread);
 
                 const { data: existingConv } = await supabase
                   .from("crisp_conversations")
@@ -253,7 +263,6 @@ serve(async (req) => {
                       customer_phone: finalPhone,
                       customer_avatar: finalAvatar,
                       status: state,
-                      unread_count: unreadCount,
                       updated_at: new Date().toISOString(),
                     },
                     { onConflict: "crisp_website_id,crisp_session_id" },
@@ -266,7 +275,7 @@ serve(async (req) => {
 
                 // Sync messages for this conversation
                 const msgsUrl = `https://api.crisp.chat/v1/website/${websiteId}/conversation/${sessionId}/messages`;
-                const msgsRes = await fetch(msgsUrl, { headers });
+                const msgsRes = await crispFetch(supabase, msgsUrl, { headers });
 
                 if (msgsRes.ok) {
                   const msgsData = await msgsRes.json();
@@ -278,42 +287,6 @@ serve(async (req) => {
                       (a, b) => toTimestamp(a.timestamp) - toTimestamp(b.timestamp),
                     );
 
-                    // ── AWAITING OPERATOR REPLY CALCULATION ─────────────────────────
-                    let lastCustomerMsgTime: string | null = null;
-                    let lastCustomerMsgContent: string | null = null;
-                    let lastCustomerTimestamp = 0;
-                    let lastOperatorTimestamp = 0;
-
-                    for (let i = messagesList.length - 1; i >= 0; i--) {
-                      const m = messagesList[i];
-                      const fromStr = String(m.from || "user").toLowerCase();
-                      const ts = toTimestamp(m.timestamp);
-                      if (fromStr !== "operator" && !lastCustomerMsgTime) {
-                        lastCustomerMsgTime = ts ? new Date(ts).toISOString() : null;
-                        lastCustomerMsgContent = parseMessageContent(m);
-                        lastCustomerTimestamp = ts;
-                      } else if (fromStr === "operator" && !lastOperatorTimestamp) {
-                        lastOperatorTimestamp = ts;
-                      }
-                    }
-
-                    const isMaskedCustomerMsg = isCrispMaskedMessage(lastCustomerMsgContent);
-                    const needsReply = Boolean(
-                      lastCustomerMsgTime &&
-                      !isMaskedCustomerMsg &&
-                      (!lastOperatorTimestamp || lastCustomerTimestamp > lastOperatorTimestamp),
-                    );
-                    const calculatedUnread = needsReply ? 1 : 0;
-                    const lastCustUnreadAt = needsReply ? lastCustomerMsgTime : null;
-
-                    // Track newest overall message for last_message + last_message_at
-                    const newestMsg = messagesList[messagesList.length - 1];
-                    const newestText = parseMessageContent(newestMsg);
-                    const newestTs = toTimestamp(newestMsg.timestamp);
-                    const newestTime = newestTs
-                      ? new Date(newestTs).toISOString()
-                      : new Date().toISOString();
-
                     // Upsert all messages (ignore duplicates via 23505)
                     for (const msg of messagesList) {
                       const textContent = parseMessageContent(msg);
@@ -324,48 +297,40 @@ serve(async (req) => {
                         ? new Date(msgTs).toISOString()
                         : new Date().toISOString();
 
-                      const { error: msgErr } = await supabase.from("crisp_messages").insert({
-                        conversation_id: convRecord.id,
-                        crisp_website_id: websiteId,
-                        crisp_session_id: sessionId,
-                        crisp_message_id: crispMsgId,
-                        sender_type: isOperator ? "operator" : "customer",
-                        direction: isOperator ? "outgoing" : "incoming",
-                        content: textContent,
-                        message_type: msg.type || "text",
-                        sent_at: sentAt,
-                        raw_payload: msg,
-                      });
+                      const { data: imported, error: msgErr } = await supabase.rpc(
+                        "crisp_import_messages",
+                        {
+                          p_rows: [
+                            {
+                              conversation_id: convRecord.id,
+                              crisp_website_id: websiteId,
+                              crisp_session_id: sessionId,
+                              crisp_message_id: crispMsgId,
+                              sender_type: isOperator ? "operator" : "customer",
+                              direction: isOperator ? "outgoing" : "incoming",
+                              content: textContent,
+                              message_type: msg.type || "text",
+                              sent_at: sentAt,
+                              raw_payload: msg,
+                            },
+                          ],
+                        },
+                      );
 
                       // 23505 = unique_violation (already imported) — safe to ignore
-                      if (!msgErr) wsMessages++;
+                      if (msgErr) throw new Error(msgErr.message);
+                      wsMessages += Number(imported) || 0;
                     }
 
-                    // Update conversation with last message details and correct unread / awaiting-reply state
-                    await supabase
-                      .from("crisp_conversations")
-                      .update({
-                        last_message: newestText,
-                        last_message_at: newestTime,
-                        unread_count: calculatedUnread,
-                        last_customer_unread_at: lastCustUnreadAt,
-                        updated_at: new Date().toISOString(),
-                      })
-                      .eq("id", convRecord.id);
+                    // Transactional ingestion owns message ordering/unread state.
                   } else {
-                    // No messages fetched — clear unread
-                    await supabase
-                      .from("crisp_conversations")
-                      .update({
-                        unread_count: 0,
-                        last_customer_unread_at: null,
-                        updated_at: new Date().toISOString(),
-                      })
-                      .eq("id", convRecord.id);
+                    // Empty remote history does not establish absence locally.
                   }
                 }
               }),
             );
+            const failure = results.find((result) => result.status === "rejected");
+            if (failure?.status === "rejected") throw failure.reason;
           }
         }
 

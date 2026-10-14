@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { crispFetch } from "../_shared/crisp-api.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +15,7 @@ serve(async (req) => {
   }
 
   try {
+    const observedAt = new Date().toISOString();
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
@@ -147,7 +149,8 @@ serve(async (req) => {
     //    PATCH /v1/website/{website_id}/conversation/{session_id}/read
     //    Body: { "from": "user", "origin": "chat" }
     const auth = btoa(`${tokenId}:${tokenKey}`);
-    const crispRes = await fetch(
+    const crispRes = await crispFetch(
+      serviceClient,
       `https://api.crisp.chat/v1/website/${websiteId}/conversation/${sessionId}/read`,
       {
         method: "PATCH",
@@ -174,14 +177,10 @@ serve(async (req) => {
     }
 
     // 4. Update Supabase crisp_conversations: unread_count = 0, last_customer_unread_at = null
-    const { error: updErr } = await serviceClient
-      .from("crisp_conversations")
-      .update({
-        unread_count: 0,
-        last_customer_unread_at: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", conversationId);
+    const { error: updErr } = await serviceClient.rpc("crisp_mark_read_local", {
+      p_conversation_id: conversationId,
+      p_observed_at: observedAt,
+    });
 
     if (updErr) {
       console.error("crisp-mark-read: DB update failed:", updErr.message);
