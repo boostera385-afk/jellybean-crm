@@ -148,17 +148,24 @@ serve(async (req) => {
       .update({ last_seen_at: new Date().toISOString() })
       .eq("id", wsRecord.id);
 
-    // ─── AUTO-GREET SWEEP TRIGGER ────────────────────────────────────────────
-    // Kick the server-side auto-greet sweeper the moment Crisp reports a visitor,
-    // so a greeting goes out on arrival instead of waiting for the next pg_cron
-    // tick. Fire-and-forget (immediate: true → 3s sync window) so it never blocks
-    // or fails this webhook response.
+    // ─── VISITOR SWEEP TRIGGER ───────────────────────────────────────────────
+    // This is the webhook-driven core: the moment Crisp sends us an event, kick
+    // the server-side sweeper with immediate: true (a 3s sync window, not the
+    // 20s cron backstop) so we fetch Crisp's visitor list AT THAT MOMENT and
+    // reconcile presence — arrivals online, departed visitors offline — in near
+    // real time. Fire-and-forget so it never blocks or fails this response.
     //
-    // Crisp's documented signal is `website:update_visitors_count`, but on many
-    // plans that event is NEVER delivered — the real arrival signals are the
-    // per-session presence events (session:sync:*, session:set_*,
-    // session:request:initiated, session:removed). We trigger on BOTH.
-    const triggerAutoGreetSweep = () => {
+    // We kick for EVERY enabled workspace, independent of auto-greet: the sweeper
+    // reconciles presence for all workspaces and only greets where greeting is on.
+    // (Gating this on auto-greet is what made presence fall back to the slow cron
+    // whenever greeting was off.) The shared claim_crisp_visitor_sync lock caps a
+    // burst of events to at most one Crisp fetch per 3s per workspace.
+    //
+    // Crisp's documented count signal is `website:update_visitors_count`, but on
+    // many plans that is never delivered — the real signals are the per-session
+    // presence events (session:sync:*, session:set_*, session:request:initiated,
+    // session:removed). We trigger on BOTH.
+    const triggerVisitorSweep = () => {
       void fetch(`${supabaseUrl}/functions/v1/crisp-auto-greet`, {
         method: "POST",
         headers: {
@@ -166,7 +173,7 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ websiteId, immediate: true }),
-      }).catch((err) => console.error("Failed to trigger auto-greet sweep:", err));
+      }).catch((err) => console.error("Failed to trigger visitor sweep:", err));
     };
 
     const isVisitorCountEvent = eventType.includes("visitors") && eventType.includes("count");
@@ -179,7 +186,7 @@ serve(async (req) => {
     // A pure visitor-count event carries no session to upsert, so this kick is its
     // only chance — fire it now, then acknowledge.
     if (isVisitorCountEvent && !(data.session_id || body.session_id)) {
-      if (wsRecord.auto_greet_enabled) triggerAutoGreetSweep();
+      triggerVisitorSweep();
       return new Response(JSON.stringify({ status: "success", event: "visitors-count" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -448,11 +455,12 @@ serve(async (req) => {
       }
 
       // The visitor's presence row is now committed and visible to a separate
-      // connection, so kick the auto-greet sweep: it will see this visitor online
-      // and can greet on THIS arrival. Doing it here (not before the upsert)
-      // removes the race that made greetings feel fast sometimes and slow others.
-      if (isSessionPresenceEvent && wsRecord.auto_greet_enabled && !visitorUpsertError) {
-        triggerAutoGreetSweep();
+      // connection, so kick the sweep: it fetches Crisp's current list and
+      // reconciles presence (and greets, where enabled) in near real time. Doing
+      // it here (not before the upsert) means the sweeper always sees this
+      // visitor's fresh state, removing the race that made it feel inconsistent.
+      if (isSessionPresenceEvent && !visitorUpsertError) {
+        triggerVisitorSweep();
       }
 
       if (isVisitorActivity) {
