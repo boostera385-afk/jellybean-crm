@@ -19,10 +19,11 @@ const EMPTY_OVERVIEW: CrispVisitorOverview = {
 // places still results in just one fetch every refetch interval.
 export const CRISP_VISITORS_QUERY_KEY = ["crisp-visitor-overview"] as const;
 // Live-visitor changes are pushed over Supabase Realtime (see CrispVisitorAlerts),
-// so this interval is a safety net when the realtime channel drops. Queries also
-// refresh on focus/reconnection. This reads Supabase only; it never calls Crisp or
+// so this interval is only a safety net for when the realtime channel drops.
+// Queries also refresh on focus/reconnection. Kept short so a dropped channel
+// still recovers quickly; this reads Supabase only; it never calls Crisp or
 // sends greetings, even if the worker is unavailable.
-const CRISP_VISITORS_REFETCH_MS = 20_000;
+const CRISP_VISITORS_REFETCH_MS = 10_000;
 
 export function useCrispVisitors(enabled = true) {
   return useQuery({

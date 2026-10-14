@@ -22,6 +22,10 @@ BEGIN
   PERFORM public.crisp_process_events(w);
   IF EXISTS(SELECT 1 FROM public.crisp_webhook_events WHERE crisp_website_id=w AND NOT processed) THEN
     RAISE EXCEPTION 'Event failed: %',(SELECT error FROM public.crisp_webhook_events WHERE crisp_website_id=w LIMIT 1); END IF;
+  -- A webhook arrival must raise the stored live counter immediately, before any
+  -- REST reconciliation runs ('old' + 'new' are both online here).
+  IF (SELECT live_visitor_count FROM public.crisp_workspaces WHERE crisp_website_id=w)<>2 THEN
+    RAISE EXCEPTION 'Arrival did not raise live counter from webhook event'; END IF;
   SELECT * INTO job FROM public.crisp_claim_greetings(w);
   IF job.content<>'Hello Tester' THEN RAISE EXCEPTION 'Template/job creation failed'; END IF;
   IF NOT public.crisp_begin_greeting(job.id,job.lease_token) THEN RAISE EXCEPTION 'Send claim failed'; END IF;
@@ -48,6 +52,10 @@ BEGIN
   IF NOT (SELECT is_online FROM public.crisp_visitors WHERE crisp_website_id=w AND crisp_session_id='new') THEN RAISE EXCEPTION 'Limited snapshot erased arrival'; END IF;
   PERFORM public.crisp_apply_event(jsonb_build_object('website_id',w,'event','session:removed','data',jsonb_build_object('session_id','new')));
   IF (SELECT is_online FROM public.crisp_visitors WHERE crisp_website_id=w AND crisp_session_id='new') THEN RAISE EXCEPTION 'Removal left visitor online'; END IF;
+  -- The departure must drop the stored live counter in the same transaction,
+  -- without waiting for the REST reconciler ('old' was already swept offline).
+  IF (SELECT live_visitor_count FROM public.crisp_workspaces WHERE crisp_website_id=w)<>0 THEN
+    RAISE EXCEPTION 'Departure did not drop live counter without reconcile'; END IF;
   UPDATE public.crisp_workspaces SET crisp_request_limit=3,crisp_interactive_reserve=1 WHERE crisp_website_id=w;
   IF NOT public.crisp_reserve_request(w) OR NOT public.crisp_reserve_request(w) OR public.crisp_reserve_request(w) THEN RAISE EXCEPTION 'Background budget failed'; END IF;
   IF NOT public.crisp_reserve_request(w,true) OR public.crisp_reserve_request(w,true) THEN RAISE EXCEPTION 'Interactive reserve failed'; END IF;
