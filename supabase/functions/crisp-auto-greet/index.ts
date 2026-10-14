@@ -139,13 +139,8 @@ serve(async (req) => {
       if (!message || !ws.credential_secret_id) return;
 
       try {
-        // Share the sync lock with the in-app overview so we don't double-hit Crisp.
-        const { data: claimed } = await supabase.rpc("claim_crisp_visitor_sync", {
-          p_website_id: websiteId,
-          p_stale_before: staleBefore,
-        });
-        if (!claimed) return;
-
+        // Crisp credentials are needed to SEND the greeting, so we always resolve
+        // them (a cheap Vault read via RPC — no Crisp API call).
         const { data: secret } = await supabase.rpc("crisp_get_workspace_secret", {
           p_secret_id: ws.credential_secret_id,
         });
@@ -154,82 +149,123 @@ serve(async (req) => {
         if (!tokenId || !tokenKey) return;
         const headers = crispHeaders(tokenId, tokenKey);
 
-        // Fetch the live visitor list from Crisp.
-        const countRes = await fetch(
-          `https://api.crisp.chat/v1/website/${websiteId}/visitors/count`,
-          { headers },
-        ).catch(() => null);
-        let countedLive: number | null = null;
-        if (countRes?.ok) {
-          const cp = (await countRes.json().catch(() => ({}))) as {
-            data?: { count?: number };
-          };
-          countedLive = Number(cp.data?.count ?? 0);
-        }
+        // Only REFRESH presence from the Crisp API when we win the shared sync
+        // claim — that lock is a quota guard (caps Crisp calls per workspace).
+        // The greeting below does NOT depend on winning it: otherwise an
+        // immediate webhook kick would do nothing whenever the periodic cron had
+        // just taken the claim within the stale window, and the greeting would
+        // wait for the next cron tick anyway (the delay we are fixing).
+        const { data: claimed } = await supabase.rpc("claim_crisp_visitor_sync", {
+          p_website_id: websiteId,
+          p_stale_before: staleBefore,
+        });
 
-        const rows: CrispApiVisitor[] = [];
-        let listOk = true;
-        for (
-          let page = 1;
-          page <= CRISP_VISITOR_PAGE_LIMIT && (countedLive === null || countedLive > 0);
-          page++
-        ) {
-          const res = await fetch(
-            `https://api.crisp.chat/v1/website/${websiteId}/visitors/list/${page}`,
+        if (claimed) {
+          // Fetch the live visitor list from Crisp.
+          const countRes = await fetch(
+            `https://api.crisp.chat/v1/website/${websiteId}/visitors/count`,
             { headers },
-          );
-          if (!res.ok) {
-            listOk = false;
-            break;
+          ).catch(() => null);
+          let countedLive: number | null = null;
+          if (countRes?.ok) {
+            const cp = (await countRes.json().catch(() => ({}))) as {
+              data?: { count?: number };
+            };
+            countedLive = Number(cp.data?.count ?? 0);
           }
-          const payload = (await res.json().catch(() => ({}))) as { data?: CrispApiVisitor[] };
-          const pageRows = Array.isArray(payload.data) ? payload.data : [];
-          rows.push(...pageRows);
-          if (pageRows.length === 0 || (countedLive !== null && rows.length >= countedLive)) break;
-        }
 
-        const live = rows.filter((v): v is CrispApiVisitor & { session_id: string } =>
-          Boolean(v.session_id),
-        );
+          const rows: CrispApiVisitor[] = [];
+          let listOk = true;
+          for (
+            let page = 1;
+            page <= CRISP_VISITOR_PAGE_LIMIT && (countedLive === null || countedLive > 0);
+            page++
+          ) {
+            const res = await fetch(
+              `https://api.crisp.chat/v1/website/${websiteId}/visitors/list/${page}`,
+              { headers },
+            );
+            if (!res.ok) {
+              listOk = false;
+              break;
+            }
+            const payload = (await res.json().catch(() => ({}))) as { data?: CrispApiVisitor[] };
+            const pageRows = Array.isArray(payload.data) ? payload.data : [];
+            rows.push(...pageRows);
+            if (pageRows.length === 0 || (countedLive !== null && rows.length >= countedLive))
+              break;
+          }
 
-        // Refresh presence so the UI stays current even with no browser open.
-        if (listOk) {
-          await supabase
-            .from("crisp_visitors")
-            .update({ is_online: false, active: false, updated_at: nowIso })
-            .eq("crisp_website_id", websiteId)
-            .eq("is_online", true);
-        }
-
-        if (live.length > 0) {
-          await supabase.from("crisp_visitors").upsert(
-            live.map((v) => ({
-              crisp_website_id: websiteId,
-              crisp_session_id: v.session_id,
-              nickname: v.nickname || null,
-              email: v.email || null,
-              avatar: v.avatar || null,
-              user_agent: v.useragent || null,
-              initiated: Boolean(v.initiated),
-              active: Boolean(v.active),
-              is_online: true,
-              last_page_title: v.last_page?.page_title || null,
-              last_page_url: v.last_page?.page_url || null,
-              country: v.geolocation?.country || null,
-              region: v.geolocation?.region || null,
-              city: v.geolocation?.city || null,
-              latitude: v.geolocation?.coordinates?.latitude ?? null,
-              longitude: v.geolocation?.coordinates?.longitude ?? null,
-              timezone_minutes: v.timezone ?? null,
-              capabilities: Array.isArray(v.capabilities) ? v.capabilities : [],
-              locales: Array.isArray(v.locales) ? v.locales : [],
-              last_online_at: nowIso,
-              last_seen_at: nowIso,
-              updated_at: nowIso,
-            })),
-            { onConflict: "crisp_website_id,crisp_session_id" },
+          const live = rows.filter((v): v is CrispApiVisitor & { session_id: string } =>
+            Boolean(v.session_id),
           );
+
+          // Refresh presence so the UI stays current even with no browser open.
+          if (listOk) {
+            await supabase
+              .from("crisp_visitors")
+              .update({ is_online: false, active: false, updated_at: nowIso })
+              .eq("crisp_website_id", websiteId)
+              .eq("is_online", true);
+          }
+
+          if (live.length > 0) {
+            await supabase.from("crisp_visitors").upsert(
+              live.map((v) => ({
+                crisp_website_id: websiteId,
+                crisp_session_id: v.session_id,
+                nickname: v.nickname || null,
+                email: v.email || null,
+                avatar: v.avatar || null,
+                user_agent: v.useragent || null,
+                initiated: Boolean(v.initiated),
+                active: Boolean(v.active),
+                is_online: true,
+                last_page_title: v.last_page?.page_title || null,
+                last_page_url: v.last_page?.page_url || null,
+                country: v.geolocation?.country || null,
+                region: v.geolocation?.region || null,
+                city: v.geolocation?.city || null,
+                latitude: v.geolocation?.coordinates?.latitude ?? null,
+                longitude: v.geolocation?.coordinates?.longitude ?? null,
+                timezone_minutes: v.timezone ?? null,
+                capabilities: Array.isArray(v.capabilities) ? v.capabilities : [],
+                locales: Array.isArray(v.locales) ? v.locales : [],
+                last_online_at: nowIso,
+                last_seen_at: nowIso,
+                updated_at: nowIso,
+              })),
+              { onConflict: "crisp_website_id,crisp_session_id" },
+            );
+          }
         }
+
+        // Greet pass: runs on EVERY invocation (webhook kick or cron tick) over
+        // the currently-online visitors in the DB. The webhook keeps is_online
+        // fresh on arrival, and a Crisp-refresh (above) tops it up within quota.
+        // autoGreet itself de-dupes via the per-visitor auto_greeted_at claim and
+        // honors the configured delay via auto_greet_due_at, so sending it the DB
+        // view here is safe and never double-sends.
+        type DbLiveRow = {
+          crisp_session_id: string;
+          nickname: string | null;
+          email: string | null;
+          avatar: string | null;
+          city: string | null;
+        };
+        const { data: dbLive } = await supabase
+          .from("crisp_visitors")
+          .select("crisp_session_id, nickname, email, avatar, city")
+          .eq("crisp_website_id", websiteId)
+          .eq("is_online", true);
+
+        const liveForGreet = ((dbLive ?? []) as DbLiveRow[]).map((r) => ({
+          session_id: r.crisp_session_id,
+          nickname: r.nickname,
+          email: r.email,
+          avatar: r.avatar,
+          geolocation: { city: r.city },
+        }));
 
         greeted += await autoGreet({
           supabase,
@@ -237,7 +273,7 @@ serve(async (req) => {
           headers,
           message,
           delaySeconds: Math.max(0, Math.min(3600, Number(ws.auto_greet_delay_seconds) || 0)),
-          live,
+          live: liveForGreet,
           nowIso,
         });
       } catch (err) {
