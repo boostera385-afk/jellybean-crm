@@ -2368,13 +2368,22 @@ function CrispInboxInner() {
                   className="h-6 w-6 shrink-0"
                   onClick={() => visitorOverview.refetch()}
                   disabled={visitorOverview.isFetching}
-                  title="Refresh visitors"
+                  title="Refresh cached visitors (does not call Crisp)"
                 >
                   <RefreshCw
                     className={cn("h-3.5 w-3.5", visitorOverview.isFetching && "animate-spin")}
                   />
                 </Button>
               </div>
+              {visitorOverview.data?.errors?.length ? (
+                <div
+                  role="status"
+                  className="shrink-0 border-b border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+                >
+                  <p className="font-medium">Some visitor data may be delayed</p>
+                  <p className="mt-1 break-words">{visitorOverview.data.errors.join(" · ")}</p>
+                </div>
+              ) : null}
               <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 overscroll-contain">
                 {hotVisitors.length === 0 ? (
                   <div className="flex h-full min-h-24 flex-col items-center justify-center px-4 text-center">

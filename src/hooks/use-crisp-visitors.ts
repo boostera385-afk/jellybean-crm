@@ -19,9 +19,9 @@ const EMPTY_OVERVIEW: CrispVisitorOverview = {
 // places still results in just one fetch every refetch interval.
 export const CRISP_VISITORS_QUERY_KEY = ["crisp-visitor-overview"] as const;
 // Live-visitor changes are pushed over Supabase Realtime (see CrispVisitorAlerts),
-// so this interval is only a safety-net for when the realtime channel drops or
-// to drive the sync if the server-side sweeper is not running. Keeping it slow
-// avoids redundant polling while the realtime path handles freshness.
+// so this interval is a safety net when the realtime channel drops. Queries also
+// refresh on focus/reconnection. This reads Supabase only; it never calls Crisp or
+// sends greetings, even if the worker is unavailable.
 const CRISP_VISITORS_REFETCH_MS = 20_000;
 
 export function useCrispVisitors(enabled = true) {
@@ -36,8 +36,7 @@ export function useCrispVisitors(enabled = true) {
     // (refetchOnWindowFocus) catches the operator up instantly.
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
-    // The interval already recovers from a failed tick; an extra retry just
-    // doubles the request rate against Crisp.
+    // The interval/focus refresh recovers a failed database read.
     retry: false,
     placeholderData: EMPTY_OVERVIEW,
   });
