@@ -1,8 +1,15 @@
-// Server-side auto-greeting sweeper for Crisp live visitors.
+// Server-side Crisp live-visitor presence sweeper (+ optional auto-greeting).
 //
 // Invoked on a short pg_cron schedule (independent of any operator browser), it
-// syncs each auto-greet-enabled workspace's live visitors from the Crisp API and
-// sends the configured greeting to eligible ones. It shares the same
+// reconciles each ENABLED workspace's live visitors against the Crisp API —
+// marking arrivals online and departed visitors offline — so the live-visitor
+// list stays fresh 24/7 even when nobody has the app open. This presence sweep
+// runs for every enabled workspace, NOT only auto-greet ones: it is what clears
+// "ghost" visitors who already left and surfaces new ones when a webhook is
+// missed.
+//
+// Where a workspace additionally has auto-greeting enabled, it also sends the
+// configured greeting to eligible live visitors. It shares the same
 // claim_crisp_visitor_sync lock as the in-app visitor overview, so the two never
 // double-fetch Crisp, and the per-visitor auto_greeted_at claim prevents
 // double-sends.
@@ -106,13 +113,14 @@ serve(async (req) => {
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
+  // Every enabled workspace is swept for presence; auto-greet is an extra step
+  // gated per-workspace below, so disabling greeting never stops presence sync.
   let workspacesQuery = supabase
     .from("crisp_workspaces")
     .select(
       "crisp_website_id, workspace_name, credential_secret_id, auto_greet_enabled, auto_greet_message, auto_greet_delay_seconds",
     )
-    .eq("enabled", true)
-    .eq("auto_greet_enabled", true);
+    .eq("enabled", true);
 
   if (onlyWebsiteId) {
     workspacesQuery = workspacesQuery.eq("crisp_website_id", onlyWebsiteId);
@@ -135,12 +143,14 @@ serve(async (req) => {
   await Promise.all(
     (workspaces ?? []).map(async (ws) => {
       const websiteId = ws.crisp_website_id as string;
+      // Presence sync needs only credentials. Greeting is an extra, gated step.
+      if (!ws.credential_secret_id) return;
       const message = typeof ws.auto_greet_message === "string" ? ws.auto_greet_message.trim() : "";
-      if (!message || !ws.credential_secret_id) return;
+      const canGreet = Boolean(ws.auto_greet_enabled) && message.length > 0;
 
       try {
-        // Crisp credentials are needed to SEND the greeting, so we always resolve
-        // them (a cheap Vault read via RPC — no Crisp API call).
+        // Crisp credentials are needed to fetch the visitor list (and to send a
+        // greeting), so we always resolve them (a cheap Vault read via RPC).
         const { data: secret } = await supabase.rpc("crisp_get_workspace_secret", {
           p_secret_id: ws.credential_secret_id,
         });
@@ -167,11 +177,15 @@ serve(async (req) => {
             { headers },
           ).catch(() => null);
           let countedLive: number | null = null;
+          let countedActive: number | null = null;
+          let countedLimited = false;
           if (countRes?.ok) {
             const cp = (await countRes.json().catch(() => ({}))) as {
-              data?: { count?: number };
+              data?: { count?: number; active?: number; limited?: boolean };
             };
             countedLive = Number(cp.data?.count ?? 0);
+            countedActive = Number(cp.data?.active ?? 0);
+            countedLimited = Boolean(cp.data?.limited);
           }
 
           const rows: CrispApiVisitor[] = [];
@@ -238,44 +252,61 @@ serve(async (req) => {
               { onConflict: "crisp_website_id,crisp_session_id" },
             );
           }
+
+          // Persist the headline counts so the workspace badge stays accurate
+          // when the cron (not the in-app overview) is the one driving syncing.
+          // visitor_synced_at is already bumped by claim_crisp_visitor_sync.
+          if (listOk) {
+            await supabase
+              .from("crisp_workspaces")
+              .update({
+                live_visitor_count: countedLive ?? live.length,
+                active_visitor_count: countedActive ?? live.filter((v) => v.active).length,
+                visitors_limited: countedLimited,
+                updated_at: nowIso,
+              })
+              .eq("crisp_website_id", websiteId);
+          }
         }
 
-        // Greet pass: runs on EVERY invocation (webhook kick or cron tick) over
-        // the currently-online visitors in the DB. The webhook keeps is_online
-        // fresh on arrival, and a Crisp-refresh (above) tops it up within quota.
-        // autoGreet itself de-dupes via the per-visitor auto_greeted_at claim and
-        // honors the configured delay via auto_greet_due_at, so sending it the DB
-        // view here is safe and never double-sends.
-        type DbLiveRow = {
-          crisp_session_id: string;
-          nickname: string | null;
-          email: string | null;
-          avatar: string | null;
-          city: string | null;
-        };
-        const { data: dbLive } = await supabase
-          .from("crisp_visitors")
-          .select("crisp_session_id, nickname, email, avatar, city")
-          .eq("crisp_website_id", websiteId)
-          .eq("is_online", true);
+        // Greet pass (only when this workspace has auto-greeting on): runs on
+        // EVERY invocation (webhook kick or cron tick) over the currently-online
+        // visitors in the DB. The webhook keeps is_online fresh on arrival, and
+        // the Crisp refresh above tops it up within quota. autoGreet de-dupes via
+        // the per-visitor auto_greeted_at claim and honors the configured delay
+        // via auto_greet_due_at, so sending it the DB view here never double-sends.
+        if (canGreet) {
+          type DbLiveRow = {
+            crisp_session_id: string;
+            nickname: string | null;
+            email: string | null;
+            avatar: string | null;
+            city: string | null;
+          };
+          const { data: dbLive } = await supabase
+            .from("crisp_visitors")
+            .select("crisp_session_id, nickname, email, avatar, city")
+            .eq("crisp_website_id", websiteId)
+            .eq("is_online", true);
 
-        const liveForGreet = ((dbLive ?? []) as DbLiveRow[]).map((r) => ({
-          session_id: r.crisp_session_id,
-          nickname: r.nickname,
-          email: r.email,
-          avatar: r.avatar,
-          geolocation: { city: r.city },
-        }));
+          const liveForGreet = ((dbLive ?? []) as DbLiveRow[]).map((r) => ({
+            session_id: r.crisp_session_id,
+            nickname: r.nickname,
+            email: r.email,
+            avatar: r.avatar,
+            geolocation: { city: r.city },
+          }));
 
-        greeted += await autoGreet({
-          supabase,
-          websiteId,
-          headers,
-          message,
-          delaySeconds: Math.max(0, Math.min(3600, Number(ws.auto_greet_delay_seconds) || 0)),
-          live: liveForGreet,
-          nowIso,
-        });
+          greeted += await autoGreet({
+            supabase,
+            websiteId,
+            headers,
+            message,
+            delaySeconds: Math.max(0, Math.min(3600, Number(ws.auto_greet_delay_seconds) || 0)),
+            live: liveForGreet,
+            nowIso,
+          });
+        }
       } catch (err) {
         console.error(`Auto-greet sweep failed for ${websiteId}:`, err);
       }
