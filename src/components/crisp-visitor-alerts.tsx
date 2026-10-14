@@ -99,6 +99,15 @@ export function CrispVisitorAlerts() {
         { event: "*", schema: "public", table: "crisp_visitors" },
         invalidateSoon,
       )
+      // The aggregate live/active counters live on crisp_workspaces. The webhook
+      // now keeps them in step with presence events, but a reconcile-only
+      // correction (drift or visitors_limited) may touch just this row, so push
+      // those too instead of waiting for the slow fallback poll.
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "crisp_workspaces" },
+        invalidateSoon,
+      )
       .subscribe((status) => {
         // Recover any changes missed during reconnect; this is a database read.
         if (status === "SUBSCRIBED") invalidateSoon();
