@@ -148,21 +148,41 @@ serve(async (req) => {
       .update({ last_seen_at: new Date().toISOString() })
       .eq("id", wsRecord.id);
 
-    // Crisp documents this as `website:update_visitors_count`. The loose match
-    // also accepts alternate/legacy names such as `website:visitors:count`.
-    if (eventType.includes("visitors") && eventType.includes("count")) {
-      try {
-        await fetch(`${supabaseUrl}/functions/v1/crisp-auto-greet`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${supabaseServiceKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ websiteId, immediate: true }),
-        });
-      } catch (err) {
-        console.error("Failed to trigger auto-greet sweep:", err);
-      }
+    // ─── TRIGGER AUTO-GREET SWEEP ────────────────────────────────────────────
+    // Kick the server-side auto-greet sweeper the moment Crisp tells us a visitor
+    // is present, so a greeting goes out on arrival instead of waiting for the
+    // next scheduled pg_cron tick (which was the source of the ~20s delay).
+    //
+    // Crisp's documented signal here is `website:update_visitors_count`, but on
+    // many plans that event is NEVER delivered — the real arrival signals are the
+    // per-session presence events (session:sync:*, session:set_*,
+    // session:request:initiated, session:removed). We trigger on BOTH so arrival
+    // detection no longer depends on an event the plan may never send.
+    //
+    // The sweep is fire-and-forget (void fetch, immediate: true → 3s sync window)
+    // so it never blocks or fails this webhook response. For presence events we do
+    // NOT return early: the handler below still upserts visitor presence inline,
+    // which keeps the live rail fast without an extra Crisp API call.
+    const isVisitorCountEvent = eventType.includes("visitors") && eventType.includes("count");
+    const isSessionPresenceEvent =
+      eventType.startsWith("session:sync:") ||
+      eventType.startsWith("session:set_") ||
+      eventType === "session:request:initiated" ||
+      eventType === "session:removed";
+
+    if ((isVisitorCountEvent || isSessionPresenceEvent) && wsRecord.auto_greet_enabled) {
+      void fetch(`${supabaseUrl}/functions/v1/crisp-auto-greet`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${supabaseServiceKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ websiteId, immediate: true }),
+      }).catch((err) => console.error("Failed to trigger auto-greet sweep:", err));
+    }
+
+    // Pure visitor-count events carry no session to process — acknowledge and stop.
+    if (isVisitorCountEvent && !(data.session_id || body.session_id)) {
       return new Response(JSON.stringify({ status: "success", event: "visitors-count" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
