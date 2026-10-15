@@ -405,7 +405,6 @@ const rephraseInputSchema = z.object({
 });
 
 export async function executeAiRephraseCore({
-  template,
   customerName,
   contextText,
   exactRequirement,
@@ -414,7 +413,8 @@ export async function executeAiRephraseCore({
   requirement2,
   systemPrompt: customSystemPrompt,
 }: {
-  template: string;
+  /** Still accepted from callers, but no longer decides the sender name. */
+  template?: string;
   customerName: string;
   contextText?: string | null;
   exactRequirement?: string | null;
@@ -431,6 +431,21 @@ export async function executeAiRephraseCore({
   // import would ship all of it to the browser for no reason.
   const { buildComposeSystemPrompt, canonicalizeRequirement, selectComposeExemplars } =
     await import("@/lib/compose-style");
+  const { senderForTick, fallbackTick } = await import("@/lib/compose-senders");
+
+  // The roster advances every LEADS_PER_SENDER messages. The counter lives in
+  // the database because the run of ten has to hold across requests, server
+  // instances and redeploys. If it cannot be read, fall back to a time window
+  // so the name still varies rather than pinning every message to one again.
+  let senderTick = fallbackTick();
+  try {
+    const { data: tick, error: tickError } = await supabaseAdmin.rpc(
+      "cs_next_compose_sender_tick",
+    );
+    if (!tickError && tick !== null && tick !== undefined) senderTick = Number(tick);
+  } catch {
+    // Keep the time-based fallback.
+  }
 
   // The system prompt and examples now come from the delivered messages;
   // see src/lib/compose-style.ts and scripts/build-compose-style.py.
@@ -522,18 +537,6 @@ export async function executeAiRephraseCore({
     return name || "there";
   };
 
-  const extractSenderName = (templateText: string): string => {
-    const match = templateText.match(/this is\s+([A-Za-z0-9_'\-\s]+?)(?:[.,\r\n]|$)/i);
-    if (match) {
-      return match[1].trim();
-    }
-    const match2 = templateText.match(/this is\s+(\w+)/i);
-    if (match2) {
-      return match2[1].trim();
-    }
-    return "Alex";
-  };
-
   const sanitizeForbiddenPhrases = (text: string): string => {
     if (!text) return "";
     let clean = text;
@@ -575,7 +578,7 @@ export async function executeAiRephraseCore({
 
   // Apply sanitization and normalization
   const finalFirstName = extractFirstName(customerName);
-  const finalSenderName = extractSenderName(template);
+  const finalSenderName = senderForTick(senderTick);
   const finalServiceContext = normalizeServiceContext(serviceContext);
   const finalReq1 = normalizeRequirement(req1);
   const finalReq2 = normalizeRequirement(req2);
