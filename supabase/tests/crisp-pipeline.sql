@@ -79,6 +79,22 @@ BEGIN
   PERFORM public.crisp_apply_event(jsonb_build_object('website_id',w,'event','session:set_nickname',
     'data',jsonb_build_object('session_id','operator-edit-only','nickname','Edited by operator')));
   IF EXISTS(SELECT 1 FROM public.crisp_visitors WHERE crisp_website_id=w AND crisp_session_id='operator-edit-only') THEN RAISE EXCEPTION 'Operator metadata edit created phantom visitor'; END IF;
+  -- Crisp sends availability either as "online" or as {"type":"online"}. The
+  -- nested shape used to fall through to 'availability IS NOT NULL' and mark an
+  -- ARRIVING visitor offline; both shapes must now register presence.
+  PERFORM public.crisp_apply_event(jsonb_build_object('website_id',w,'event','session:update_availability',
+    'data',jsonb_build_object('session_id','nested-avail','availability',jsonb_build_object('type','online'))));
+  IF NOT coalesce((SELECT is_online FROM public.crisp_visitors WHERE crisp_website_id=w AND crisp_session_id='nested-avail'),false) THEN
+    RAISE EXCEPTION 'Nested availability payload did not register presence'; END IF;
+  PERFORM public.crisp_apply_event(jsonb_build_object('website_id',w,'event','session:update_availability',
+    'data',jsonb_build_object('session_id','nested-avail','availability',jsonb_build_object('type','offline'))));
+  IF (SELECT is_online FROM public.crisp_visitors WHERE crisp_website_id=w AND crisp_session_id='nested-avail') THEN
+    RAISE EXCEPTION 'Nested availability offline did not clear presence'; END IF;
+  -- The bare string shape must keep working.
+  PERFORM public.crisp_apply_event(jsonb_build_object('website_id',w,'event','session:update_availability',
+    'data',jsonb_build_object('session_id','flat-avail','availability','online')));
+  IF NOT coalesce((SELECT is_online FROM public.crisp_visitors WHERE crisp_website_id=w AND crisp_session_id='flat-avail'),false) THEN
+    RAISE EXCEPTION 'Flat availability payload stopped registering presence'; END IF;
   RAISE NOTICE 'Crisp pipeline regression checks passed';
 END $$;
 ROLLBACK;
