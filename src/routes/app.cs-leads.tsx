@@ -87,7 +87,7 @@ import { listCsTeam, bulkAssignImportantLeads, type CsTeamMember } from "@/lib/c
 import { downloadCsv, formatPhone, phoneSearchPattern, phoneDigitsMatch } from "@/lib/crm-lite";
 import type { CsStatus, LeadNote } from "@/lib/crm-types";
 import { NumberNameSelect } from "@/components/number-name-select";
-import { STATUS_LABEL, STATUS_TONE } from "@/lib/lead-statuses";
+import { STATUS_LABEL, STATUS_TONE, pinnedImportantFor } from "@/lib/lead-statuses";
 import { renderCsComposeSuggestion } from "@/lib/cs-compose-template";
 import { rephraseLeadTemplateWithAi, autoRephraseLeadWithAi } from "@/lib/raw-leads-ai.functions";
 import { SERVICE_CATEGORIES } from "@/data/service-options";
@@ -2497,6 +2497,7 @@ function LeadCard({
         ...lead,
         cs_status: next,
         contact_method: contactMethod,
+        pinned_important: pinnedImportantFor(lead.pinned_important, next),
       });
       toast.success(`Status → ${STATUS_LABEL[next] ?? next}`);
       qc.invalidateQueries({ queryKey: ["cs_leads"] });
@@ -3494,7 +3495,7 @@ function LeadDrawer({
           requirement_1: requirement1.trim() || null,
           requirement_2: requirement2.trim() || null,
           is_important: isImportant,
-          pinned_important: isImportant ? lead.pinned_important : false,
+          pinned_important: pinnedImportantFor(isImportant && lead.pinned_important, status),
         } as never)
         .eq("id", lead.id);
       if (error) throw error;
@@ -3513,7 +3514,7 @@ function LeadDrawer({
         assigned_to: assignedTo,
         assigned_to_name: assignedName,
         is_important: isImportant,
-        pinned_important: isImportant ? lead.pinned_important : false,
+        pinned_important: pinnedImportantFor(isImportant && lead.pinned_important, status),
       });
       await supabase.from("activity_logs").insert({
         actor_id: auth.user?.id,

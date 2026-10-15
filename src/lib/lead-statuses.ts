@@ -54,3 +54,19 @@ export const STATUS_TONE: Record<string, string> = {
   closed_won: "bg-[#def7e8] text-[#07B053] border-[#a9dfbf] shadow-sm",
   closed_lost: "bg-[#f8e4e5] text-[#C1292E] border-[#e7b1b3] shadow-sm",
 };
+
+/**
+ * A pinned important lead is a "handle this first" marker for a brand new lead,
+ * so the pin is consumed as soon as CS moves the lead out of `new`.
+ *
+ * The database owns this rule (trg_qualified_leads_pin_only_while_new). This
+ * mirrors it for payloads assembled on the client - notably the Google Sheets
+ * sync, which is built from in-memory lead state and would otherwise report a
+ * pin the database has already cleared.
+ */
+export function pinnedImportantFor(
+  pinnedImportant: boolean | null | undefined,
+  csStatus: string | null | undefined,
+): boolean {
+  return Boolean(pinnedImportant) && csStatus === "new";
+}
