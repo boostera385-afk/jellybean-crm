@@ -564,14 +564,19 @@ function Inner() {
         .maybeSingle();
       if (error) return DEFAULT_REPHRASE_PROMPT;
       const v = data?.value as { text?: string } | null;
-      return v?.text || DEFAULT_REPHRASE_PROMPT;
+      const stored = v?.text ?? "";
+      // A stored copy of the old prompt is ignored when composing, so show the
+      // box blank rather than displaying instructions that have no effect.
+      return isCustomRephrasePrompt(stored) ? stored : DEFAULT_REPHRASE_PROMPT;
     },
     refetchOnWindowFocus: false,
   });
 
   const remotePrompt = promptQuery.data;
   useEffect(() => {
-    if (remotePrompt && !promptDirty) {
+    // Blank is a real value (it means "use the trained default"), so this must
+    // not fall back to a truthiness check or clearing the prompt never syncs.
+    if (remotePrompt !== undefined && !promptDirty) {
       setAiPrompt(remotePrompt);
     }
   }, [remotePrompt, promptDirty]);
