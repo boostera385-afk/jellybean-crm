@@ -6,6 +6,35 @@ import { crispFetch } from "../../supabase/functions/_shared/crisp-api";
 
 const CRISP_ROLES = ["admin", "cs_admin", "cs"];
 const CRISP_VISITOR_TIME_ZONE = "Asia/Karachi";
+// Only the columns mapVisitor actually returns. `select("*")` also ships the id,
+// bookkeeping timestamps and greeting markers that the UI never reads.
+const VISITOR_COLUMNS = [
+  "crisp_website_id",
+  "crisp_session_id",
+  "nickname",
+  "email",
+  "avatar",
+  "user_agent",
+  "initiated",
+  "active",
+  "is_online",
+  "last_page_title",
+  "last_page_url",
+  "country",
+  "region",
+  "city",
+  "latitude",
+  "longitude",
+  "timezone_minutes",
+  "capabilities",
+  "locales",
+  "first_seen_at",
+  "last_seen_at",
+].join(",");
+// Today's list is a scrollable rail, so it does not need every row: unbounded it
+// grows all day and is re-read on every presence change. The displayed total
+// comes from a separate exact count, so capping the list does not skew it.
+const TODAY_VISITOR_LIMIT = 200;
 
 export type CrispVisitor = {
   crisp_website_id: string;
@@ -259,17 +288,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
       }
     }
     const websiteIds = (workspaces ?? []).map((w: CrispWorkspaceRow) => w.crisp_website_id);
-
-    let liveQuery = supabaseAdmin
-      .from("crisp_visitors")
-      .select("*")
-      .in("crisp_website_id", websiteIds)
-      .eq("is_online", true)
-      .order("active", { ascending: false })
-      .order("last_seen_at", { ascending: false });
-    if (data.websiteId) liveQuery = liveQuery.eq("crisp_website_id", data.websiteId);
-    const { data: liveRows, error: liveError } = await liveQuery;
-    if (liveError) errors.push(`Live visitor details are unavailable: ${liveError.message}`);
+    const todayStartIso = pakistanDayStartIso(now);
 
     const mapVisitor = (visitor: CrispVisitorRow): CrispVisitor => ({
       crisp_website_id: visitor.crisp_website_id,
@@ -295,22 +314,56 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
       first_seen_at: visitor.first_seen_at,
       last_seen_at: visitor.last_seen_at,
     });
-    const liveVisitors = (liveRows ?? []).map(mapVisitor);
+
+    let liveQuery = supabaseAdmin
+      .from("crisp_visitors")
+      .select(VISITOR_COLUMNS)
+      .in("crisp_website_id", websiteIds)
+      .eq("is_online", true)
+      .order("active", { ascending: false })
+      .order("last_seen_at", { ascending: false });
+    if (data.websiteId) liveQuery = liveQuery.eq("crisp_website_id", data.websiteId);
 
     let todayQuery = supabaseAdmin
       .from("crisp_visitors")
-      .select("*")
+      .select(VISITOR_COLUMNS)
       .in("crisp_website_id", websiteIds)
-      .gte("last_seen_at", pakistanDayStartIso(now))
-      .order("last_seen_at", { ascending: false });
+      .gte("last_seen_at", todayStartIso)
+      .order("last_seen_at", { ascending: false })
+      .limit(TODAY_VISITOR_LIMIT);
     if (data.websiteId) todayQuery = todayQuery.eq("crisp_website_id", data.websiteId);
-    const { data: todayRows, error: todayError } = await todayQuery;
 
+    // head:true returns the count without shipping any rows, so the total stays
+    // exact even though the list above is capped.
+    let todayCountQuery = supabaseAdmin
+      .from("crisp_visitors")
+      .select("crisp_session_id", { count: "exact", head: true })
+      .in("crisp_website_id", websiteIds)
+      .gte("last_seen_at", todayStartIso);
+    if (data.websiteId) todayCountQuery = todayCountQuery.eq("crisp_website_id", data.websiteId);
+
+    // These three reads are independent, so one round trip instead of three.
+    // Presence refreshes run on every realtime change; the serial version made
+    // each one as slow as the sum of its queries.
+    const [liveResult, todayResult, todayCountResult] = await Promise.all([
+      liveQuery,
+      todayQuery,
+      todayCountQuery,
+    ]);
+    const { data: liveRows, error: liveError } = liveResult;
+    const { data: todayRows, error: todayError } = todayResult;
+    if (liveError) errors.push(`Live visitor details are unavailable: ${liveError.message}`);
     if (todayError) {
       errors.push(`Today's visitor details are unavailable: ${todayError.message}`);
     }
 
+    const liveVisitors = (liveRows ?? []).map(mapVisitor);
     const todayVisitors: CrispVisitor[] = (todayRows ?? []).map(mapVisitor);
+    // Fall back to the capped list length only if the count read failed.
+    const todayCount =
+      typeof todayCountResult?.count === "number"
+        ? todayCountResult.count
+        : todayVisitors.length;
 
     return {
       ok: errors.length === 0 || liveVisitors.length > 0 || todayVisitors.length > 0,
@@ -321,7 +374,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
         reportedActiveCount,
         liveVisitors.filter((visitor: CrispVisitor) => visitor.active).length,
       ),
-      todayCount: todayVisitors.length,
+      todayCount,
       limited,
       fetchedAt: nowIso,
       errors: errors.length > 0 ? errors : undefined,
