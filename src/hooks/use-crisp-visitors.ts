@@ -30,8 +30,11 @@ export function useCrispVisitors(enabled = true) {
     queryKey: CRISP_VISITORS_QUERY_KEY,
     queryFn: async () => getCrispVisitorOverview({ data: {} }),
     enabled,
-    // Short staleTime so a realtime-triggered invalidation always refetches.
-    staleTime: 2_000,
+    // Realtime drives this query, so cached data is never preferable to a fresh
+    // read: a newly mounting consumer (opening the Crisp tab) or a window focus
+    // refetches instead of rendering an older snapshot. Realtime invalidations
+    // already refetch regardless of staleTime; the debounce coalesces bursts.
+    staleTime: 0,
     refetchInterval: CRISP_VISITORS_REFETCH_MS,
     // Don't poll while the browser tab is hidden — the next refetch on focus
     // (refetchOnWindowFocus) catches the operator up instantly.

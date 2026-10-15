@@ -87,10 +87,12 @@ export function CrispVisitorAlerts() {
     const invalidateSoon = () => {
       performance.mark("crisp-presence-update");
       if (timer) return;
+      // Long enough to coalesce one transaction's row upserts into a single
+      // refetch, short enough not to be a visible part of the arrival delay.
       timer = setTimeout(() => {
         timer = null;
         void queryClient.invalidateQueries({ queryKey: CRISP_VISITORS_QUERY_KEY });
-      }, 400);
+      }, 150);
     };
     const channel = supabase
       .channel("crisp-visitors-live-realtime")

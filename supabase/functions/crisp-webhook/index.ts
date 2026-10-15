@@ -53,6 +53,18 @@ serve(async (req) => {
       p_fingerprint: await eventFingerprint(body),
     });
     if (insertError) throw insertError;
+    // A presence transition should reconcile the visitor list now instead of
+    // waiting for the next cron tick that happens to clear the throttle. Website
+    // level events (e.g. a visitor count change) carry no session_id at all, so
+    // crisp_apply_event drops them and REST is the only way to act on them.
+    // crisp_claim_presence still gates this by visitor_sync_interval_seconds, so
+    // webhook volume cannot overrun the Crisp request budget. Message traffic
+    // already carries presence inline and needs no REST confirmation.
+    const eventName = String(body.event);
+    const presenceEvent =
+      eventName.startsWith("website:") ||
+      eventName === "session:removed" ||
+      data?.availability !== undefined;
     // Durable storage is already committed. Background dispatch is an accelerator;
     // cron independently processes pending records if this invocation is lost.
     EdgeRuntime.waitUntil(
@@ -65,7 +77,7 @@ serve(async (req) => {
         const response = await fetch(`${url}/functions/v1/crisp-auto-greet`, {
           method: "POST",
           headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ websiteId, greetingsOnly: true }),
+          body: JSON.stringify({ websiteId, greetingsOnly: !presenceEvent }),
           signal: AbortSignal.timeout(15_000),
         });
         if (!response.ok) throw new Error(`Worker wake-up HTTP ${response.status}`);
