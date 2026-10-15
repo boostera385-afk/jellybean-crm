@@ -94,20 +94,17 @@ export function CrispVisitorAlerts() {
         void queryClient.invalidateQueries({ queryKey: CRISP_VISITORS_QUERY_KEY });
       }, 150);
     };
+    // Deliberately only crisp_visitors. The counters live on crisp_workspaces,
+    // but crisp_apply_event stamps last_seen_at on that row for EVERY event,
+    // messages included, so subscribing to it refetches the whole overview on
+    // all chat traffic. The counters are written in the same transaction as the
+    // crisp_visitors row that triggers this, so they arrive anyway; a
+    // reconcile-only correction waits for the fallback poll.
     const channel = supabase
       .channel("crisp-visitors-live-realtime")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "crisp_visitors" },
-        invalidateSoon,
-      )
-      // The aggregate live/active counters live on crisp_workspaces. The webhook
-      // now keeps them in step with presence events, but a reconcile-only
-      // correction (drift or visitors_limited) may touch just this row, so push
-      // those too instead of waiting for the slow fallback poll.
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "crisp_workspaces" },
         invalidateSoon,
       )
       .subscribe((status) => {
