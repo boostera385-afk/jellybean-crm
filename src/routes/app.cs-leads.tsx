@@ -126,7 +126,20 @@ function formatLeadServiceLabel(service: string | null): string | null {
   return service;
 }
 
-export const DEFAULT_REPHRASE_PROMPT = `You are an expert customer service assistant. Your goal is to clean, extract, and normalize three parts of a customer lead request to prepare them for an outbound message.
+/**
+ * Empty by default: the compose prompt is now built server side from the
+ * delivered-lead export (see src/lib/compose-style.ts), so there is nothing
+ * useful to show here unless a human deliberately overrides it.
+ */
+export const DEFAULT_REPHRASE_PROMPT = "";
+
+/**
+ * The previous hand-written prompt, kept ONLY so a saved copy of it is
+ * recognised as "never really customised" and does not shadow the trained
+ * default. It asked for a bare service name and banned the word "service",
+ * which the delivered messages contradict.
+ */
+const LEGACY_REPHRASE_PROMPT = `You are an expert customer service assistant. Your goal is to clean, extract, and normalize three parts of a customer lead request to prepare them for an outbound message.
 
 You must output a JSON object containing exactly three fields:
 1. "serviceContext": A very short, clean name of the service (e.g. "garage door repair", "lawn care", "plumbing leak"). It must be concise and lowercase. Never use "service", "seeking", "repair or replacement", or "damaged or non-functioning".
@@ -148,6 +161,14 @@ Forbidden Phrases (do not use in any field):
 - "provide the service address"
 - "our schedule"
 - "arrange a visit"`;
+
+/** True only when someone has deliberately written their own instructions. */
+function isCustomRephrasePrompt(prompt: string): boolean {
+  const text = (prompt ?? "").trim();
+  if (!text) return false;
+  const norm = (v: string) => v.replace(/\s+/g, " ").trim();
+  return norm(text) !== norm(LEGACY_REPHRASE_PROMPT);
+}
 
 export const Route = createFileRoute("/app/cs-leads")({
   head: () => ({
@@ -618,9 +639,11 @@ function Inner() {
               template: templateObj.template,
               customerName: lead.customer_name || "there",
               contextText: lead.context,
+              exactRequirement: lead.post_text,
+              service: lead.service,
               requirement1: lead.requirement_1 || "",
               requirement2: lead.requirement_2 || "",
-              systemPrompt: aiPrompt,
+              systemPrompt: isCustomRephrasePrompt(aiPrompt) ? aiPrompt : null,
             },
           });
 
@@ -1683,10 +1706,13 @@ function Inner() {
                   }}
                   rows={5}
                   className="text-[12.5px] min-h-[120px]"
-                  placeholder="Instructions for rephrasing customer templates..."
+                  placeholder="Leave blank to use the trained default, built from your delivered leads. Type here only to override it for every CS agent."
                 />
                 <div className="flex justify-between items-center text-[11px] text-muted-foreground">
-                  <span>Saved prompt syncs to all CS agents and admins in real time.</span>
+                  <span>
+                    Blank uses the trained default built from delivered leads. Saved text
+                    overrides it for all CS agents and admins in real time.
+                  </span>
                   <Button
                     size="sm"
                     variant={promptDirty ? "default" : "outline"}
@@ -2381,6 +2407,8 @@ function LeadCard({
           template: templateToUse,
           customerName: lead.customer_name || "there",
           contextText: lead.context,
+          exactRequirement: lead.post_text,
+          service: lead.service,
           requirement1: requirement1,
           requirement2: requirement2,
         },
@@ -3431,6 +3459,8 @@ function LeadDrawer({
           template: templateToUse,
           customerName: lead.customer_name || "there",
           contextText: lead.context,
+          exactRequirement: lead.post_text,
+          service: lead.service,
           requirement1: requirement1,
           requirement2: requirement2,
         },

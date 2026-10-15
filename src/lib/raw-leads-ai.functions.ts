@@ -397,6 +397,8 @@ const rephraseInputSchema = z.object({
   template: z.string(),
   customerName: z.string(),
   contextText: z.string().nullable().optional(),
+  exactRequirement: z.string().nullable().optional(),
+  service: z.string().nullable().optional(),
   requirement1: z.string().nullable().optional(),
   requirement2: z.string().nullable().optional(),
   systemPrompt: z.string().nullable().optional(),
@@ -406,6 +408,8 @@ export async function executeAiRephraseCore({
   template,
   customerName,
   contextText,
+  exactRequirement,
+  service,
   requirement1,
   requirement2,
   systemPrompt: customSystemPrompt,
@@ -413,6 +417,8 @@ export async function executeAiRephraseCore({
   template: string;
   customerName: string;
   contextText?: string | null;
+  exactRequirement?: string | null;
+  service?: string | null;
   requirement1?: string | null;
   requirement2?: string | null;
   systemPrompt?: string | null;
@@ -420,35 +426,37 @@ export async function executeAiRephraseCore({
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("Missing OPENAI_API_KEY secret");
 
-  const defaultSystemPrompt = `You are an expert customer service assistant. Your goal is to clean, extract, and normalize three parts of a customer lead request to prepare them for an outbound message.
+  // Imported here rather than at module scope: app.cs-leads.tsx imports this
+  // file, and compose-style carries the generated style data (~320KB). A static
+  // import would ship all of it to the browser for no reason.
+  const { buildComposeSystemPrompt, canonicalizeRequirement, selectComposeExemplars } =
+    await import("@/lib/compose-style");
 
-You must output a JSON object containing exactly three fields:
-1. "serviceContext": A very short, clean name of the service (e.g. "garage door repair", "lawn care", "plumbing leak"). It must be concise and lowercase. Never use "service", "seeking", "repair or replacement", or "damaged or non-functioning".
-2. "requirement1": The first requirement or question normalized as an action-oriented phrase starting with a lowercase verb.
-3. "requirement2": The second requirement or question normalized as an action-oriented phrase starting with a lowercase verb.
+  // The system prompt and examples now come from the delivered messages;
+  // see src/lib/compose-style.ts and scripts/build-compose-style.py.
+  // A prompt saved in the UI still overrides it.
 
-Normalization Rules for Requirements (both requirement1 and requirement2):
-- If the requirement refers to address, location, or where to go, normalize it to: "share your complete address"
-- If the requirement refers to availability, time, or when they are available, normalize it to: "let me know your availability"
-- If the requirement refers to a photo, picture, image, or snapshot, normalize it to: "send me a picture of it"
-- Otherwise, rephrase to start with a verb (e.g. "confirm whether you have the spring on hand").
-- Requirement text must not be capitalized or end with punctuation.
+  const systemPrompt = customSystemPrompt || buildComposeSystemPrompt();
 
-Forbidden Phrases (do not use in any field):
-- "I understand"
-- "seeking"
-- "repair or replacement"
-- "damaged or non-functioning"
-- "provide the service address"
-- "our schedule"
-- "arrange a visit"`;
-
-  const systemPrompt = customSystemPrompt || defaultSystemPrompt;
+  // The live input must have the same shape as the exemplar inputs below, or
+  // the examples teach the model to read a different payload. requirement1 and
+  // requirement2 are intentionally not sent: the delivered messages show the
+  // final asks are standard ones (address, availability, a picture) rather than
+  // the customer's own phrasing, and the exemplars cannot carry a value for
+  // them. They are still used as the fallback if the model reply fails to parse.
+  const exemplars = selectComposeExemplars(service, 6);
+  const fewShot = exemplars.flatMap((ex) => [
+    {
+      role: "user" as const,
+      content: JSON.stringify({ context: ex.context, exact: ex.exact, service: ex.service }),
+    },
+    { role: "assistant" as const, content: JSON.stringify(ex.out) },
+  ]);
 
   const userContent = JSON.stringify({
     context: contextText || "",
-    requirement1: requirement1 || "",
-    requirement2: requirement2 || "",
+    exact: exactRequirement || "",
+    service: service || "",
   });
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -461,6 +469,7 @@ Forbidden Phrases (do not use in any field):
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
+        ...fewShot,
         { role: "user", content: userContent },
       ],
       response_format: {
@@ -543,69 +552,24 @@ Forbidden Phrases (do not use in any field):
     return clean.replace(/\s+/g, " ").trim();
   };
 
-  const normalizeRequirement = (req: string): string => {
-    if (!req) return "";
-    let clean = req.trim();
-    const lower = clean.toLowerCase();
-
-    if (lower.includes("address")) {
-      return "share your complete address";
-    }
-    if (
-      lower.includes("availability") ||
-      lower.includes("available") ||
-      lower.includes("time") ||
-      lower.includes("when")
-    ) {
-      return "let me know your availability";
-    }
-    if (
-      lower.includes("photo") ||
-      lower.includes("picture") ||
-      lower.includes("image") ||
-      lower.includes("pic")
-    ) {
-      return "send me a picture of it";
-    }
-
-    clean = sanitizeForbiddenPhrases(clean);
-    if (clean.length > 0) {
-      clean = clean.charAt(0).toLowerCase() + clean.slice(1);
-      clean = clean.replace(/[.?,;!]$/, "");
-    }
-    return clean.trim();
-  };
+  // Snap the ask onto the team's majority wording (see compose-style.ts).
+  // The previous hardcoded rules rewrote every picture request to
+  // "send me a picture of it" - wording that appears nowhere in the delivered
+  // messages, where the object is always named - and sent any requirement
+  // merely containing "when" or "time" to availability.
+  const normalizeRequirement = (req: string): string =>
+    canonicalizeRequirement(sanitizeForbiddenPhrases(req));
 
   const normalizeServiceContext = (ctx: string): string => {
     if (!ctx) return "your service";
-    let clean = ctx.trim();
-    clean = sanitizeForbiddenPhrases(clean);
-    // Remove trailing/leading "service"
-    clean = clean.replace(/\b(service)\b/gi, "");
-
-    // If there is a "for [noun]" or "to [verb]" that repeats words present earlier in the string, strip it.
-    const forIndex = clean.toLowerCase().indexOf(" for ");
-    if (forIndex !== -1) {
-      const firstPart = clean.substring(0, forIndex).trim();
-      const secondPart = clean.substring(forIndex + 5).trim();
-      const firstWords = firstPart
-        .toLowerCase()
-        .split(/\s+/)
-        .filter((w) => w.length > 2);
-      const secondWords = secondPart
-        .toLowerCase()
-        .split(/\s+/)
-        .filter((w) => w.length > 2);
-      const overlap = firstWords.some((w) => secondWords.includes(w));
-      if (overlap) {
-        clean = firstPart;
-      }
-    }
-
-    clean = clean.replace(/\s+/g, " ").trim();
-    if (clean.length > 0) {
-      clean = clean.charAt(0).toLowerCase() + clean.slice(1);
-    }
+    // Keep the word "service" AND the customer's specifics. The delivered style
+    // is "a garage door repair service to repair an off track roll up garage
+    // door", not a bare "garage door repair"; the old version stripped
+    // /\bservice\b/ and dropped any " for ..." clause that shared a word with
+    // the head, which left sentences like "looking for a window replacement  ."
+    let clean = sanitizeForbiddenPhrases(ctx).replace(/\s+/g, " ").trim();
+    clean = clean.replace(/[.?,;!]$/, "");
+    if (clean.length > 0) clean = clean.charAt(0).toLowerCase() + clean.slice(1);
     return clean || "your service";
   };
 
@@ -643,6 +607,8 @@ export const rephraseLeadTemplateWithAi = createServerFn({ method: "POST" })
       template: data.template,
       customerName: data.customerName,
       contextText: data.contextText,
+      exactRequirement: data.exactRequirement,
+      service: data.service,
       requirement1: data.requirement1,
       requirement2: data.requirement2,
       systemPrompt: data.systemPrompt,
