@@ -1,26 +1,22 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { crispFetch, type RpcClient } from "../_shared/crisp-api.ts";
 import { mapConcurrent, sendOutcome, timingSafeEqual } from "../_shared/crisp-policy.ts";
+import { countCheckDue, readPresence } from "../_shared/crisp-presence.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-type Admin = RpcClient & SupabaseClient;
-// A complete list pass must be no older than this, or the next claim upgrades
-// itself to a full pass. The UI staleness banner keys on
-// visitor_sync_succeeded_at with a 60s window, so a full pass every 55s keeps
-// that signal honest while tripwire passes (which never set succeeded_at) stay
-// cheap in between.
-const FULL_PASS_MAX_AGE_MS = 55_000;
+type Admin = RpcClient;
 
 type Workspace = {
   crisp_website_id: string;
   credential_secret_id: string | null;
   crisp_cooldown_until: string | null;
-  last_full_presence_at: string | null;
+  visitor_count_checked_at: string | null;
+  visitor_synced_at: string | null;
 };
 type Visitor = {
   session_id?: string;
@@ -41,7 +37,14 @@ type Visitor = {
   capabilities?: string[];
   locales?: string[];
 };
-type Job = { id: string; lease_token: string; crisp_session_id: string; content: string };
+type Job = {
+  id: string;
+  lease_token: string;
+  crisp_session_id: string;
+  content: string;
+  created_at: string;
+  due_at: string;
+};
 
 async function rpc(admin: Admin, name: string, args: Record<string, unknown>) {
   const { data, error } = await admin.rpc(name, args);
@@ -49,114 +52,29 @@ async function rpc(admin: Admin, name: string, args: Record<string, unknown>) {
   return data;
 }
 
-function fullPassDue(lastFullPresenceAt: string | null): boolean {
-  if (!lastFullPresenceAt) return true;
-  const at = Date.parse(lastFullPresenceAt);
-  return !Number.isFinite(at) || Date.now() - at >= FULL_PASS_MAX_AGE_MS;
-}
-
-// Database-only read (no Crisp quota): how many sessions we currently hold as
-// online. Compared against Crisp's visitors/count to decide whether the list
-// fetch can be skipped. A query failure conservatively returns null, which
-// always forces the full pass.
-async function onlineVisitorCount(admin: Admin, websiteId: string): Promise<number | null> {
-  const { count, error } = await admin
-    .from("crisp_visitors")
-    .select("crisp_session_id", { count: "exact", head: true })
-    .eq("crisp_website_id", websiteId)
-    .eq("is_online", true);
-  if (error) return null;
-  return count ?? 0;
-}
-
 async function reconcile(
   admin: Admin,
   websiteId: string,
   headers: Record<string, string>,
-  lastFullPresenceAt: string | null,
+  workspace: Workspace,
 ) {
   const token = await rpc(admin, "crisp_claim_presence", { p_website_id: websiteId });
   if (!token) return;
   const startedAt = new Date().toISOString();
-  const rows: Visitor[] = [];
-  let count: number | null = null;
-  let active: number | null = null;
-  let limited = false;
-  let complete = false;
-  let failure: string | null = null;
-  try {
-    const countResponse = await crispFetch(
-      admin,
-      `https://api.crisp.chat/v1/website/${websiteId}/visitors/count`,
-      { headers },
-    );
-    if (!countResponse.ok) throw new Error(`Visitor count HTTP ${countResponse.status}`);
-    const counter = (await countResponse.json()).data;
-    if (!Number.isInteger(counter?.count) || counter.count < 0)
-      throw new Error("Invalid visitor count");
-    count = counter.count;
-    active = Number.isInteger(counter.active) ? counter.active : null;
-    limited = Boolean(counter.limited);
-    if (count === 0) {
-      // An empty site is a complete snapshot on its own: no list call is needed
-      // and every known visitor is safe to mark offline below.
-      complete = true;
-    } else if (
-      !fullPassDue(lastFullPresenceAt) &&
-      (await onlineVisitorCount(admin, websiteId)) === count
-    ) {
-      // Count-tripwire pass: Crisp's count equals the online rows we already
-      // hold and a complete snapshot is recent, so the list fetch is skipped.
-      // The empty-rows finish with complete=false refreshes the counters and
-      // releases the lease without ever establishing absence, and a mismatch
-      // (arrival or departure) falls through to the full pagination below
-      // inside this same cycle.
-      await rpc(admin, "crisp_finish_presence", {
-        p_website_id: websiteId,
-        p_token: token,
-        p_started_at: startedAt,
-        p_rows: [],
-        p_complete: false,
-        p_count: count,
-        p_active: active,
-        p_limited: limited,
-        p_error: null,
-      });
-      return;
-    } else {
-      for (let page = 1; page <= 10; page++) {
-        const response = await crispFetch(
-          admin,
-          `https://api.crisp.chat/v1/website/${websiteId}/visitors/list/${page}`,
-          { headers },
-        );
-        if (!response.ok) throw new Error(`Visitor list HTTP ${response.status}`);
-        const payload = await response.json();
-        if (!Array.isArray(payload.data)) throw new Error("Invalid visitor list");
-        if (payload.data.some((v: Visitor) => typeof v.session_id !== "string"))
-          throw new Error("Visitor identifier missing");
-        rows.push(...payload.data);
-        if (payload.data.length === 0) {
-          complete = true;
-          break;
-        }
-        // Reaching the validated count completes ordinary pagination. A mismatch
-        // is conservatively partial; limited snapshots never establish absence.
-        if (rows.length === count) {
-          complete = true;
-          break;
-        }
-        if (count !== null && rows.length > count) break;
-      }
-    }
-  } catch (error) {
-    failure = error instanceof Error ? error.message : "Presence refresh failed";
-  }
-  await rpc(admin, "crisp_finish_presence", {
+  const start = performance.now();
+  const checkCount = countCheckDue(workspace.visitor_count_checked_at);
+  const snapshot = await readPresence(
+    (path) =>
+      crispFetch(admin, `https://api.crisp.chat/v1/website/${websiteId}/visitors/${path}`, {
+        headers,
+      }),
+    checkCount,
+  );
+  const applied = await rpc(admin, "crisp_finish_presence_v2", {
     p_website_id: websiteId,
     p_token: token,
     p_started_at: startedAt,
-    p_rows: rows.map((v) => ({
+    p_rows: (snapshot.rows as Visitor[]).map((v) => ({
       crisp_session_id: v.session_id,
       nickname: v.nickname,
       email: v.email,
@@ -175,12 +93,32 @@ async function reconcile(
       capabilities: v.capabilities,
       locales: v.locales,
     })),
-    p_complete: complete,
-    p_count: count,
-    p_active: active,
-    p_limited: limited,
-    p_error: failure ?? (complete ? null : "Incomplete visitor pagination"),
+    p_complete: snapshot.complete,
+    p_count: snapshot.count,
+    p_active: snapshot.active,
+    p_limited: snapshot.limited,
+    p_error: snapshot.error,
+    p_requests: snapshot.requests,
+    p_duration_ms: Math.round(performance.now() - start),
+    p_mode: checkCount ? "full" : "identity",
   });
+  console.info(
+    JSON.stringify({
+      component: "crisp-presence",
+      websiteId,
+      mode: checkCount ? "full" : "identity",
+      requests: snapshot.requests,
+      rows: snapshot.rows.length,
+      complete: snapshot.complete,
+      limited: snapshot.limited,
+      applied,
+      error: snapshot.error,
+      durationMs: Math.round(performance.now() - start),
+      claimGapMs: workspace.visitor_synced_at
+        ? Date.parse(startedAt) - Date.parse(workspace.visitor_synced_at)
+        : null,
+    }),
+  );
 }
 
 async function greet(
@@ -252,6 +190,8 @@ async function greet(
         status,
         outcome,
         durationMs: Math.round(performance.now() - start),
+        queuedToOutcomeMs: Date.now() - Date.parse(job.created_at),
+        dueToOutcomeMs: Math.max(0, Date.now() - Date.parse(job.due_at)),
       }),
     );
     if (outcome === "sent") sent++;
@@ -281,7 +221,9 @@ serve(async (req) => {
     await rpc(admin, "crisp_process_events", { p_website_id: websiteId, p_limit: 50 });
     let query = admin
       .from("crisp_workspaces")
-      .select("crisp_website_id,credential_secret_id,crisp_cooldown_until,last_full_presence_at")
+      .select(
+        "crisp_website_id,credential_secret_id,crisp_cooldown_until,visitor_count_checked_at,visitor_synced_at",
+      )
       .eq("enabled", true)
       .order("visitor_synced_at", { ascending: true, nullsFirst: true });
     if (websiteId) query = query.eq("crisp_website_id", websiteId);
@@ -310,12 +252,7 @@ serve(async (req) => {
           (!workspace.crisp_cooldown_until ||
             Date.parse(workspace.crisp_cooldown_until) <= Date.now())
         ) {
-          await reconcile(
-            admin,
-            workspace.crisp_website_id,
-            headers,
-            workspace.last_full_presence_at,
-          );
+          await reconcile(admin, workspace.crisp_website_id, headers, workspace);
           totals.push(await greet(admin, workspace.crisp_website_id, headers));
         }
       } catch (error) {
