@@ -29,7 +29,7 @@ export function isAuthExpiredError(error: unknown): boolean {
 }
 
 let handled = false;
-let watchingSignIn = false;
+let signInWatcher: { unsubscribe: () => void } | null = null;
 
 /**
  * Ends the stale session once, so a background poll cannot blank the screen or
@@ -40,8 +40,8 @@ export function handleAuthExpired(): void {
   if (typeof window === "undefined" || handled) return;
   handled = true;
 
-  if (!resetOnSignIn) {
-    resetOnSignIn = supabase.auth.onAuthStateChange((event) => {
+  if (!signInWatcher) {
+    signInWatcher = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN") handled = false;
     }).data.subscription;
   }
