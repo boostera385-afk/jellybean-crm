@@ -9,6 +9,10 @@ verify_jwt = false
 [functions.crisp-webhook]
 verify_jwt = false
 
+# HMAC verification and per-workspace opt-in are enforced by this handler.
+[functions.crisp-plugin-webhook]
+verify_jwt = false
+
 [functions.crisp-send-message]
 verify_jwt = false
 

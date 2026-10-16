@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { eventFingerprint, timingSafeEqual } from "../_shared/crisp-policy.ts";
+import { processAndWake } from "../_shared/crisp-hooks.ts";
 
 declare const EdgeRuntime: { waitUntil: (task: Promise<unknown>) => void };
 const corsHeaders = {
@@ -49,7 +50,7 @@ serve(async (req) => {
     if (typeof expectedKey !== "string" || !timingSafeEqual(providedKey, expectedKey))
       return new Response("Unauthorized", { status: 401 });
     const { data: eventId, error: insertError } = await admin.rpc("crisp_accept_event", {
-      p_body: body,
+      p_body: { ...body, source: "website" },
       p_fingerprint: await eventFingerprint(body),
     });
     if (insertError) throw insertError;
@@ -61,32 +62,17 @@ serve(async (req) => {
     // webhook volume cannot overrun the Crisp request budget. Message traffic
     // already carries presence inline and needs no REST confirmation.
     const eventName = String(body.event);
-    const presenceEvent =
-      eventName.startsWith("website:") ||
-      eventName === "session:removed" ||
-      data?.availability !== undefined;
+    const presenceEvent = eventName.startsWith("website:") || eventName === "session:removed";
     // Durable storage is already committed. Background dispatch is an accelerator;
     // cron independently processes pending records if this invocation is lost.
     EdgeRuntime.waitUntil(
-      (async () => {
-        const { error } = await admin.rpc("crisp_process_events", {
-          p_website_id: websiteId,
-          p_limit: 20,
-        });
-        if (error) throw error;
-        const response = await fetch(`${url}/functions/v1/crisp-auto-greet`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ websiteId, greetingsOnly: !presenceEvent }),
-          signal: AbortSignal.timeout(15_000),
-        });
-        if (!response.ok) throw new Error(`Worker wake-up HTTP ${response.status}`);
-      })().catch((error) =>
-        console.error(
-          "Crisp event remains recoverable",
-          eventId,
-          error instanceof Error ? error.message : "unknown",
-        ),
+      processAndWake(admin, url, serviceKey, websiteId, !presenceEvent, String(eventId)).catch(
+        (error) =>
+          console.error(
+            "Crisp event remains recoverable",
+            eventId,
+            error instanceof Error ? error.message : "unknown",
+          ),
       ),
     );
     console.info(
