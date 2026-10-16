@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getCrispVisitorOverview, type CrispVisitorOverview } from "@/lib/crisp.functions";
+import { isAuthExpiredError } from "@/lib/auth-errors";
 
 const EMPTY_OVERVIEW: CrispVisitorOverview = {
   ok: true,
