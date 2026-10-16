@@ -461,9 +461,6 @@ export type Database = {
           auto_greet_revisit_after_seconds?: number
           auto_greet_revisit_enabled?: boolean
           auto_greet_revisit_message?: string | null
-          auto_greet_revisit_after_seconds?: number
-          auto_greet_revisit_enabled?: boolean
-          auto_greet_revisit_message?: string | null
           created_at?: string
           credential_secret_id?: string | null
           crisp_website_id: string

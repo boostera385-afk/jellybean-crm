@@ -107,7 +107,7 @@ function CrispWorkspaceAutoGreetCard({
   );
   const [revisitMessage, setRevisitMessage] = useState(workspace.auto_greet_revisit_message ?? "");
   const [revisitHours, setRevisitHours] = useState(
-    String((workspace.auto_greet_revisit_after_seconds ?? 21600) / 3600),
+    String((workspace.auto_greet_revisit_after_seconds ?? 1800) / 3600),
   );
   const [saving, setSaving] = useState(false);
 
@@ -118,7 +118,7 @@ function CrispWorkspaceAutoGreetCard({
     setDelay(String(workspace.auto_greet_delay_seconds ?? 0));
     setRevisitEnabled(workspace.auto_greet_revisit_enabled !== false);
     setRevisitMessage(workspace.auto_greet_revisit_message ?? "");
-    setRevisitHours(String((workspace.auto_greet_revisit_after_seconds ?? 21600) / 3600));
+    setRevisitHours(String((workspace.auto_greet_revisit_after_seconds ?? 1800) / 3600));
   }, [
     workspace.auto_greet_enabled,
     workspace.auto_greet_message,
@@ -136,7 +136,7 @@ function CrispWorkspaceAutoGreetCard({
     revisitEnabled !== (workspace.auto_greet_revisit_enabled !== false) ||
     revisitMessage !== (workspace.auto_greet_revisit_message ?? "") ||
     String(Number(revisitHours) || 0) !==
-      String((workspace.auto_greet_revisit_after_seconds ?? 21600) / 3600);
+      String((workspace.auto_greet_revisit_after_seconds ?? 1800) / 3600);
 
   async function handleSave() {
     if (saving) return;
@@ -149,7 +149,7 @@ function CrispWorkspaceAutoGreetCard({
       return;
     }
     const parsedDelay = Math.max(0, Math.min(3600, Math.round(Number(delay) || 0)));
-    const parsedHours = Math.min(Math.max(Number(revisitHours) || 6, 5 / 60), 168);
+    const parsedHours = Math.min(Math.max(Number(revisitHours) || 0.5, 5 / 60), 168);
     setSaving(true);
     try {
       const res = await updateCrispWorkspaceAutoGreet({
@@ -261,7 +261,7 @@ function CrispWorkspaceAutoGreetCard({
                 className="h-9 w-40 text-xs"
               />
               <p className="text-[11px] text-muted-foreground max-w-xs">
-                Minimum 0.08 (5 minutes), maximum 168 (7 days). Default 6 hours.
+                Minimum 0.08 (5 minutes), maximum 168 (7 days). Default 0.5 (30 minutes).
               </p>
             </div>
           </>

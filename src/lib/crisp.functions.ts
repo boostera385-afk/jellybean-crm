@@ -1039,8 +1039,10 @@ export const updateCrispWorkspaceAutoGreet = createServerFn({ method: "POST" })
       }
       // Stored as seconds with a 5-minute floor so one browsing session can
       // never stack greetings, and a 7-day ceiling.
-      let revisitAfterHours = Number(input?.revisitAfterHours ?? 6);
-      if (!Number.isFinite(revisitAfterHours)) revisitAfterHours = 6;
+      // Stored as seconds with a 5-minute floor so one browsing session can
+      // never stack greetings, and a 7-day ceiling. Default 30 minutes.
+      let revisitAfterHours = Number(input?.revisitAfterHours ?? 0.5);
+      if (!Number.isFinite(revisitAfterHours)) revisitAfterHours = 0.5;
       revisitAfterHours = Math.min(Math.max(revisitAfterHours, 5 / 60), 168);
       let delaySeconds = Math.round(Number(input?.delaySeconds ?? 0));
       if (!Number.isFinite(delaySeconds) || delaySeconds < 0) delaySeconds = 0;
