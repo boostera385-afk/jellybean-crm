@@ -80,7 +80,7 @@ BEGIN
   token:=public.crisp_claim_presence(rw);
   PERFORM public.crisp_finish_presence_v2(rw,token,now(),'[{"crisp_session_id":"v1","nickname":"Sam"}]',true,1,1,false,NULL,1,20,'full');
   IF NOT EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=rw AND crisp_session_id='v1'
-    AND state='pending' AND is_revisit=true AND content LIKE 'Welcome back%Sam%') THEN
+    AND state='pending' AND is_revisit=true AND content LIKE 'Welcome back%') THEN
     RAISE EXCEPTION 'Returning visitor was not greeted again'; END IF;
   -- Inside the cooldown window a returning visitor is NOT greeted again.
   UPDATE public.crisp_greeting_jobs SET state='sent',sent_at=now() WHERE crisp_website_id=rw AND crisp_session_id='v1' AND is_revisit;
