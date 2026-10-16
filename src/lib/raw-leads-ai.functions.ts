@@ -466,6 +466,38 @@ function isRetryableComposeStatus(status: number) {
   return status === 429 || status >= 500;
 }
 
+const LEADING_VERB_RE = /^(share|let me know|send me|send|tell me|tell|confirm|provide)\b/i;
+const QUESTION_WORD_RE = /^(what|when|where|which|who|how|whether|if|why)\b/;
+
+/**
+ * Tidy two adjacent requirements for the fixed sentence around them.
+ *
+ * The 2026-10-16 live test surfaced two patterns the exemplars never show:
+ * - a repeated leading verb across the pair ("share a picture of the doors and
+ *   shutters and share your complete address", "let me know what issue you are
+ *   facing and let me know the size of the freezer"), which reads like a chant;
+ * - a second ask with no verb at all ("...and a picture of it"), which is
+ *   broken in the "Could you kindly ... and ..." slot.
+ * Elide the repeated verb, and give every ask a verb ("share" for objects,
+ * "tell me" for question words).
+ */
+export function normalizeAdjacentRequirements(req1: string, req2: string): [string, string] {
+  const ensureVerb = (r: string): string =>
+    LEADING_VERB_RE.test(r) ? r : QUESTION_WORD_RE.test(r) ? `tell me ${r}` : `share ${r}`;
+
+  let a = req1.trim();
+  let b = req2.trim();
+  if (!a || !b) return [a, b];
+
+  a = ensureVerb(a);
+  b = ensureVerb(b);
+  const verbA = LEADING_VERB_RE.exec(a)?.[1];
+  if (verbA && b.toLowerCase().startsWith(verbA.toLowerCase() + " ")) {
+    b = b.slice(verbA.length + 1);
+  }
+  return [a, b];
+}
+
 /**
  * One OpenAI chat completion for a compose rephrase.
  *
@@ -722,8 +754,10 @@ export async function executeAiRephraseCore({
   const finalFirstName = extractFirstName(customerName);
   const finalSenderName = senderForTick(senderTick);
   const finalServiceContext = normalizeServiceContext(serviceContext);
-  const finalReq1 = normalizeRequirement(req1);
-  const finalReq2 = normalizeRequirement(req2);
+  const [finalReq1, finalReq2] = normalizeAdjacentRequirements(
+    normalizeRequirement(req1),
+    normalizeRequirement(req2),
+  );
 
   // Build requirements part: join with " and " if both are present
   let requirementsPart = "";
