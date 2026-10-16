@@ -29,7 +29,7 @@ export function isAuthExpiredError(error: unknown): boolean {
 }
 
 let handled = false;
-let resetOnSignIn: Promise<unknown> | null = null;
+let watchingSignIn = false;
 
 /**
  * Ends the stale session once, so a background poll cannot blank the screen or
