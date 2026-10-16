@@ -54,4 +54,122 @@ BEGIN
     RAISE EXCEPTION 'Signed arrival did not queue a greeting immediately'; END IF;
   RAISE NOTICE 'Identity presence checks passed';
 END $$;
+
+-- Revisit greetings: a returning visitor is politely greeted again, but never
+-- spammed within one visit and never re-greeted after actually replying.
+DO $$
+DECLARE rw text:='revisit-test-'||gen_random_uuid(); token uuid;
+BEGIN
+  INSERT INTO public.crisp_workspaces(crisp_website_id,workspace_name,enabled,auto_greet_enabled,auto_greet_message,greeting_worker_enabled)
+    VALUES(rw,'Revisit regression',true,true,'Hello',true);
+  IF NOT EXISTS(SELECT 1 FROM public.crisp_workspaces WHERE crisp_website_id=rw
+    AND auto_greet_revisit_enabled AND auto_greet_revisit_after_seconds=21600
+    AND nullif(trim(coalesce(auto_greet_revisit_message,'')),'') IS NOT NULL) THEN
+    RAISE EXCEPTION 'Revisit defaults missing'; END IF;
+  token:=public.crisp_claim_presence(rw);
+  PERFORM public.crisp_finish_presence_v2(rw,token,now(),'[{"crisp_session_id":"v1","nickname":"Sam"}]',true,1,1,false,NULL,1,20,'full');
+  IF NOT EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=rw AND crisp_session_id='v1'
+    AND state='pending' AND is_revisit=false AND content='Hello') THEN
+    RAISE EXCEPTION 'First greeting changed'; END IF;
+  -- Say the first greeting was delivered 7 hours ago; the visitor returns.
+  UPDATE public.crisp_greeting_jobs SET state='sent',sent_at=now()-interval '7 hours' WHERE crisp_website_id=rw AND crisp_session_id='v1';
+  ALTER TABLE public.crisp_visitors DISABLE TRIGGER crisp_enqueue_greeting;
+  UPDATE public.crisp_visitors SET auto_greeted_at=now()-interval '7 hours' WHERE crisp_website_id=rw AND crisp_session_id='v1';
+  ALTER TABLE public.crisp_visitors ENABLE TRIGGER crisp_enqueue_greeting;
+  UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=rw;
+  token:=public.crisp_claim_presence(rw);
+  PERFORM public.crisp_finish_presence_v2(rw,token,now(),'[{"crisp_session_id":"v1","nickname":"Sam"}]',true,1,1,false,NULL,1,20,'full');
+  IF NOT EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=rw AND crisp_session_id='v1'
+    AND state='pending' AND is_revisit=true AND content LIKE 'Welcome back%Sam%') THEN
+    RAISE EXCEPTION 'Returning visitor was not greeted again'; END IF;
+  -- Inside the cooldown window a returning visitor is NOT greeted again.
+  UPDATE public.crisp_greeting_jobs SET state='sent',sent_at=now() WHERE crisp_website_id=rw AND crisp_session_id='v1' AND is_revisit;
+  ALTER TABLE public.crisp_visitors DISABLE TRIGGER crisp_enqueue_greeting;
+  UPDATE public.crisp_visitors SET auto_greeted_at=now()-interval '30 minutes' WHERE crisp_website_id=rw AND crisp_session_id='v1';
+  ALTER TABLE public.crisp_visitors ENABLE TRIGGER crisp_enqueue_greeting;
+  UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=rw;
+  token:=public.crisp_claim_presence(rw);
+  PERFORM public.crisp_finish_presence_v2(rw,token,now(),'[{"crisp_session_id":"v1","nickname":"Sam"}]',true,1,1,false,NULL,1,20,'full');
+  IF EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=rw AND crisp_session_id='v1'
+    AND state IN ('pending','leased','sending')) THEN
+    RAISE EXCEPTION 'Cooldown did not suppress a repeat greeting'; END IF;
+  -- A visitor who actually replied is a human lead: never re-greeted.
+  ALTER TABLE public.crisp_visitors DISABLE TRIGGER crisp_enqueue_greeting;
+  UPDATE public.crisp_visitors SET auto_greeted_at=now()-interval '7 hours' WHERE crisp_website_id=rw AND crisp_session_id='v1';
+  ALTER TABLE public.crisp_visitors ENABLE TRIGGER crisp_enqueue_greeting;
+  INSERT INTO public.crisp_conversations(crisp_website_id,crisp_session_id,last_message,last_message_at)
+    VALUES(rw,'v1','What does it cost?',now()-interval '7 hours');
+  INSERT INTO public.crisp_messages(conversation_id,crisp_website_id,crisp_session_id,crisp_message_id,sender_type,direction,content,message_type,sent_at)
+    SELECT id,rw,'v1','cust-1','customer','incoming','What does it cost?','text',now()-interval '7 hours'
+    FROM public.crisp_conversations WHERE crisp_website_id=rw AND crisp_session_id='v1';
+  UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=rw;
+  token:=public.crisp_claim_presence(rw);
+  PERFORM public.crisp_finish_presence_v2(rw,token,now(),'[{"crisp_session_id":"v1","nickname":"Sam"}]',true,1,1,false,NULL,1,20,'full');
+  IF EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=rw AND crisp_session_id='v1'
+    AND state IN ('pending','leased','sending') AND created_at>now()-interval '1 minute') THEN
+    RAISE EXCEPTION 'Bot re-greeted a visitor who replied'; END IF;
+  -- First-greet rule intact: an operator conversation silences the first greeting.
+  INSERT INTO public.crisp_conversations(crisp_website_id,crisp_session_id,last_message,last_message_at)
+    VALUES(rw,'v2','Operator hello',now());
+  UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=rw;
+  token:=public.crisp_claim_presence(rw);
+  PERFORM public.crisp_finish_presence_v2(rw,token,now(),'[{"crisp_session_id":"v2"}]',true,2,2,false,NULL,1,20,'full');
+  IF EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=rw AND crisp_session_id='v2') THEN
+    RAISE EXCEPTION 'Operator conversation no longer blocks the bot'; END IF;
+  RAISE NOTICE 'Revisit greeting checks passed';
+END $$;
+
+-- 404/403 breaker: persistent not-found pauses polling; success restores counts.
+DO $$
+DECLARE bw text:='breaker-test-'||gen_random_uuid(); token uuid; i integer;
+BEGIN
+  INSERT INTO public.crisp_workspaces(crisp_website_id,workspace_name,enabled,greeting_worker_enabled)
+    VALUES(bw,'Breaker regression',true,false);
+  FOR i IN 1..10 LOOP
+    UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=bw;
+    token:=public.crisp_claim_presence(bw);
+    IF token IS NULL THEN RAISE EXCEPTION 'Breaker claimed too early at %', i; END IF;
+    PERFORM public.crisp_finish_presence_v2(bw,token,now(),'[]',false,NULL,NULL,NULL,'Visitor count HTTP 404',1,10,'full');
+  END LOOP;
+  IF NOT EXISTS(SELECT 1 FROM public.crisp_workspaces WHERE crisp_website_id=bw
+    AND presence_failure_count=10 AND presence_paused_until>now()
+    AND presence_paused_reason LIKE '%404%') THEN
+    RAISE EXCEPTION 'Presence breaker did not trip after repeated 404'; END IF;
+  IF public.crisp_claim_presence(bw) IS NOT NULL THEN
+    RAISE EXCEPTION 'Paused workspace still polling'; END IF;
+  -- Transient 5xx errors must never trip the breaker.
+  UPDATE public.crisp_workspaces SET presence_paused_until=NULL,visitor_synced_at=NULL WHERE crisp_website_id=bw;
+  FOR i IN 1..10 LOOP
+    UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=bw;
+    token:=public.crisp_claim_presence(bw);
+    IF token IS NULL THEN RAISE EXCEPTION 'Claim blocked during 5xx'; END IF;
+    PERFORM public.crisp_finish_presence_v2(bw,token,now(),'[]',false,NULL,NULL,NULL,'Visitor list HTTP 502',1,10,'identity');
+  END LOOP;
+  IF (SELECT presence_paused_until FROM public.crisp_workspaces WHERE crisp_website_id=bw) IS NOT NULL THEN
+    RAISE EXCEPTION '5xx responses tripped the breaker'; END IF;
+  -- A healthy pass resets the failure counter.
+  UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=bw;
+  token:=public.crisp_claim_presence(bw);
+  PERFORM public.crisp_finish_presence_v2(bw,token,now(),'[{"crisp_session_id":"back"}]',true,1,1,false,NULL,1,20,'full');
+  IF NOT EXISTS(SELECT 1 FROM public.crisp_workspaces WHERE crisp_website_id=bw AND presence_failure_count=0) THEN
+    RAISE EXCEPTION 'Healthy pass did not reset the breaker counter'; END IF;
+  RAISE NOTICE 'Presence breaker checks passed';
+END $$;
+
+-- Unmatched read receipts complete instead of dead-lettering the queue.
+DO $$
+DECLARE rw text:='receipt-test-'||gen_random_uuid(); token uuid; applied boolean;
+BEGIN
+  INSERT INTO public.crisp_workspaces(crisp_website_id,workspace_name,enabled,greeting_worker_enabled)
+    VALUES(rw,'Receipt regression',true,false);
+  BEGIN
+    PERFORM public.crisp_apply_event(jsonb_build_object('website_id',rw,'event','message:acknowledge:read:received',
+      'data',jsonb_build_object('session_id','s1','fingerprints',jsonb_build_array('999999999'))));
+    applied := true;
+  EXCEPTION WHEN OTHERS THEN
+    applied := false;
+  END;
+  IF NOT applied THEN RAISE EXCEPTION 'Unmatched receipt still dead-letters'; END IF;
+  RAISE NOTICE 'Receipt handling checks passed';
+END $$;
 ROLLBACK;

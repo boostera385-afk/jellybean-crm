@@ -40,6 +40,11 @@ SELECT crisp_website_id, enabled, greeting_worker_enabled,
        to_jsonb(w)->>'visitor_last_mode' AS last_mode,
        to_jsonb(w)->>'presence_feed' AS configured_feed,
        to_jsonb(w)->>'last_presence_event_at' AS last_signed_availability,
+       to_jsonb(w)->>'presence_paused_until' AS paused_until,
+       to_jsonb(w)->>'presence_paused_reason' AS paused_reason,
+       to_jsonb(w)->>'presence_failure_count' AS consecutive_404_403,
+       to_jsonb(w)->>'auto_greet_revisit_enabled' AS revisit_enabled,
+       to_jsonb(w)->>'auto_greet_revisit_after_seconds' AS revisit_after_s,
        live_visitor_count, active_visitor_count, visitors_limited
 FROM public.crisp_workspaces w ORDER BY crisp_website_id;
 
