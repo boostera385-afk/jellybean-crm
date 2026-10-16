@@ -481,7 +481,9 @@ export async function executeAiRephraseCore({
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "gpt-5.4-nano-2026-03-17",
+      // Thinking on: nano classifies far more reliably with explicit reasoning.
+      reasoning_effort: "medium",
       messages: [
         { role: "system", content: systemPrompt },
         ...fewShot,
