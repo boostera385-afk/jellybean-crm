@@ -298,7 +298,7 @@ written back through the single `batch_update_raw_lead_decisions` RPC.
 Responses are parsed and validated by the exported pure function
 `parseAndValidateAiResults`, which is directly unit-tested. Model identifiers
 are pinned in code; the rephrase model can be overridden at deploy time with
-`OPENAI_COMPOSE_MODEL` (falls back to `OPENAI_MODEL`, then the pinned default).
+`OPENAI_COMPOSE_MODEL` (falls back to the pinned default only).
 
 Auto-rephrase is gated by the `shared_state` toggle `cs_auto_rephrase_enabled`,
 **off by default**, and never overwrites non-empty `marketing_notes`.

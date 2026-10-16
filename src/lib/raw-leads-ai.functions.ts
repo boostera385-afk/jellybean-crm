@@ -63,8 +63,11 @@ const PRIMARY_MODEL = "gpt-5.4-nano-2026-03-17";
  * ("let me know what issue you are facing") even when the customer's own
  * words, sent as `exact`, already stated the issue. gpt-5.4-mini handles
  * "what is genuinely missing" reasoning far better at a negligible cost
- * difference for CS-pipeline volume. Override with OPENAI_COMPOSE_MODEL
- * (or OPENAI_MODEL) without a code change.
+ * difference for CS-pipeline volume. Override with OPENAI_COMPOSE_MODEL.
+ *
+ * Deliberately NOT falling back to OPENAI_MODEL: a stray OPENAI_MODEL value
+ * in the environment (an old deploy had it set to gpt-4o-mini) would silently
+ * undo this upgrade. The override must be explicit COMPOSE-specific.
  */
 const COMPOSE_MODEL_DEFAULT = "gpt-5.4-mini-2026-03-17";
 const COMPOSE_TEMPERATURE = 0.2;
@@ -75,11 +78,7 @@ const COMPOSE_REASONING_EFFORT = "medium";
 const COMPOSE_TIMEOUT_MS = 20_000;
 
 function composeModel(): string {
-  return (
-    process.env.OPENAI_COMPOSE_MODEL?.trim() ||
-    process.env.OPENAI_MODEL?.trim() ||
-    COMPOSE_MODEL_DEFAULT
-  );
+  return process.env.OPENAI_COMPOSE_MODEL?.trim() || COMPOSE_MODEL_DEFAULT;
 }
 
 type OpenAiResponse = {
