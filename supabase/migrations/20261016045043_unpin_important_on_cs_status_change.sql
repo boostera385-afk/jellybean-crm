@@ -1,4 +1,5 @@
 -- A pinned important lead is a "handle this first" marker for a brand new lead.
+-- Filename matches the version assigned by Supabase MCP on production.
 -- Once CS moves it out of 'new' the pin has done its job and must clear.
 --
 -- The UI already hid the pin badge behind `cs_status === 'new'`

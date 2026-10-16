@@ -1,4 +1,5 @@
 -- Live-visitor latency fixes.
+-- Filename matches the version assigned by Supabase MCP on production.
 --
 -- Companion to 20261014150000 (event-driven live counts). That change made the
 -- stored counters move with webhook presence events; this one makes those

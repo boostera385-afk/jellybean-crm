@@ -1,4 +1,7 @@
 -- Count-tripwire reconciliation: faster arrival detection on the same budget.
+-- Historical implementation, superseded by crisp_identity_presence. Its count
+-- equality shortcut and latency/cost estimates below are NOT current guarantees.
+-- Filename matches the version assigned by Supabase MCP on production.
 --
 -- Evidence (measured 2026-10-16): passive arrivals are only visible to REST
 -- polling because Crisp Website Hooks deliver zero availability events (0 in
