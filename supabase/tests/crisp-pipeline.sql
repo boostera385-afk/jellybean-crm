@@ -6,13 +6,15 @@ DECLARE w text := 'pipeline-test-'||gen_random_uuid(); token uuid; job public.cr
   n integer; observed timestamptz:=now(); payload jsonb; x boolean;
 BEGIN
   INSERT INTO public.crisp_workspaces(crisp_website_id,workspace_name,enabled,auto_greet_enabled,auto_greet_message,greeting_worker_enabled)
-    VALUES(w,'Pipeline test',true,true,'Hello {{ name }}',true);
+    VALUES(w,'Pipeline test',false,true,'Hello {{ name }}',true);
   IF public.claim_crisp_visitor_sync(w,now()) THEN RAISE EXCEPTION 'Legacy greeting sender active after cutover'; END IF;
   IF has_function_privilege('anon','public.claim_crisp_visitor_sync(text,timestamptz)','execute') THEN RAISE EXCEPTION 'Anonymous presence claim'; END IF;
   IF has_function_privilege('authenticated','public.crisp_reserve_request(text,boolean)','execute') THEN RAISE EXCEPTION 'Public budget mutation'; END IF;
-  -- Old unmarked sessions must NOT be backfilled with greetings.
+  -- Greeting starts disabled so this pre-existing session is not backfilled;
+  -- once enabled, revisiting visitors (old or new) are greeted by the trigger.
   INSERT INTO public.crisp_visitors(crisp_website_id,crisp_session_id,is_online,first_seen_at) VALUES(w,'old',true,now()-interval '1 day');
   IF EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=w) THEN RAISE EXCEPTION 'Historical greeting backfill'; END IF;
+  UPDATE public.crisp_workspaces SET enabled=true WHERE crisp_website_id=w;
   payload:=jsonb_build_object('website_id',w,'event','session:sync:network','timestamp',(extract(epoch from now())*1000)::bigint,
     'data',jsonb_build_object('session_id','new','nickname','Tester'));
   PERFORM public.crisp_accept_event(payload,'test-'||w);

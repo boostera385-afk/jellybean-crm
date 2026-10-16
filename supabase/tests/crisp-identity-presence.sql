@@ -14,8 +14,8 @@ BEGIN
     RAISE EXCEPTION 'Replacement arrival lost'; END IF;
   IF NOT EXISTS(SELECT 1 FROM public.crisp_visitors WHERE crisp_website_id=w AND crisp_session_id='old' AND is_online) THEN
     RAISE EXCEPTION 'Identity-only pass established absence'; END IF;
-  IF (SELECT count(*) FROM public.crisp_greeting_jobs WHERE crisp_website_id=w)<>1 THEN
-    RAISE EXCEPTION 'Replacement greeting not queued exactly once'; END IF;
+  IF (SELECT count(*) FROM public.crisp_greeting_jobs WHERE crisp_website_id=w)<>2 THEN
+    RAISE EXCEPTION 'Replacement/legacy greeting not queued exactly once'; END IF;
   IF NOT EXISTS(SELECT 1 FROM public.crisp_workspaces WHERE crisp_website_id=w AND visitor_identity_checked_at IS NOT NULL AND last_full_presence_at IS NULL AND visitor_sync_succeeded_at IS NULL AND NOT visitors_limited) THEN
     RAISE EXCEPTION 'Identity/full freshness confused'; END IF;
   UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=w;
@@ -36,7 +36,7 @@ BEGIN
     RAISE EXCEPTION 'Limited result refreshed full watermark'; END IF;
   IF public.crisp_finish_presence_v2(w,gen_random_uuid(),now(),'[]',true,0,0,false,NULL,1,0,'full') THEN
     RAISE EXCEPTION 'Stale lease accepted'; END IF;
-  IF (SELECT count(*) FROM public.crisp_greeting_jobs WHERE crisp_website_id=w)<>1 THEN
+  IF (SELECT count(*) FROM public.crisp_greeting_jobs WHERE crisp_website_id=w)<>2 THEN
     RAISE EXCEPTION 'Greeting duplicated'; END IF;
   UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=w;
   INSERT INTO public.crisp_api_usage VALUES(w,date_trunc('hour',now()),8200);
@@ -63,7 +63,7 @@ BEGIN
   INSERT INTO public.crisp_workspaces(crisp_website_id,workspace_name,enabled,auto_greet_enabled,auto_greet_message,greeting_worker_enabled)
     VALUES(rw,'Revisit regression',true,true,'Hello',true);
   IF NOT EXISTS(SELECT 1 FROM public.crisp_workspaces WHERE crisp_website_id=rw
-    AND auto_greet_revisit_enabled AND auto_greet_revisit_after_seconds=21600
+    AND auto_greet_revisit_enabled AND auto_greet_revisit_after_seconds=1800
     AND nullif(trim(coalesce(auto_greet_revisit_message,'')),'') IS NOT NULL) THEN
     RAISE EXCEPTION 'Revisit defaults missing'; END IF;
   token:=public.crisp_claim_presence(rw);
@@ -85,7 +85,7 @@ BEGIN
   -- Inside the cooldown window a returning visitor is NOT greeted again.
   UPDATE public.crisp_greeting_jobs SET state='sent',sent_at=now() WHERE crisp_website_id=rw AND crisp_session_id='v1' AND is_revisit;
   ALTER TABLE public.crisp_visitors DISABLE TRIGGER crisp_enqueue_greeting;
-  UPDATE public.crisp_visitors SET auto_greeted_at=now()-interval '30 minutes' WHERE crisp_website_id=rw AND crisp_session_id='v1';
+  UPDATE public.crisp_visitors SET auto_greeted_at=now()-interval '15 minutes' WHERE crisp_website_id=rw AND crisp_session_id='v1';
   ALTER TABLE public.crisp_visitors ENABLE TRIGGER crisp_enqueue_greeting;
   UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=rw;
   token:=public.crisp_claim_presence(rw);
@@ -116,6 +116,16 @@ BEGIN
   PERFORM public.crisp_finish_presence_v2(rw,token,now(),'[{"crisp_session_id":"v2"}]',true,2,2,false,NULL,1,20,'full');
   IF EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=rw AND crisp_session_id='v2') THEN
     RAISE EXCEPTION 'Operator conversation no longer blocks the bot'; END IF;
+  -- Pre-pipeline returning visitor (first_seen before pipeline_started_at, never
+  -- greeted): must be greeted on return now that the cutover gate is gone.
+  INSERT INTO public.crisp_visitors(crisp_website_id,crisp_session_id,is_online,first_seen_at)
+    VALUES(rw,'legacy',false,now()-interval '2 hours');
+  UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=rw;
+  token:=public.crisp_claim_presence(rw);
+  PERFORM public.crisp_finish_presence_v2(rw,token,now(),'[{"crisp_session_id":"legacy"}]',true,3,3,false,NULL,1,20,'full');
+  IF NOT EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=rw AND crisp_session_id='legacy'
+    AND state='pending' AND is_revisit=false AND content='Hello') THEN
+    RAISE EXCEPTION 'Pre-pipeline returning visitor still blocked'; END IF;
   RAISE NOTICE 'Revisit greeting checks passed';
 END $$;
 
