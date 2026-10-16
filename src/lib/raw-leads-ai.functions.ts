@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logActivity } from "@/lib/activity-log";
 import { DEFAULT_CS_COMPOSE_TEMPLATE } from "@/lib/cs-compose-template";
+import { INPUT_SEMANTICS_ADDENDUM, isCustomRephrasePrompt } from "@/lib/cs-rephrase-prompt";
 
 // FROZEN PROMPT — batch-aware default used when no saved CRM prompt is available.
 export const FROZEN_LEAD_PROMPT = `You classify each item in the \`leads\` array independently as a residential home-service lead.
@@ -54,6 +55,32 @@ type RawLeadAiResult = {
 const OPENAI_BATCH_SIZE = 10;
 const MAX_POST_TEXT_CHARS = 1500;
 const PRIMARY_MODEL = "gpt-5.4-nano-2026-03-17";
+
+/**
+ * The rephrase/compose model, pinned so prompt tuning is reproducible.
+ *
+ * gpt-4o-mini — the previous composer — hallucinated generic questions
+ * ("let me know what issue you are facing") even when the customer's own
+ * words, sent as `exact`, already stated the issue. gpt-5.4-mini handles
+ * "what is genuinely missing" reasoning far better at a negligible cost
+ * difference for CS-pipeline volume. Override with OPENAI_COMPOSE_MODEL
+ * (or OPENAI_MODEL) without a code change.
+ */
+const COMPOSE_MODEL_DEFAULT = "gpt-5.4-mini-2026-03-17";
+const COMPOSE_TEMPERATURE = 0.2;
+// Reasoning tokens count against this budget; medium reasoning on the mini
+// model needs headroom beyond the small JSON answer itself.
+const COMPOSE_MAX_TOKENS = 1200;
+const COMPOSE_REASONING_EFFORT = "medium";
+const COMPOSE_TIMEOUT_MS = 20_000;
+
+function composeModel(): string {
+  return (
+    process.env.OPENAI_COMPOSE_MODEL?.trim() ||
+    process.env.OPENAI_MODEL?.trim() ||
+    COMPOSE_MODEL_DEFAULT
+  );
+}
 
 type OpenAiResponse = {
   id?: string;
@@ -404,6 +431,143 @@ const rephraseInputSchema = z.object({
   systemPrompt: z.string().nullable().optional(),
 });
 
+/**
+ * Resolve the system prompt for one rephrase call.
+ *
+ * Priority: caller-supplied override → saved `cs_rephrase_prompt` (when it is
+ * a deliberate customisation, not a stale copy of the retired default) → the
+ * trained compose prompt. Reading the saved prompt here means every path —
+ * single lead, bulk, auto — honours the same override; previously only bulk
+ * did, so the prompt editor looked broken for half the pipeline.
+ */
+async function resolveComposeSystemPrompt(customSystemPrompt?: string | null): Promise<string> {
+  let prompt = (customSystemPrompt ?? "").trim();
+  if (!prompt) {
+    try {
+      const { data } = await supabaseAdmin
+        .from("shared_state")
+        .select("value")
+        .eq("key", "cs_rephrase_prompt")
+        .maybeSingle();
+      const stored = (data?.value as { text?: string } | null)?.text ?? "";
+      if (isCustomRephrasePrompt(stored)) prompt = stored.trim();
+    } catch {
+      // The saved prompt is a convenience, never a hard dependency.
+    }
+  }
+  // Input semantics describe how to READ the lead, not how to write the
+  // output, so they ride along on every call — even with a saved custom
+  // prompt, which an admin may replace without re-saving these rules.
+  const { buildComposeSystemPrompt } = await import("@/lib/compose-style");
+  return `${prompt || buildComposeSystemPrompt()}\n\n${INPUT_SEMANTICS_ADDENDUM}`;
+}
+
+// One retry covers transient 429/5xx failures; validation errors are never retried.
+function isRetryableComposeStatus(status: number) {
+  return status === 429 || status >= 500;
+}
+
+/**
+ * One OpenAI chat completion for a compose rephrase.
+ *
+ * gpt-4o-mini ran with no temperature, no token cap, no timeout and no retry:
+ * the randomness was a direct source of the question noise. Generation
+ * controls keep the output low-variance, the abort signal stops the caller
+ * hanging on a wedged request, and one backoff retry absorbs transient
+ * failures. If the pinned model rejects an optional generation control, the
+ * fallback attempt drops the controls so a real answer still comes back.
+ */
+async function callComposeOpenAi({
+  model,
+  systemPrompt,
+  fewShot,
+  userContent,
+}: {
+  model: string;
+  systemPrompt: string;
+  fewShot: Array<{ role: "user" | "assistant"; content: string }>;
+  userContent: string;
+}): Promise<{ ok: boolean; status: number; body: OpenAiResponse }> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("Missing OPENAI_API_KEY secret");
+
+  const request = {
+    model,
+    // Explicit reasoning measurably sharpens "what is genuinely missing?"
+    // without changing the few-shot format (carried over from the team's nano
+    // experiment; the mini model keeps it as well).
+    reasoning_effort: COMPOSE_REASONING_EFFORT,
+    messages: [
+      { role: "system", content: systemPrompt },
+      ...fewShot,
+      { role: "user", content: userContent },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "lead_rephrase",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            serviceContext: { type: "string" },
+            requirement1: { type: "string" },
+            requirement2: { type: "string" },
+          },
+          required: ["serviceContext", "requirement1", "requirement2"],
+        },
+      },
+    },
+  } satisfies {
+    model: string;
+    reasoning_effort: string;
+    messages: Array<{ role: string; content: string }>;
+    response_format: {
+      type: "json_schema";
+      json_schema: {
+        name: string;
+        strict: boolean;
+        schema: Record<string, unknown>;
+      };
+    };
+  };
+  const controls = { temperature: COMPOSE_TEMPERATURE, max_tokens: COMPOSE_MAX_TOKENS };
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const withControls = attempt === 0;
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(withControls ? { ...request, ...controls } : request),
+        // Browsers do not support AbortSignal.timeout, but this runs server side only.
+        signal: AbortSignal.timeout(COMPOSE_TIMEOUT_MS),
+      });
+      const body = (await response.json()) as OpenAiResponse;
+      if (response.ok) return { ok: true, status: response.status, body };
+      const message = body.error?.message ?? "";
+      if (
+        withControls &&
+        /temperature|max[_ -]?tokens|unsupported|unknown parameter/i.test(message)
+      ) {
+        continue; // Model rejected an optional control — retry once without them.
+      }
+      if (!withControls || !isRetryableComposeStatus(response.status)) {
+        return { ok: false, status: response.status, body }; // Caller converts it to a thrown Error, as before.
+      }
+    } catch (err) {
+      if (attempt === 0) continue; // Network error or timeout: retry once.
+      throw err;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  throw new Error("OpenAI compose call did not return a response"); // Unreachable safeguard.
+}
+
 export async function executeAiRephraseCore({
   customerName,
   contextText,
@@ -429,8 +593,7 @@ export async function executeAiRephraseCore({
   // Imported here rather than at module scope: app.cs-leads.tsx imports this
   // file, and compose-style carries the generated style data (~320KB). A static
   // import would ship all of it to the browser for no reason.
-  const { buildComposeSystemPrompt, canonicalizeRequirement, selectComposeExemplars } =
-    await import("@/lib/compose-style");
+  const { canonicalizeRequirement, selectComposeExemplars } = await import("@/lib/compose-style");
   const { senderForTick, fallbackTick } = await import("@/lib/compose-senders");
 
   // The roster advances every LEADS_PER_SENDER messages. The counter lives in
@@ -439,26 +602,21 @@ export async function executeAiRephraseCore({
   // so the name still varies rather than pinning every message to one again.
   let senderTick = fallbackTick();
   try {
-    const { data: tick, error: tickError } = await supabaseAdmin.rpc(
-      "cs_next_compose_sender_tick",
-    );
+    const { data: tick, error: tickError } = await supabaseAdmin.rpc("cs_next_compose_sender_tick");
     if (!tickError && tick !== null && tick !== undefined) senderTick = Number(tick);
   } catch {
     // Keep the time-based fallback.
   }
 
-  // The system prompt and examples now come from the delivered messages;
-  // see src/lib/compose-style.ts and scripts/build-compose-style.py.
-  // A prompt saved in the UI still overrides it.
-
-  const systemPrompt = customSystemPrompt || buildComposeSystemPrompt();
+  // The system prompt and examples come from the delivered messages
+  // (src/lib/compose-style.ts, scripts/build-compose-style.py). A prompt
+  // saved in the UI overrides it, resolved here for every call path.
 
   // The live input must have the same shape as the exemplar inputs below, or
-  // the examples teach the model to read a different payload. requirement1 and
-  // requirement2 are intentionally not sent: the delivered messages show the
-  // final asks are standard ones (address, availability, a picture) rather than
-  // the customer's own phrasing, and the exemplars cannot carry a value for
-  // them. They are still used as the fallback if the model reply fails to parse.
+  // the examples teach the model to read a different payload. `exact` carries
+  // the customer's own words; the exemplars cannot show a real customer voice,
+  // so the reading rules live in INPUT_SEMANTICS_ADDENDUM on the system prompt
+  // instead. They are still used as the fallback if the model reply fails to parse.
   const exemplars = selectComposeExemplars(service, 6);
   const fewShot = exemplars.flatMap((ex) => [
     {
@@ -470,51 +628,22 @@ export async function executeAiRephraseCore({
 
   const userContent = JSON.stringify({
     context: contextText || "",
-    exact: exactRequirement || "",
+    exact: trimForAi(exactRequirement || ""),
     service: service || "",
   });
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-5.4-nano-2026-03-17",
-      // Thinking on: nano classifies far more reliably with explicit reasoning.
-      reasoning_effort: "medium",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...fewShot,
-        { role: "user", content: userContent },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "lead_rephrase",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              serviceContext: { type: "string" },
-              requirement1: { type: "string" },
-              requirement2: { type: "string" },
-            },
-            required: ["serviceContext", "requirement1", "requirement2"],
-          },
-        },
-      },
-    }),
+  const response = await callComposeOpenAi({
+    model: composeModel(),
+    systemPrompt: await resolveComposeSystemPrompt(customSystemPrompt),
+    fewShot,
+    userContent,
   });
 
-  const responseBody = await response.json();
   if (!response.ok) {
-    throw new Error(responseBody.error?.message ?? `OpenAI request failed (${response.status})`);
+    throw new Error(response.body.error?.message ?? `OpenAI request failed (${response.status})`);
   }
 
-  const rephrased = responseBody.choices?.[0]?.message?.content || "";
+  const rephrased = response.body.choices?.[0]?.message?.content || "";
 
   // Parse the JSON output from AI
   let serviceContext = "";
@@ -573,6 +702,18 @@ export async function executeAiRephraseCore({
     // /\bservice\b/ and dropped any " for ..." clause that shared a word with
     // the head, which left sentences like "looking for a window replacement  ."
     let clean = sanitizeForbiddenPhrases(ctx).replace(/\s+/g, " ").trim();
+    // Ingestion sometimes prefixes the context with paste labels, and several
+    // delivered messages opened with the template words duplicated:
+    // "looking for looking for someone to repair ...". Strip the labels and
+    // the leading verb so the fixed sentence around serviceContext completes
+    // them naturally.
+    clean = clean
+      .replace(/\b(?:customer\s+needs?|service\s+needed?)\s*:\s*/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/^(?:customer\s+needs?|customer\s+request(?:ed)?|need|needs)\s*:?\s*/i, "")
+      .replace(/^(?:i\s+am\s+|i'?m\s+)?looking\s+for\s+/i, "")
+      .trim();
     clean = clean.replace(/[.?,;!]$/, "");
     if (clean.length > 0) clean = clean.charAt(0).toLowerCase() + clean.slice(1);
     return clean || "your service";
@@ -649,7 +790,7 @@ export const autoRephraseLeadWithAi = createServerFn({ method: "POST" })
     const { data: lead, error } = await supabaseAdmin
       .from("qualified_leads")
       .select(
-        "id, customer_name, context, post_text, requirement_1, requirement_2, marketing_notes",
+        "id, customer_name, context, post_text, service, requirement_1, requirement_2, marketing_notes",
       )
       .eq("id", data.leadId)
       .maybeSingle();
@@ -670,7 +811,12 @@ export const autoRephraseLeadWithAi = createServerFn({ method: "POST" })
       const finalSms = await executeAiRephraseCore({
         template: DEFAULT_CS_COMPOSE_TEMPLATE,
         customerName: lead.customer_name || "there",
-        contextText,
+        contextText: lead.context,
+        // The single and bulk rephrase paths already sent the customer's own
+        // words and the service label; the auto path silently omitted both,
+        // which pushed every auto-composed message toward generic questions.
+        exactRequirement: lead.post_text,
+        service: lead.service,
         requirement1: lead.requirement_1 || "",
         requirement2: lead.requirement_2 || "",
       });

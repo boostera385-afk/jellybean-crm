@@ -289,15 +289,16 @@ Two call sites, two models (`src/lib/raw-leads-ai.functions.ts`):
 | Purpose        | Model                     | Shape                                                        |
 | -------------- | ------------------------- | ------------------------------------------------------------ |
 | Classification | `gpt-5.4-nano-2026-03-17` | `raw_lead_classification`, `strict: true`, 10 per batch      |
-| Rephrasing     | `gpt-4o-mini`             | `lead_lead_rephrase`, returns service context + requirements |
+| Rephrasing     | `gpt-5.4-mini-2026-03-17` | `lead_rephrase`, `strict: true`, temperature 0.2, one retry  |
 
 Classification is **batched** — `.in()` lookups chunked by 10, posts under 20
 characters skipped, duplicates excluded, at most 50 rows per request, results
 written back through the single `batch_update_raw_lead_decisions` RPC.
 
 Responses are parsed and validated by the exported pure function
-`parseAndValidateAiResults`, which is directly unit-tested. Keep model
-identifiers pinned in code; there is no environment override.
+`parseAndValidateAiResults`, which is directly unit-tested. Model identifiers
+are pinned in code; the rephrase model can be overridden at deploy time with
+`OPENAI_COMPOSE_MODEL` (falls back to `OPENAI_MODEL`, then the pinned default).
 
 Auto-rephrase is gated by the `shared_state` toggle `cs_auto_rephrase_enabled`,
 **off by default**, and never overwrites non-empty `marketing_notes`.

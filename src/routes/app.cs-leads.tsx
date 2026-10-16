@@ -90,6 +90,7 @@ import { NumberNameSelect } from "@/components/number-name-select";
 import { STATUS_LABEL, STATUS_TONE, pinnedImportantFor } from "@/lib/lead-statuses";
 import { renderCsComposeSuggestion } from "@/lib/cs-compose-template";
 import { rephraseLeadTemplateWithAi, autoRephraseLeadWithAi } from "@/lib/raw-leads-ai.functions";
+import { DEFAULT_REPHRASE_PROMPT, isCustomRephrasePrompt } from "@/lib/cs-rephrase-prompt";
 import { SERVICE_CATEGORIES } from "@/data/service-options";
 
 import { cn } from "@/lib/utils";
@@ -124,50 +125,6 @@ function formatLeadServiceLabel(service: string | null): string | null {
   }
 
   return service;
-}
-
-/**
- * Empty by default: the compose prompt is now built server side from the
- * delivered-lead export (see src/lib/compose-style.ts), so there is nothing
- * useful to show here unless a human deliberately overrides it.
- */
-export const DEFAULT_REPHRASE_PROMPT = "";
-
-/**
- * The previous hand-written prompt, kept ONLY so a saved copy of it is
- * recognised as "never really customised" and does not shadow the trained
- * default. It asked for a bare service name and banned the word "service",
- * which the delivered messages contradict.
- */
-const LEGACY_REPHRASE_PROMPT = `You are an expert customer service assistant. Your goal is to clean, extract, and normalize three parts of a customer lead request to prepare them for an outbound message.
-
-You must output a JSON object containing exactly three fields:
-1. "serviceContext": A very short, clean name of the service (e.g. "garage door repair", "lawn care", "plumbing leak"). It must be concise and lowercase. Never use "service", "seeking", "repair or replacement", or "damaged or non-functioning".
-2. "requirement1": The first requirement or question normalized as an action-oriented phrase starting with a lowercase verb.
-3. "requirement2": The second requirement or question normalized as an action-oriented phrase starting with a lowercase verb.
-
-Normalization Rules for Requirements (both requirement1 and requirement2):
-- If the requirement refers to address, location, or where to go, normalize it to: "share your complete address"
-- If the requirement refers to availability, time, or when they are available, normalize it to: "let me know your availability"
-- If the requirement refers to a photo, picture, image, or snapshot, normalize it to: "send me a picture of it"
-- Otherwise, rephrase to start with a verb (e.g. "confirm whether you have the spring on hand").
-- Requirement text must not be capitalized or end with punctuation.
-
-Forbidden Phrases (do not use in any field):
-- "I understand"
-- "seeking"
-- "repair or replacement"
-- "damaged or non-functioning"
-- "provide the service address"
-- "our schedule"
-- "arrange a visit"`;
-
-/** True only when someone has deliberately written their own instructions. */
-function isCustomRephrasePrompt(prompt: string): boolean {
-  const text = (prompt ?? "").trim();
-  if (!text) return false;
-  const norm = (v: string) => v.replace(/\s+/g, " ").trim();
-  return norm(text) !== norm(LEGACY_REPHRASE_PROMPT);
 }
 
 export const Route = createFileRoute("/app/cs-leads")({
@@ -769,7 +726,16 @@ function Inner() {
   // ── Reset page to 1 whenever any server-side filter changes ──────────────
   useEffect(() => {
     setPage(1);
-  }, [dbDateFrom, dbDateTo, dbOwner, dbStatus, areaFilter, dbSearch, garageDoorOnly, notCalledOnly]);
+  }, [
+    dbDateFrom,
+    dbDateTo,
+    dbOwner,
+    dbStatus,
+    areaFilter,
+    dbSearch,
+    garageDoorOnly,
+    notCalledOnly,
+  ]);
 
   const list = useQuery({
     queryKey: [
@@ -1023,9 +989,7 @@ function Inner() {
 
   const totalPages = Math.max(1, Math.ceil(effectiveTotalCount / PAGE_SIZE));
 
-  const notCalledFilterValue: NotCalledFilter = notCalledOnly
-    ? dbStatus ?? "__all__"
-    : "__off__";
+  const notCalledFilterValue: NotCalledFilter = notCalledOnly ? (dbStatus ?? "__all__") : "__off__";
 
   function changeNotCalledFilter(value: string) {
     const next = value as NotCalledFilter;
@@ -1715,8 +1679,8 @@ function Inner() {
                 />
                 <div className="flex justify-between items-center text-[11px] text-muted-foreground">
                   <span>
-                    Blank uses the trained default built from delivered leads. Saved text
-                    overrides it for all CS agents and admins in real time.
+                    Blank uses the trained default built from delivered leads. Saved text overrides
+                    it for all CS agents and admins in real time.
                   </span>
                   <Button
                     size="sm"
@@ -3495,7 +3459,7 @@ function LeadDrawer({
 
   function changeDrawerContactMethod(method: ContactMethod) {
     setContactMethod(method);
-    setCalledAt(method === "called" ? lead.called_at ?? new Date().toISOString() : null);
+    setCalledAt(method === "called" ? (lead.called_at ?? new Date().toISOString()) : null);
   }
 
   async function save() {

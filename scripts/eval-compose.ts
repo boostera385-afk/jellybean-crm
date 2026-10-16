@@ -3,12 +3,13 @@
  *
  * Both are run over held-out delivered leads that scripts/build-compose-style.py
  * excluded from the exemplar bank and the canonical rules, so the examples
- * cannot leak into the result.
+ * cannot leak into the result. Set OPENAI_EVAL_MODEL to compare other models
+ * (default: the pinned compose model).
  *
  *   OPENAI_API_KEY=sk-... bun run scripts/eval-compose.ts <holdout.jsonl> [rows]
  *
- * Each row costs two gpt-4o-mini calls, so start small (50) to sanity check the
- * spend before running a few hundred.
+ * Each row costs two calls of the eval model, so start small (50) to sanity
+ * check the spend before running a few hundred.
  */
 import { readFileSync } from "node:fs";
 import {
@@ -16,6 +17,9 @@ import {
   requirementIntentKey,
   selectComposeExemplars,
 } from "../src/lib/compose-style.ts";
+
+// Keep in step with COMPOSE_MODEL_DEFAULT in src/lib/raw-leads-ai.functions.ts.
+const EVAL_MODEL = process.env.OPENAI_EVAL_MODEL?.trim() || "gpt-5.4-mini-2026-03-17";
 
 const LEGACY_PROMPT = `You are an expert customer service assistant. Your goal is to clean, extract, and normalize three parts of a customer lead request to prepare them for an outbound message.
 
@@ -72,7 +76,13 @@ async function ask(messages: { role: string; content: string }[]): Promise<Slots
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "gpt-4o-mini", messages, response_format: SCHEMA }),
+    body: JSON.stringify({
+      model: EVAL_MODEL,
+      messages,
+      temperature: 0.2,
+      max_tokens: 500,
+      response_format: SCHEMA,
+    }),
   });
   if (!res.ok) return null;
   const body = await res.json();
@@ -84,7 +94,12 @@ async function ask(messages: { role: string; content: string }[]): Promise<Slots
 }
 
 const norm = (s: string) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
-const tokens = (s: string) => new Set(norm(s).split(" ").filter((t) => t.length > 2));
+const tokens = (s: string) =>
+  new Set(
+    norm(s)
+      .split(" ")
+      .filter((t) => t.length > 2),
+  );
 function f1(a: string, b: string) {
   const x = tokens(a);
   const y = tokens(b);
@@ -93,7 +108,13 @@ function f1(a: string, b: string) {
   return (2 * hit) / (x.size + y.size);
 }
 
-type Score = { n: number; svcF1: number; svcHasService: number; reqExact: number; reqIntent: number };
+type Score = {
+  n: number;
+  svcF1: number;
+  svcHasService: number;
+  reqExact: number;
+  reqIntent: number;
+};
 const blank = (): Score => ({ n: 0, svcF1: 0, svcHasService: 0, reqExact: 0, reqIntent: 0 });
 
 function score(acc: Score, got: Slots, want: Slots) {
@@ -118,16 +139,26 @@ for (let i = 0; i < rows.length; i++) {
   reqSlots += [r.expected.requirement1, r.expected.requirement2].filter(Boolean).length;
 
   const fewShot = selectComposeExemplars(r.service, 6).flatMap((ex) => [
-    { role: "user", content: JSON.stringify({ context: ex.context, exact: ex.exact, service: ex.service }) },
+    {
+      role: "user",
+      content: JSON.stringify({ context: ex.context, exact: ex.exact, service: ex.service }),
+    },
     { role: "assistant", content: JSON.stringify(ex.out) },
   ]);
 
   const [a, b] = await Promise.all([
     ask([
       { role: "system", content: LEGACY_PROMPT },
-      { role: "user", content: JSON.stringify({ context: r.context, requirement1: "", requirement2: "" }) },
+      {
+        role: "user",
+        content: JSON.stringify({ context: r.context, requirement1: "", requirement2: "" }),
+      },
     ]),
-    ask([{ role: "system", content: buildComposeSystemPrompt() }, ...fewShot, { role: "user", content: input }]),
+    ask([
+      { role: "system", content: buildComposeSystemPrompt() },
+      ...fewShot,
+      { role: "user", content: input },
+    ]),
   ]);
   if (a) score(legacy, a, r.expected);
   if (b) score(trained, b, r.expected);
