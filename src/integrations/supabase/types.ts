@@ -119,6 +119,24 @@ export type Database = {
         }
         Relationships: []
       }
+      crisp_api_usage: {
+        Row: {
+          bucket_at: string
+          crisp_website_id: string
+          requests: number
+        }
+        Insert: {
+          bucket_at: string
+          crisp_website_id: string
+          requests?: number
+        }
+        Update: {
+          bucket_at?: string
+          crisp_website_id?: string
+          requests?: number
+        }
+        Relationships: []
+      }
       crisp_conversation_notes: {
         Row: {
           conversation_id: string
@@ -170,7 +188,9 @@ export type Database = {
           last_customer_unread_at: string | null
           last_message: string | null
           last_message_at: string | null
+          last_read_at: string | null
           metadata: Json | null
+          state_observed_at: string | null
           status: string | null
           unread_count: number | null
           updated_at: string | null
@@ -187,7 +207,9 @@ export type Database = {
           last_customer_unread_at?: string | null
           last_message?: string | null
           last_message_at?: string | null
+          last_read_at?: string | null
           metadata?: Json | null
+          state_observed_at?: string | null
           status?: string | null
           unread_count?: number | null
           updated_at?: string | null
@@ -204,10 +226,69 @@ export type Database = {
           last_customer_unread_at?: string | null
           last_message?: string | null
           last_message_at?: string | null
+          last_read_at?: string | null
           metadata?: Json | null
+          state_observed_at?: string | null
           status?: string | null
           unread_count?: number | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      crisp_greeting_jobs: {
+        Row: {
+          attempts: number
+          content: string
+          created_at: string
+          crisp_session_id: string
+          crisp_website_id: string
+          due_at: string
+          expires_at: string
+          external_fingerprint: string | null
+          id: string
+          is_revisit: boolean
+          last_error: string | null
+          lease_token: string | null
+          lease_until: string | null
+          request_started_at: string | null
+          sent_at: string | null
+          state: string
+        }
+        Insert: {
+          attempts?: number
+          content: string
+          created_at?: string
+          crisp_session_id: string
+          crisp_website_id: string
+          due_at: string
+          expires_at?: string
+          external_fingerprint?: string | null
+          id?: string
+          is_revisit?: boolean
+          last_error?: string | null
+          lease_token?: string | null
+          lease_until?: string | null
+          request_started_at?: string | null
+          sent_at?: string | null
+          state?: string
+        }
+        Update: {
+          attempts?: number
+          content?: string
+          created_at?: string
+          crisp_session_id?: string
+          crisp_website_id?: string
+          due_at?: string
+          expires_at?: string
+          external_fingerprint?: string | null
+          id?: string
+          is_revisit?: boolean
+          last_error?: string | null
+          lease_token?: string | null
+          lease_until?: string | null
+          request_started_at?: string | null
+          sent_at?: string | null
+          state?: string
         }
         Relationships: []
       }
@@ -264,6 +345,79 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "crisp_conversations"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      crisp_site_arrivals: {
+        Row: {
+          crisp_session_id: string
+          crisp_website_id: string
+          received_at: string
+          request_id: string
+        }
+        Insert: {
+          crisp_session_id: string
+          crisp_website_id: string
+          received_at?: string
+          request_id: string
+        }
+        Update: {
+          crisp_session_id?: string
+          crisp_website_id?: string
+          received_at?: string
+          request_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crisp_site_arrivals_crisp_website_id_fkey"
+            columns: ["crisp_website_id"]
+            isOneToOne: false
+            referencedRelation: "crisp_site_bridges"
+            referencedColumns: ["crisp_website_id"]
+          },
+        ]
+      }
+      crisp_site_bridges: {
+        Row: {
+          crisp_website_id: string
+          enabled: boolean
+          hour_at: string
+          hour_count: number
+          last_received_at: string | null
+          minute_at: string
+          minute_count: number
+          origin: string
+          secret_id: string
+        }
+        Insert: {
+          crisp_website_id: string
+          enabled?: boolean
+          hour_at?: string
+          hour_count?: number
+          last_received_at?: string | null
+          minute_at?: string
+          minute_count?: number
+          origin: string
+          secret_id: string
+        }
+        Update: {
+          crisp_website_id?: string
+          enabled?: boolean
+          hour_at?: string
+          hour_count?: number
+          last_received_at?: string | null
+          minute_at?: string
+          minute_count?: number
+          origin?: string
+          secret_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crisp_site_bridges_crisp_website_id_fkey"
+            columns: ["crisp_website_id"]
+            isOneToOne: true
+            referencedRelation: "crisp_workspaces"
+            referencedColumns: ["crisp_website_id"]
           },
         ]
       }
@@ -325,6 +479,7 @@ export type Database = {
           locales: string[]
           longitude: number | null
           nickname: string | null
+          presence_observed_at: string | null
           region: string | null
           timezone_minutes: number | null
           updated_at: string
@@ -354,6 +509,7 @@ export type Database = {
           locales?: string[]
           longitude?: number | null
           nickname?: string | null
+          presence_observed_at?: string | null
           region?: string | null
           timezone_minutes?: number | null
           updated_at?: string
@@ -383,6 +539,7 @@ export type Database = {
           locales?: string[]
           longitude?: number | null
           nickname?: string | null
+          presence_observed_at?: string | null
           region?: string | null
           timezone_minutes?: number | null
           updated_at?: string
@@ -392,36 +549,45 @@ export type Database = {
       }
       crisp_webhook_events: {
         Row: {
+          attempts: number
           created_at: string
           crisp_website_id: string | null
           error: string | null
           event_fingerprint: string
           event_type: string
           id: string
+          next_attempt_at: string
           payload: Json
           processed: boolean | null
+          processed_at: string | null
           received_at: string | null
         }
         Insert: {
+          attempts?: number
           created_at?: string
           crisp_website_id?: string | null
           error?: string | null
           event_fingerprint: string
           event_type: string
           id?: string
+          next_attempt_at?: string
           payload: Json
           processed?: boolean | null
+          processed_at?: string | null
           received_at?: string | null
         }
         Update: {
+          attempts?: number
           created_at?: string
           crisp_website_id?: string | null
           error?: string | null
           event_fingerprint?: string
           event_type?: string
           id?: string
+          next_attempt_at?: string
           payload?: Json
           processed?: boolean | null
+          processed_at?: string | null
           received_at?: string | null
         }
         Relationships: []
@@ -437,18 +603,41 @@ export type Database = {
           auto_greet_revisit_message: string | null
           created_at: string
           credential_secret_id: string | null
+          crisp_cooldown_until: string | null
+          crisp_interactive_reserve: number
+          crisp_request_limit: number
           crisp_website_id: string
           enabled: boolean
+          greeting_worker_enabled: boolean
           id: string
           installed_at: string | null
+          last_full_presence_at: string | null
+          last_presence_event_at: string | null
           last_seen_at: string | null
           last_synced_at: string | null
           live_visitor_count: number
           metadata: Json
+          pipeline_started_at: string
           presence_failure_count: number
+          presence_feed: string
           presence_paused_reason: string | null
           presence_paused_until: string | null
+          site_presence_claimed_at: string | null
+          site_presence_pending: boolean
+          site_presence_requested_at: string | null
           updated_at: string
+          visitor_budget_used: number
+          visitor_count_checked_at: string | null
+          visitor_effective_interval_seconds: number
+          visitor_identity_checked_at: string | null
+          visitor_last_duration_ms: number | null
+          visitor_last_mode: string | null
+          visitor_request_cost: number
+          visitor_sync_error: string | null
+          visitor_sync_interval_seconds: number
+          visitor_sync_lease: string | null
+          visitor_sync_lease_until: string | null
+          visitor_sync_succeeded_at: string | null
           visitor_synced_at: string | null
           visitors_limited: boolean
           workspace_name: string | null
@@ -463,18 +652,41 @@ export type Database = {
           auto_greet_revisit_message?: string | null
           created_at?: string
           credential_secret_id?: string | null
+          crisp_cooldown_until?: string | null
+          crisp_interactive_reserve?: number
+          crisp_request_limit?: number
           crisp_website_id: string
           enabled?: boolean
+          greeting_worker_enabled?: boolean
           id?: string
           installed_at?: string | null
+          last_full_presence_at?: string | null
+          last_presence_event_at?: string | null
           last_seen_at?: string | null
           last_synced_at?: string | null
           live_visitor_count?: number
           metadata?: Json
+          pipeline_started_at?: string
           presence_failure_count?: number
+          presence_feed?: string
           presence_paused_reason?: string | null
           presence_paused_until?: string | null
+          site_presence_claimed_at?: string | null
+          site_presence_pending?: boolean
+          site_presence_requested_at?: string | null
           updated_at?: string
+          visitor_budget_used?: number
+          visitor_count_checked_at?: string | null
+          visitor_effective_interval_seconds?: number
+          visitor_identity_checked_at?: string | null
+          visitor_last_duration_ms?: number | null
+          visitor_last_mode?: string | null
+          visitor_request_cost?: number
+          visitor_sync_error?: string | null
+          visitor_sync_interval_seconds?: number
+          visitor_sync_lease?: string | null
+          visitor_sync_lease_until?: string | null
+          visitor_sync_succeeded_at?: string | null
           visitor_synced_at?: string | null
           visitors_limited?: boolean
           workspace_name?: string | null
@@ -489,18 +701,41 @@ export type Database = {
           auto_greet_revisit_message?: string | null
           created_at?: string
           credential_secret_id?: string | null
+          crisp_cooldown_until?: string | null
+          crisp_interactive_reserve?: number
+          crisp_request_limit?: number
           crisp_website_id?: string
           enabled?: boolean
+          greeting_worker_enabled?: boolean
           id?: string
           installed_at?: string | null
+          last_full_presence_at?: string | null
+          last_presence_event_at?: string | null
           last_seen_at?: string | null
           last_synced_at?: string | null
           live_visitor_count?: number
           metadata?: Json
+          pipeline_started_at?: string
           presence_failure_count?: number
+          presence_feed?: string
           presence_paused_reason?: string | null
           presence_paused_until?: string | null
+          site_presence_claimed_at?: string | null
+          site_presence_pending?: boolean
+          site_presence_requested_at?: string | null
           updated_at?: string
+          visitor_budget_used?: number
+          visitor_count_checked_at?: string | null
+          visitor_effective_interval_seconds?: number
+          visitor_identity_checked_at?: string | null
+          visitor_last_duration_ms?: number | null
+          visitor_last_mode?: string | null
+          visitor_request_cost?: number
+          visitor_sync_error?: string | null
+          visitor_sync_interval_seconds?: number
+          visitor_sync_lease?: string | null
+          visitor_sync_lease_until?: string | null
+          visitor_sync_succeeded_at?: string | null
           visitor_synced_at?: string | null
           visitors_limited?: boolean
           workspace_name?: string | null
@@ -808,9 +1043,9 @@ export type Database = {
           assigned_at: string
           assigned_by: string | null
           assigned_to: string | null
+          called_at: string | null
           canonical_lead_link: string | null
           canonical_post_id: string | null
-          called_at: string | null
           contact_method: string
           context: string | null
           created_at: string
@@ -851,9 +1086,9 @@ export type Database = {
           assigned_at?: string
           assigned_by?: string | null
           assigned_to?: string | null
+          called_at?: string | null
           canonical_lead_link?: string | null
           canonical_post_id?: string | null
-          called_at?: string | null
           contact_method?: string
           context?: string | null
           created_at?: string
@@ -894,9 +1129,9 @@ export type Database = {
           assigned_at?: string
           assigned_by?: string | null
           assigned_to?: string | null
+          called_at?: string | null
           canonical_lead_link?: string | null
           canonical_post_id?: string | null
-          called_at?: string | null
           contact_method?: string
           context?: string | null
           created_at?: string
@@ -1370,6 +1605,53 @@ export type Database = {
         Returns: boolean
       }
       count_pending_reminder_leads: { Args: never; Returns: number }
+      crisp_accept_event: {
+        Args: { p_body: Json; p_fingerprint: string }
+        Returns: string
+      }
+      crisp_apply_event: { Args: { p_body: Json }; Returns: undefined }
+      crisp_begin_greeting: {
+        Args: { p_id: string; p_token: string }
+        Returns: boolean
+      }
+      crisp_claim_greetings: {
+        Args: { p_limit?: number; p_website_id: string }
+        Returns: {
+          attempts: number
+          content: string
+          created_at: string
+          crisp_session_id: string
+          crisp_website_id: string
+          due_at: string
+          expires_at: string
+          external_fingerprint: string | null
+          id: string
+          is_revisit: boolean
+          last_error: string | null
+          lease_token: string | null
+          lease_until: string | null
+          request_started_at: string | null
+          sent_at: string | null
+          state: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "crisp_greeting_jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      crisp_claim_presence: { Args: { p_website_id: string }; Returns: string }
+      crisp_complete_greeting: {
+        Args: {
+          p_error?: string
+          p_id: string
+          p_outcome: string
+          p_response?: Json
+          p_token: string
+        }
+        Returns: undefined
+      }
       crisp_create_workspace_secret: {
         Args: {
           p_token_id: string
@@ -1383,9 +1665,80 @@ export type Database = {
         Args: { p_secret_id: string }
         Returns: boolean
       }
+      crisp_finish_presence: {
+        Args: {
+          p_active: number
+          p_complete: boolean
+          p_count: number
+          p_error?: string
+          p_limited: boolean
+          p_rows: Json
+          p_started_at: string
+          p_token: string
+          p_website_id: string
+        }
+        Returns: boolean
+      }
+      crisp_finish_presence_v2: {
+        Args: {
+          p_active: number
+          p_complete: boolean
+          p_count: number
+          p_duration_ms: number
+          p_error: string
+          p_limited: boolean
+          p_mode: string
+          p_requests: number
+          p_rows: Json
+          p_started_at: string
+          p_token: string
+          p_website_id: string
+        }
+        Returns: boolean
+      }
+      crisp_get_site_bridge: { Args: { p_website_id: string }; Returns: Json }
       crisp_get_workspace_secret: {
         Args: { p_secret_id: string }
         Returns: Json
+      }
+      crisp_import_messages: { Args: { p_rows: Json }; Returns: number }
+      crisp_mark_read_local: {
+        Args: { p_conversation_id: string; p_observed_at: string }
+        Returns: undefined
+      }
+      crisp_process_events: {
+        Args: { p_limit?: number; p_website_id?: string }
+        Returns: number
+      }
+      crisp_provision_site_bridge: {
+        Args: { p_key: string; p_origin: string; p_website_id: string }
+        Returns: undefined
+      }
+      crisp_read_plugin_signing_secret: { Args: never; Returns: string }
+      crisp_record_outgoing: {
+        Args: {
+          p_content: string
+          p_payload: Json
+          p_session_id: string
+          p_website_id: string
+        }
+        Returns: string
+      }
+      crisp_register_site_arrival: {
+        Args: {
+          p_request_id: string
+          p_session_id: string
+          p_website_id: string
+        }
+        Returns: string
+      }
+      crisp_reserve_request: {
+        Args: { p_interactive?: boolean; p_website_id: string }
+        Returns: boolean
+      }
+      crisp_set_cooldown: {
+        Args: { p_seconds: number; p_website_id: string }
+        Returns: undefined
       }
       crisp_update_workspace_secret: {
         Args: {
@@ -1396,7 +1749,9 @@ export type Database = {
         }
         Returns: boolean
       }
+      crisp_worker_authorized: { Args: { p_token: string }; Returns: boolean }
       cs_leads_status_counts: { Args: never; Returns: Json }
+      cs_next_compose_sender_tick: { Args: never; Returns: number }
       cs_user_assignment_totals: {
         Args: { _from?: string; _to?: string }
         Returns: {
@@ -1411,7 +1766,6 @@ export type Database = {
           total_leads: number
         }[]
       }
-      cs_next_compose_sender_tick: { Args: never; Returns: number }
       current_user_has_role: {
         Args: { _role: Database["public"]["Enums"]["app_role"] }
         Returns: boolean
@@ -1540,9 +1894,9 @@ export type Database = {
           assigned_at: string
           assigned_by: string | null
           assigned_to: string | null
+          called_at: string | null
           canonical_lead_link: string | null
           canonical_post_id: string | null
-          called_at: string | null
           contact_method: string
           context: string | null
           created_at: string
