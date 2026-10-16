@@ -35,7 +35,10 @@ export function useCrispVisitors(enabled = true) {
     // refetches instead of rendering an older snapshot. Realtime invalidations
     // already refetch regardless of staleTime; the debounce coalesces bursts.
     staleTime: 0,
-    refetchInterval: CRISP_VISITORS_REFETCH_MS,
+    // A rejected token answers 500 for every attempt, so keep asking only while
+    // the failure could still be a transient database read.
+    refetchInterval: (query) =>
+      isAuthExpiredError(query.state.error) ? false : CRISP_VISITORS_REFETCH_MS,
     // Don't poll while the browser tab is hidden — the next refetch on focus
     // (refetchOnWindowFocus) catches the operator up instantly.
     refetchIntervalInBackground: false,
