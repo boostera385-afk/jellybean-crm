@@ -14,10 +14,21 @@ declare const EdgeRuntime: { waitUntil: (task: Promise<unknown>) => void };
 serve(async (req) => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
   const started = performance.now();
-  const secret = Deno.env.get("CRISP_PLUGIN_SIGNING_SECRET");
   const url = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!secret || !url || !key) return new Response("Plugin feed not configured", { status: 503 });
+  if (!url || !key) return new Response("Plugin feed not configured", { status: 503 });
+  const admin = createClient(url, key);
+  // Edge-env secret wins; fall back to the vault copy so rotation needs no
+  // redeploy. Both empty => fail closed.
+  let secret = Deno.env.get("CRISP_PLUGIN_SIGNING_SECRET");
+  if (!secret) {
+    const { data: vaultSecret, error: vaultError } = await admin.rpc(
+      "crisp_read_plugin_signing_secret",
+    );
+    if (vaultError) throw new Error("Plugin secret lookup failed");
+    if (typeof vaultSecret === "string" && vaultSecret) secret = vaultSecret;
+  }
+  if (!secret) return new Response("Plugin feed not configured", { status: 503 });
   try {
     const raw = await req.text();
     if (new TextEncoder().encode(raw).length > 256_000)
@@ -63,7 +74,6 @@ serve(async (req) => {
       )
         return new Response("Invalid presence", { status: 400 });
     }
-    const admin = createClient(url, key);
     const { data: workspace, error } = await admin
       .from("crisp_workspaces")
       .select("enabled,presence_feed")
