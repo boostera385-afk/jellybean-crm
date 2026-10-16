@@ -432,6 +432,9 @@ export type Database = {
           auto_greet_delay_seconds: number
           auto_greet_enabled: boolean
           auto_greet_message: string | null
+          auto_greet_revisit_after_seconds: number
+          auto_greet_revisit_enabled: boolean
+          auto_greet_revisit_message: string | null
           created_at: string
           credential_secret_id: string | null
           crisp_website_id: string
@@ -442,6 +445,9 @@ export type Database = {
           last_synced_at: string | null
           live_visitor_count: number
           metadata: Json
+          presence_failure_count: number
+          presence_paused_reason: string | null
+          presence_paused_until: string | null
           updated_at: string
           visitor_synced_at: string | null
           visitors_limited: boolean
@@ -452,6 +458,12 @@ export type Database = {
           auto_greet_delay_seconds?: number
           auto_greet_enabled?: boolean
           auto_greet_message?: string | null
+          auto_greet_revisit_after_seconds?: number
+          auto_greet_revisit_enabled?: boolean
+          auto_greet_revisit_message?: string | null
+          auto_greet_revisit_after_seconds?: number
+          auto_greet_revisit_enabled?: boolean
+          auto_greet_revisit_message?: string | null
           created_at?: string
           credential_secret_id?: string | null
           crisp_website_id: string
@@ -462,6 +474,9 @@ export type Database = {
           last_synced_at?: string | null
           live_visitor_count?: number
           metadata?: Json
+          presence_failure_count?: number
+          presence_paused_reason?: string | null
+          presence_paused_until?: string | null
           updated_at?: string
           visitor_synced_at?: string | null
           visitors_limited?: boolean
@@ -472,6 +487,9 @@ export type Database = {
           auto_greet_delay_seconds?: number
           auto_greet_enabled?: boolean
           auto_greet_message?: string | null
+          auto_greet_revisit_after_seconds?: number
+          auto_greet_revisit_enabled?: boolean
+          auto_greet_revisit_message?: string | null
           created_at?: string
           credential_secret_id?: string | null
           crisp_website_id?: string
@@ -482,6 +500,9 @@ export type Database = {
           last_synced_at?: string | null
           live_visitor_count?: number
           metadata?: Json
+          presence_failure_count?: number
+          presence_paused_reason?: string | null
+          presence_paused_until?: string | null
           updated_at?: string
           visitor_synced_at?: string | null
           visitors_limited?: boolean

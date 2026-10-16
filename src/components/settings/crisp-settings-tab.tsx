@@ -18,6 +18,9 @@ type CrispWorkspaceRow = {
   auto_greet_enabled: boolean | null;
   auto_greet_message: string | null;
   auto_greet_delay_seconds: number | null;
+  auto_greet_revisit_enabled: boolean | null;
+  auto_greet_revisit_message: string | null;
+  auto_greet_revisit_after_seconds: number | null;
 };
 
 function workspaceLabel(ws: CrispWorkspaceRow): string {
@@ -33,7 +36,7 @@ export function CrispSettingsTab() {
       const { data, error } = await supabase
         .from("crisp_workspaces")
         .select(
-          "id, crisp_website_id, workspace_name, enabled, auto_greet_enabled, auto_greet_message, auto_greet_delay_seconds",
+          "id, crisp_website_id, workspace_name, enabled, auto_greet_enabled, auto_greet_message, auto_greet_delay_seconds, auto_greet_revisit_enabled, auto_greet_revisit_message, auto_greet_revisit_after_seconds",
         )
         .eq("enabled", true)
         .order("created_at", { ascending: true });
@@ -53,8 +56,8 @@ export function CrispSettingsTab() {
             <h3 className="text-sm font-semibold">Auto-greeting for live visitors</h3>
           </div>
           <p className="text-xs text-muted-foreground">
-            Automatically send a message to a visitor the first time they go live on a workspace.
-            It fires once per visitor and skips anyone who already started a chat. Use{" "}
+            Automatically send a professional greeting the first time a visitor goes live, and a
+            polite check-in on later visits. Both skip anyone who already started a chat. Use{" "}
             <code className="font-mono">{"{{name}}"}</code> and{" "}
             <code className="font-mono">{"{{city}}"}</code> as placeholders.
           </p>
@@ -99,6 +102,13 @@ function CrispWorkspaceAutoGreetCard({
   const [enabled, setEnabled] = useState(Boolean(workspace.auto_greet_enabled));
   const [message, setMessage] = useState(workspace.auto_greet_message ?? "");
   const [delay, setDelay] = useState(String(workspace.auto_greet_delay_seconds ?? 0));
+  const [revisitEnabled, setRevisitEnabled] = useState(
+    workspace.auto_greet_revisit_enabled !== false,
+  );
+  const [revisitMessage, setRevisitMessage] = useState(workspace.auto_greet_revisit_message ?? "");
+  const [revisitHours, setRevisitHours] = useState(
+    String((workspace.auto_greet_revisit_after_seconds ?? 21600) / 3600),
+  );
   const [saving, setSaving] = useState(false);
 
   // Keep the form in sync when the underlying data refreshes after a save.
@@ -106,17 +116,27 @@ function CrispWorkspaceAutoGreetCard({
     setEnabled(Boolean(workspace.auto_greet_enabled));
     setMessage(workspace.auto_greet_message ?? "");
     setDelay(String(workspace.auto_greet_delay_seconds ?? 0));
+    setRevisitEnabled(workspace.auto_greet_revisit_enabled !== false);
+    setRevisitMessage(workspace.auto_greet_revisit_message ?? "");
+    setRevisitHours(String((workspace.auto_greet_revisit_after_seconds ?? 21600) / 3600));
   }, [
     workspace.auto_greet_enabled,
     workspace.auto_greet_message,
     workspace.auto_greet_delay_seconds,
+    workspace.auto_greet_revisit_enabled,
+    workspace.auto_greet_revisit_message,
+    workspace.auto_greet_revisit_after_seconds,
   ]);
 
   const dirty =
     enabled !== Boolean(workspace.auto_greet_enabled) ||
     message !== (workspace.auto_greet_message ?? "") ||
     String(Math.max(0, Math.round(Number(delay) || 0))) !==
-      String(workspace.auto_greet_delay_seconds ?? 0);
+      String(workspace.auto_greet_delay_seconds ?? 0) ||
+    revisitEnabled !== (workspace.auto_greet_revisit_enabled !== false) ||
+    revisitMessage !== (workspace.auto_greet_revisit_message ?? "") ||
+    String(Number(revisitHours) || 0) !==
+      String((workspace.auto_greet_revisit_after_seconds ?? 21600) / 3600);
 
   async function handleSave() {
     if (saving) return;
@@ -124,7 +144,12 @@ function CrispWorkspaceAutoGreetCard({
       toast.error("Add a greeting message before turning auto-greeting on.");
       return;
     }
+    if (revisitEnabled && !revisitMessage.trim()) {
+      toast.error("Add a revisit greeting message, or turn revisit greetings off.");
+      return;
+    }
     const parsedDelay = Math.max(0, Math.min(3600, Math.round(Number(delay) || 0)));
+    const parsedHours = Math.min(Math.max(Number(revisitHours) || 6, 5 / 60), 168);
     setSaving(true);
     try {
       const res = await updateCrispWorkspaceAutoGreet({
@@ -133,6 +158,9 @@ function CrispWorkspaceAutoGreetCard({
           enabled,
           message: message.trim(),
           delaySeconds: parsedDelay,
+          revisitEnabled,
+          revisitMessage: revisitMessage.trim(),
+          revisitAfterHours: parsedHours,
         },
       });
       if (!res.ok) {
@@ -185,6 +213,59 @@ function CrispWorkspaceAutoGreetCard({
           className="min-h-24 text-xs resize-none"
           maxLength={2000}
         />
+      </div>
+
+      <div className="rounded-lg border border-border/60 p-3.5 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <Label className="text-xs font-semibold">Greet again on later visits</Label>
+            <p className="text-[11px] text-muted-foreground max-w-sm">
+              Sends one polite check-in when a returning visitor comes back online. Never repeats
+              within the same visit, and never re-greets a visitor who already replied — those are
+              followed up by a human.
+            </p>
+          </div>
+          <Switch checked={revisitEnabled} onCheckedChange={setRevisitEnabled} />
+        </div>
+        {revisitEnabled && (
+          <>
+            <div className="space-y-1.5">
+              <Label
+                htmlFor={`revisit-msg-${workspace.id}`}
+                className="text-xs font-semibold flex items-center gap-1.5"
+              >
+                <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                Revisit greeting message
+              </Label>
+              <Textarea
+                id={`revisit-msg-${workspace.id}`}
+                placeholder="Welcome back, {{name}}! If you still have any questions, I'm right here and happy to help."
+                value={revisitMessage}
+                onChange={(e) => setRevisitMessage(e.target.value)}
+                className="min-h-20 text-xs resize-none"
+                maxLength={2000}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`revisit-hours-${workspace.id}`} className="text-xs font-semibold">
+                Wait before greeting the same visitor again (hours)
+              </Label>
+              <Input
+                id={`revisit-hours-${workspace.id}`}
+                type="number"
+                min={5 / 60}
+                max={168}
+                step={0.5}
+                value={revisitHours}
+                onChange={(e) => setRevisitHours(e.target.value)}
+                className="h-9 w-40 text-xs"
+              />
+              <p className="text-[11px] text-muted-foreground max-w-xs">
+                Minimum 0.08 (5 minutes), maximum 168 (7 days). Default 6 hours.
+              </p>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="flex items-end justify-between gap-3 flex-wrap">

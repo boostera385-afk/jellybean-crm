@@ -1012,7 +1012,15 @@ export const deleteCrispWorkspace = createServerFn({ method: "POST" })
 export const updateCrispWorkspaceAutoGreet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
-    (input: { websiteId: string; enabled: boolean; message: string; delaySeconds?: number }) => {
+    (input: {
+      websiteId: string;
+      enabled: boolean;
+      message: string;
+      delaySeconds?: number;
+      revisitEnabled?: boolean;
+      revisitMessage?: string;
+      revisitAfterHours?: number;
+    }) => {
       const websiteId = String(input?.websiteId ?? "").trim();
       if (!websiteId) throw new Error("websiteId is required");
       const enabled = Boolean(input?.enabled);
@@ -1023,10 +1031,29 @@ export const updateCrispWorkspaceAutoGreet = createServerFn({ method: "POST" })
       if (message.length > 2000) {
         throw new Error("Auto-greeting message must be 2000 characters or fewer.");
       }
+      const revisitEnabled =
+        input?.revisitEnabled === undefined ? true : Boolean(input.revisitEnabled);
+      const revisitMessage = String(input?.revisitMessage ?? "").trim();
+      if (revisitEnabled && revisitMessage.length > 2000) {
+        throw new Error("Revisit greeting message must be 2000 characters or fewer.");
+      }
+      // Stored as seconds with a 5-minute floor so one browsing session can
+      // never stack greetings, and a 7-day ceiling.
+      let revisitAfterHours = Number(input?.revisitAfterHours ?? 6);
+      if (!Number.isFinite(revisitAfterHours)) revisitAfterHours = 6;
+      revisitAfterHours = Math.min(Math.max(revisitAfterHours, 5 / 60), 168);
       let delaySeconds = Math.round(Number(input?.delaySeconds ?? 0));
       if (!Number.isFinite(delaySeconds) || delaySeconds < 0) delaySeconds = 0;
       if (delaySeconds > 3600) delaySeconds = 3600;
-      return { websiteId, enabled, message, delaySeconds };
+      return {
+        websiteId,
+        enabled,
+        message,
+        delaySeconds,
+        revisitEnabled,
+        revisitMessage,
+        revisitAfterHours,
+      };
     },
   )
   .handler(async ({ data, context }) => {
@@ -1041,6 +1068,9 @@ export const updateCrispWorkspaceAutoGreet = createServerFn({ method: "POST" })
         auto_greet_enabled: data.enabled,
         auto_greet_message: data.message || null,
         auto_greet_delay_seconds: data.delaySeconds,
+        auto_greet_revisit_enabled: data.revisitEnabled,
+        auto_greet_revisit_message: data.revisitMessage || null,
+        auto_greet_revisit_after_seconds: Math.round(data.revisitAfterHours * 3600),
         updated_at: new Date().toISOString(),
       })
       .eq("crisp_website_id", data.websiteId);
@@ -1054,6 +1084,9 @@ export const updateCrispWorkspaceAutoGreet = createServerFn({ method: "POST" })
       enabled: data.enabled,
       message: data.message,
       delaySeconds: data.delaySeconds,
+      revisitEnabled: data.revisitEnabled,
+      revisitMessage: data.revisitMessage,
+      revisitAfterHours: data.revisitAfterHours,
     };
   });
 
