@@ -1365,10 +1365,15 @@ function CrispInboxInner() {
     setIsSending(true);
     const content = messageInput.trim();
     setMessageInput("");
+    const sendStarted = performance.now();
 
     try {
       const res = await sendCrispMessage({
         data: { conversationId: selectedConversationId, content },
+      });
+      console.debug("Crisp reply acknowledgement", {
+        accepted: res.ok,
+        requestToAcknowledgementMs: Math.round(performance.now() - sendStarted),
       });
       if (!res.ok) {
         toast.error(res.error || "Could not send message");
@@ -1423,6 +1428,7 @@ function CrispInboxInner() {
     if (!selectedVisitor || !visitorMessage.trim() || isMessagingVisitor) return;
 
     setIsMessagingVisitor(true);
+    const sendStarted = performance.now();
     try {
       const result = await sendCrispMessageToVisitor({
         data: {
@@ -1430,6 +1436,10 @@ function CrispInboxInner() {
           sessionId: selectedVisitor.crisp_session_id,
           content: visitorMessage.trim(),
         },
+      });
+      console.debug("Crisp visitor message acknowledgement", {
+        accepted: result.ok,
+        requestToAcknowledgementMs: Math.round(performance.now() - sendStarted),
       });
       if (!result.ok) {
         toast.error(result.error || "Could not message this visitor");
@@ -2384,6 +2394,11 @@ function CrispInboxInner() {
                   <p className="mt-1 break-words">{visitorOverview.data.errors.join(" · ")}</p>
                 </div>
               ) : null}
+              {visitorOverview.data?.presenceMode !== "plugin" && (
+                <p className="shrink-0 border-b border-border/40 px-3 py-1.5 text-[11px] text-muted-foreground">
+                  Polling fallback active. Visitor arrival timing is not guaranteed.
+                </p>
+              )}
               <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 overscroll-contain">
                 {hotVisitors.length === 0 ? (
                   <div className="flex h-full min-h-24 flex-col items-center justify-center px-4 text-center">

@@ -1393,6 +1393,7 @@ export type Database = {
           total_leads: number
         }[]
       }
+      cs_next_compose_sender_tick: { Args: never; Returns: number }
       current_user_has_role: {
         Args: { _role: Database["public"]["Enums"]["app_role"] }
         Returns: boolean

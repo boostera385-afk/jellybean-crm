@@ -8,8 +8,8 @@
 --    Expect one active row with a '5 seconds' schedule.
 SELECT jobid, jobname, schedule, active FROM cron.job WHERE jobname = 'crisp-auto-greet';
 
--- 2. Are those invocations succeeding? Repeated 'failed' means the worker is
---    scheduled but never runs to completion.
+-- 2. Are cron dispatches succeeding? This proves SQL/pg_net enqueueing only,
+--    NOT completion of the Edge Function; inspect function logs separately.
 SELECT d.status, count(*) AS runs, max(d.end_time) AS last_run
 FROM cron.job_run_details d JOIN cron.job j USING (jobid)
 WHERE j.jobname = 'crisp-auto-greet' AND d.start_time > now() - interval '1 hour'
@@ -32,6 +32,14 @@ SELECT crisp_website_id, enabled, greeting_worker_enabled,
        now() - visitor_sync_succeeded_at   AS since_success,
        to_jsonb(w) ->> 'visitor_sync_interval_seconds' AS sync_interval_s,
        visitor_sync_error, crisp_cooldown_until,
+       to_jsonb(w)->>'visitor_identity_checked_at' AS identity_checked_at,
+       to_jsonb(w)->>'visitor_count_checked_at' AS count_checked_at,
+       to_jsonb(w)->>'last_full_presence_at' AS full_snapshot_at,
+       to_jsonb(w)->>'visitor_effective_interval_seconds' AS effective_interval_s,
+       to_jsonb(w)->>'visitor_request_cost' AS requests_per_pass_ewma,
+       to_jsonb(w)->>'visitor_last_mode' AS last_mode,
+       to_jsonb(w)->>'presence_feed' AS configured_feed,
+       to_jsonb(w)->>'last_presence_event_at' AS last_signed_availability,
        live_visitor_count, active_visitor_count, visitors_limited
 FROM public.crisp_workspaces w ORDER BY crisp_website_id;
 
@@ -84,10 +92,9 @@ SELECT count(*) FILTER (WHERE is_online) AS online_rows,
        ) AS stale_online_rows
 FROM public.crisp_visitors;
 
--- 9. Realtime wiring. in_realtime must be true and replica_identity must be 'f'
---    (FULL) for the UI to get UPDATE broadcasts; 'd' (default) is the
---    20261015120000 fix not yet applied, and is why an offline flip or a counter
---    change would fall back to polling.
+-- 9. Realtime wiring. Publication membership is required. FULL adds old-record
+--    data; it is NOT a prerequisite for UPDATE delivery with a primary key and
+--    does not prove that a browser subscribed or rendered the change.
 SELECT c.relname AS table_name, c.relreplident AS replica_identity,
        EXISTS (SELECT 1 FROM pg_publication_tables pt
                WHERE pt.pubname = 'supabase_realtime'
@@ -96,3 +103,16 @@ FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'public'
   AND c.relname IN ('crisp_visitors', 'crisp_workspaces', 'crisp_conversations', 'crisp_messages')
 ORDER BY c.relname;
+
+-- 10. Exhausted events remain visible rather than pretending they succeeded.
+SELECT event_type,error,count(*) AS exhausted_events,min(received_at) AS oldest
+FROM public.crisp_webhook_events WHERE NOT processed AND attempts>=8
+GROUP BY event_type,error;
+
+-- 11. Queue-to-acceptance, not website-entry-to-delivery. sent means accepted
+--     by Crisp, not physically displayed in the visitor's browser.
+SELECT count(*) AS jobs,
+  percentile_disc(0.5) WITHIN GROUP(ORDER BY sent_at-created_at) AS p50,
+  percentile_disc(0.95) WITHIN GROUP(ORDER BY sent_at-created_at) AS p95,
+  max(sent_at-created_at) AS worst
+FROM public.crisp_greeting_jobs WHERE state='sent' AND created_at>now()-interval '6 hours';

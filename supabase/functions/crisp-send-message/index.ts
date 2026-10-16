@@ -10,6 +10,7 @@ const corsHeaders = {
 const ALLOWED_ROLES = ["admin", "cs_admin", "cs"];
 
 serve(async (req) => {
+  const started = performance.now();
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -160,9 +161,18 @@ serve(async (req) => {
     );
 
     const responseData = await crispResponse.json().catch(() => ({}));
+    console.info(
+      JSON.stringify({
+        component: "crisp-manual-send",
+        websiteId,
+        status: crispResponse.status,
+        accepted: crispResponse.ok,
+        requestToResponseMs: Math.round(performance.now() - started),
+      }),
+    );
 
     if (!crispResponse.ok) {
-      console.error("Crisp API Error:", crispResponse.status, responseData);
+      console.error("Crisp API Error:", crispResponse.status);
       const reason =
         responseData?.reason ||
         responseData?.data?.message ||

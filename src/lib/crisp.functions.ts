@@ -70,6 +70,7 @@ export type CrispVisitorOverview = {
   todayCount: number;
   limited: boolean;
   fetchedAt: string;
+  presenceMode?: "polling" | "plugin" | "mixed";
   errors?: string[];
   error?: string;
 };
@@ -83,6 +84,13 @@ type CrispWorkspaceRow = {
   visitors_limited: boolean;
   visitor_sync_succeeded_at: string | null;
   visitor_sync_error: string | null;
+  visitor_identity_checked_at: string | null;
+  visitor_count_checked_at: string | null;
+  visitor_effective_interval_seconds: number;
+  visitor_budget_used: number;
+  crisp_request_limit: number;
+  crisp_interactive_reserve: number;
+  presence_feed: "polling" | "plugin";
 };
 
 // Generated types lag behind the live-visitor migration, so the row is declared here.
@@ -241,7 +249,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
     let workspaceQuery = supabaseAdmin
       .from("crisp_workspaces")
       .select(
-        "crisp_website_id, workspace_name, live_visitor_count, active_visitor_count, visitors_limited, visitor_sync_succeeded_at, visitor_sync_error",
+        "crisp_website_id, workspace_name, live_visitor_count, active_visitor_count, visitors_limited, visitor_sync_succeeded_at, visitor_sync_error, visitor_identity_checked_at, visitor_count_checked_at, visitor_effective_interval_seconds, visitor_budget_used, crisp_request_limit, crisp_interactive_reserve, presence_feed",
       )
       .eq("enabled", true);
     if (data.websiteId) workspaceQuery = workspaceQuery.eq("crisp_website_id", data.websiteId);
@@ -281,11 +289,28 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
       if (workspace.visitor_sync_error) {
         errors.push(`${workspace.workspace_name}: ${workspace.visitor_sync_error}`);
       } else if (
-        !workspace.visitor_sync_succeeded_at ||
-        now.getTime() - new Date(workspace.visitor_sync_succeeded_at).getTime() > 60_000
+        !workspace.visitor_identity_checked_at ||
+        now.getTime() - new Date(workspace.visitor_identity_checked_at).getTime() >
+          Math.max(30_000, workspace.visitor_effective_interval_seconds * 2_000 + 10_000)
       ) {
-        errors.push(`${workspace.workspace_name}: visitor reconciliation is delayed`);
+        errors.push(`${workspace.workspace_name}: visitor identity checks are delayed`);
       }
+      if (workspace.visitors_limited)
+        errors.push(`${workspace.workspace_name}: Crisp visitor results are limited`);
+      if (
+        !workspace.visitor_sync_error &&
+        (!workspace.visitor_sync_succeeded_at ||
+          now.getTime() - new Date(workspace.visitor_sync_succeeded_at).getTime() >
+            Math.max(90_000, workspace.visitor_effective_interval_seconds * 5_000))
+      )
+        errors.push(`${workspace.workspace_name}: full presence reconciliation is delayed`);
+      if (
+        workspace.visitor_budget_used >=
+        (workspace.crisp_request_limit - workspace.crisp_interactive_reserve) * 0.8
+      )
+        errors.push(
+          `${workspace.workspace_name}: background polling slowed to protect the request budget`,
+        );
     }
     const websiteIds = (workspaces ?? []).map((w: CrispWorkspaceRow) => w.crisp_website_id);
     const todayStartIso = pakistanDayStartIso(now);
@@ -361,9 +386,7 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
     const todayVisitors: CrispVisitor[] = (todayRows ?? []).map(mapVisitor);
     // Fall back to the capped list length only if the count read failed.
     const todayCount =
-      typeof todayCountResult?.count === "number"
-        ? todayCountResult.count
-        : todayVisitors.length;
+      typeof todayCountResult?.count === "number" ? todayCountResult.count : todayVisitors.length;
 
     return {
       ok: errors.length === 0 || liveVisitors.length > 0 || todayVisitors.length > 0,
@@ -377,6 +400,11 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
       todayCount,
       limited,
       fetchedAt: nowIso,
+      presenceMode: (workspaces ?? []).every((w: CrispWorkspaceRow) => w.presence_feed === "plugin")
+        ? "plugin"
+        : (workspaces ?? []).some((w: CrispWorkspaceRow) => w.presence_feed === "plugin")
+          ? "mixed"
+          : "polling",
       errors: errors.length > 0 ? errors : undefined,
       error:
         errors.length > 0 && liveVisitors.length === 0 && todayVisitors.length === 0
@@ -417,6 +445,7 @@ export const sendCrispMessageToVisitor = createServerFn({ method: "POST" })
     );
     if (!credsResult.ok) return { ok: false as const, error: credsResult.error };
 
+    const sendStarted = performance.now();
     const response = await crispFetch(
       supabaseAdmin as never,
       `https://api.crisp.chat/v1/website/${data.websiteId}/conversation/${data.sessionId}/message`,
@@ -431,6 +460,16 @@ export const sendCrispMessageToVisitor = createServerFn({ method: "POST" })
         }),
       },
       "interactive",
+    );
+    console.info(
+      JSON.stringify({
+        component: "crisp-manual-send",
+        path: "visitor",
+        websiteId: data.websiteId,
+        status: response.status,
+        accepted: response.ok,
+        externalRequestMs: Math.round(performance.now() - sendStarted),
+      }),
     );
     if (!response.ok) {
       return { ok: false as const, error: `Crisp API error: ${await crispErrorReason(response)}` };
@@ -498,6 +537,7 @@ export const sendCrispMessage = createServerFn({ method: "POST" })
     const credsRes = await getWorkspaceCreds(supabaseAdmin as never, ws.credential_secret_id);
     if (!credsRes.ok) return { ok: false as const, error: credsRes.error };
 
+    const sendStarted = performance.now();
     const res = await crispFetch(
       supabaseAdmin as never,
       `https://api.crisp.chat/v1/website/${conv.crisp_website_id}/conversation/${conv.crisp_session_id}/message`,
@@ -514,6 +554,16 @@ export const sendCrispMessage = createServerFn({ method: "POST" })
       "interactive",
     );
 
+    console.info(
+      JSON.stringify({
+        component: "crisp-manual-send",
+        path: "conversation",
+        websiteId: conv.crisp_website_id,
+        status: res.status,
+        accepted: res.ok,
+        externalRequestMs: Math.round(performance.now() - sendStarted),
+      }),
+    );
     if (!res.ok) {
       return { ok: false as const, error: `Crisp API error: ${await crispErrorReason(res)}` };
     }
