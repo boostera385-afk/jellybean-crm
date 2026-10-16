@@ -17,6 +17,7 @@ type Workspace = {
   crisp_cooldown_until: string | null;
   visitor_count_checked_at: string | null;
   visitor_synced_at: string | null;
+  site_presence_pending?: boolean;
 };
 type Visitor = {
   session_id?: string;
@@ -62,7 +63,10 @@ async function reconcile(
   if (!token) return;
   const startedAt = new Date().toISOString();
   const start = performance.now();
-  const checkCount = countCheckDue(workspace.visitor_count_checked_at);
+  // Arrival hints request a one-page identity read, never a full sweep or
+  // unverified visitor upsert. Periodic polling still proves absence as before.
+  const checkCount =
+    !workspace.site_presence_pending && countCheckDue(workspace.visitor_count_checked_at);
   const snapshot = await readPresence(
     (path) =>
       crispFetch(admin, `https://api.crisp.chat/v1/website/${websiteId}/visitors/${path}`, {
@@ -222,7 +226,7 @@ serve(async (req) => {
     let query = admin
       .from("crisp_workspaces")
       .select(
-        "crisp_website_id,credential_secret_id,crisp_cooldown_until,visitor_count_checked_at,visitor_synced_at",
+        "crisp_website_id,credential_secret_id,crisp_cooldown_until,visitor_count_checked_at,visitor_synced_at,site_presence_pending",
       )
       .eq("enabled", true)
       .order("visitor_synced_at", { ascending: true, nullsFirst: true });
