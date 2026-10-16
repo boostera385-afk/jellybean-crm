@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { crispFetch, type RpcClient } from "../_shared/crisp-api.ts";
 import { mapConcurrent, sendOutcome, timingSafeEqual } from "../_shared/crisp-policy.ts";
 
@@ -8,11 +8,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-type Admin = RpcClient;
+type Admin = RpcClient & SupabaseClient;
+// A complete list pass must be no older than this, or the next claim upgrades
+// itself to a full pass. The UI staleness banner keys on
+// visitor_sync_succeeded_at with a 60s window, so a full pass every 55s keeps
+// that signal honest while tripwire passes (which never set succeeded_at) stay
+// cheap in between.
+const FULL_PASS_MAX_AGE_MS = 55_000;
+
 type Workspace = {
   crisp_website_id: string;
   credential_secret_id: string | null;
   crisp_cooldown_until: string | null;
+  last_full_presence_at: string | null;
 };
 type Visitor = {
   session_id?: string;
@@ -41,7 +49,32 @@ async function rpc(admin: Admin, name: string, args: Record<string, unknown>) {
   return data;
 }
 
-async function reconcile(admin: Admin, websiteId: string, headers: Record<string, string>) {
+function fullPassDue(lastFullPresenceAt: string | null): boolean {
+  if (!lastFullPresenceAt) return true;
+  const at = Date.parse(lastFullPresenceAt);
+  return !Number.isFinite(at) || Date.now() - at >= FULL_PASS_MAX_AGE_MS;
+}
+
+// Database-only read (no Crisp quota): how many sessions we currently hold as
+// online. Compared against Crisp's visitors/count to decide whether the list
+// fetch can be skipped. A query failure conservatively returns null, which
+// always forces the full pass.
+async function onlineVisitorCount(admin: Admin, websiteId: string): Promise<number | null> {
+  const { count, error } = await admin
+    .from("crisp_visitors")
+    .select("crisp_session_id", { count: "exact", head: true })
+    .eq("crisp_website_id", websiteId)
+    .eq("is_online", true);
+  if (error) return null;
+  return count ?? 0;
+}
+
+async function reconcile(
+  admin: Admin,
+  websiteId: string,
+  headers: Record<string, string>,
+  lastFullPresenceAt: string | null,
+) {
   const token = await rpc(admin, "crisp_claim_presence", { p_website_id: websiteId });
   if (!token) return;
   const startedAt = new Date().toISOString();
@@ -64,8 +97,33 @@ async function reconcile(admin: Admin, websiteId: string, headers: Record<string
     count = counter.count;
     active = Number.isInteger(counter.active) ? counter.active : null;
     limited = Boolean(counter.limited);
-    if (count === 0) complete = true;
-    else
+    if (count === 0) {
+      // An empty site is a complete snapshot on its own: no list call is needed
+      // and every known visitor is safe to mark offline below.
+      complete = true;
+    } else if (
+      !fullPassDue(lastFullPresenceAt) &&
+      (await onlineVisitorCount(admin, websiteId)) === count
+    ) {
+      // Count-tripwire pass: Crisp's count equals the online rows we already
+      // hold and a complete snapshot is recent, so the list fetch is skipped.
+      // The empty-rows finish with complete=false refreshes the counters and
+      // releases the lease without ever establishing absence, and a mismatch
+      // (arrival or departure) falls through to the full pagination below
+      // inside this same cycle.
+      await rpc(admin, "crisp_finish_presence", {
+        p_website_id: websiteId,
+        p_token: token,
+        p_started_at: startedAt,
+        p_rows: [],
+        p_complete: false,
+        p_count: count,
+        p_active: active,
+        p_limited: limited,
+        p_error: null,
+      });
+      return;
+    } else {
       for (let page = 1; page <= 10; page++) {
         const response = await crispFetch(
           admin,
@@ -90,6 +148,7 @@ async function reconcile(admin: Admin, websiteId: string, headers: Record<string
         }
         if (count !== null && rows.length > count) break;
       }
+    }
   } catch (error) {
     failure = error instanceof Error ? error.message : "Presence refresh failed";
   }
@@ -222,7 +281,7 @@ serve(async (req) => {
     await rpc(admin, "crisp_process_events", { p_website_id: websiteId, p_limit: 50 });
     let query = admin
       .from("crisp_workspaces")
-      .select("crisp_website_id,credential_secret_id,crisp_cooldown_until")
+      .select("crisp_website_id,credential_secret_id,crisp_cooldown_until,last_full_presence_at")
       .eq("enabled", true)
       .order("visitor_synced_at", { ascending: true, nullsFirst: true });
     if (websiteId) query = query.eq("crisp_website_id", websiteId);
@@ -251,7 +310,12 @@ serve(async (req) => {
           (!workspace.crisp_cooldown_until ||
             Date.parse(workspace.crisp_cooldown_until) <= Date.now())
         ) {
-          await reconcile(admin, workspace.crisp_website_id, headers);
+          await reconcile(
+            admin,
+            workspace.crisp_website_id,
+            headers,
+            workspace.last_full_presence_at,
+          );
           totals.push(await greet(admin, workspace.crisp_website_id, headers));
         }
       } catch (error) {
