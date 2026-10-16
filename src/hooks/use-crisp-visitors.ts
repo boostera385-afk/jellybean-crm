@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { getCrispVisitorOverview, type CrispVisitorOverview } from "@/lib/crisp.functions";
-import { isAuthExpiredError } from "@/lib/auth-errors";
 
 const EMPTY_OVERVIEW: CrispVisitorOverview = {
   ok: true,
@@ -36,10 +35,11 @@ export function useCrispVisitors(enabled = true) {
     // refetches instead of rendering an older snapshot. Realtime invalidations
     // already refetch regardless of staleTime; the debounce coalesces bursts.
     staleTime: 0,
-    // A rejected token answers 500 for every attempt, so keep asking only while
-    // the failure could still be a transient database read.
-    refetchInterval: (query) =>
-      isAuthExpiredError(query.state.error) ? false : CRISP_VISITORS_REFETCH_MS,
+    // A failing read keeps failing, so while it errors the interval is off: a
+    // dead session or a database blip must not answer 500 every ten seconds.
+    // Realtime invalidations and window focus still refetch, so a transient
+    // failure recovers on its own without the storm.
+    refetchInterval: (query) => (query.state.error ? false : CRISP_VISITORS_REFETCH_MS),
     // Don't poll while the browser tab is hidden — the next refetch on focus
     // (refetchOnWindowFocus) catches the operator up instantly.
     refetchIntervalInBackground: false,

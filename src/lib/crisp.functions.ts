@@ -238,7 +238,25 @@ export const getCrispVisitorOverview = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data, context }): Promise<CrispVisitorOverview> => {
     const { supabase, userId } = context;
-    await assertCrispAccess(supabase, userId);
+    // This read backs a background poll that runs on every CRM page. A role
+    // check that fails must not answer 500: the poll would keep failing and the
+    // error boundary would blank the page. Report it in the shape the rail
+    // already renders instead.
+    try {
+      await assertCrispAccess(supabase, userId);
+    } catch (accessError) {
+      return {
+        ok: false,
+        liveVisitors: [],
+        todayVisitors: [],
+        liveCount: 0,
+        activeCount: 0,
+        todayCount: 0,
+        limited: false,
+        fetchedAt: new Date().toISOString(),
+        error: accessError instanceof Error ? accessError.message : String(accessError),
+      };
+    }
 
     const { supabaseAdmin: typedAdmin } = await import("@/integrations/supabase/client.server");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
