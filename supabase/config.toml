@@ -13,6 +13,10 @@ verify_jwt = false
 [functions.crisp-plugin-webhook]
 verify_jwt = false
 
+# Per-site HMAC authentication; never a public unsigned presence upsert.
+[functions.crisp-site-arrival]
+verify_jwt = false
+
 [functions.crisp-send-message]
 verify_jwt = false
 
