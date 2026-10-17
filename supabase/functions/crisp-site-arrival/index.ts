@@ -1,6 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { parseSiteArrival, verifySiteArrival } from "../_shared/crisp-site-arrival.ts";
+import {
+  parseSiteArrival,
+  parseSiteCheck,
+  verifySiteArrival,
+  wakeSiteArrival,
+} from "../_shared/crisp-site-arrival.ts";
 
 declare const EdgeRuntime: { waitUntil: (task: Promise<unknown>) => void };
 
@@ -37,7 +42,7 @@ serve(async (req) => {
       offset += chunk.length;
     }
     const raw = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    const body = parseSiteArrival(raw);
+    const body = parseSiteArrival(raw) ?? parseSiteCheck(raw);
     if (!body) return new Response("Invalid arrival", { status: 400 });
     const admin = createClient(url, serviceKey);
     const { data: config, error: configError } = await admin.rpc("crisp_get_site_bridge", {
@@ -55,6 +60,13 @@ serve(async (req) => {
       ))
     )
       return new Response("Unauthorized", { status: 401 });
+    if ("action" in body)
+      return Response.json(
+        { status: "connected" },
+        {
+          headers: { "Cache-Control": "no-store" },
+        },
+      );
     const { data: result, error } = await admin.rpc("crisp_register_site_arrival", {
       p_website_id: body.website_id,
       p_session_id: body.session_id,
@@ -69,16 +81,28 @@ serve(async (req) => {
     if (result === "accepted") {
       // Durable pending flag is recoverable by cron if this wake-up fails.
       EdgeRuntime.waitUntil(
-        (async () => {
-          const response = await fetch(`${url}/functions/v1/crisp-auto-greet`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ websiteId: body.website_id, greetingsOnly: false }),
-            signal: AbortSignal.timeout(15_000),
-          });
-          if (!response.ok || (await response.json()).status !== "ok")
-            throw new Error("Worker wake failed");
-        })().catch(() => console.error("Site arrival pending recovery", body.website_id)),
+        wakeSiteArrival(
+          async () => {
+            const response = await fetch(`${url}/functions/v1/crisp-auto-greet`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${serviceKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ websiteId: body.website_id, greetingsOnly: false }),
+              signal: AbortSignal.timeout(15_000),
+            });
+            if (!response.ok || (await response.json()).status !== "ok")
+              throw new Error("Worker wake failed");
+          },
+          async () => {
+            const { data, error } = await admin.rpc("crisp_pending_site_sessions", {
+              p_website_id: body.website_id,
+            });
+            if (error) throw new Error("Pending arrival lookup failed");
+            return Array.isArray(data) && data.length > 0;
+          },
+        ).catch(() => console.error("Site arrival pending recovery", body.website_id)),
       );
     }
     console.info(

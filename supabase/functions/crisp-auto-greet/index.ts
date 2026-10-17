@@ -67,14 +67,18 @@ async function reconcile(
   // unverified visitor upsert. Periodic polling still proves absence as before.
   const checkCount =
     !workspace.site_presence_pending && countCheckDue(workspace.visitor_count_checked_at);
+  const targets = workspace.site_presence_pending
+    ? ((await rpc(admin, "crisp_pending_site_sessions", { p_website_id: websiteId })) as string[])
+    : [];
   const snapshot = await readPresence(
     (path) =>
       crispFetch(admin, `https://api.crisp.chat/v1/website/${websiteId}/visitors/${path}`, {
         headers,
       }),
     checkCount,
+    targets,
   );
-  const applied = await rpc(admin, "crisp_finish_presence_v2", {
+  const applied = await rpc(admin, "crisp_finish_presence_v3", {
     p_website_id: websiteId,
     p_token: token,
     p_started_at: startedAt,
@@ -105,6 +109,7 @@ async function reconcile(
     p_requests: snapshot.requests,
     p_duration_ms: Math.round(performance.now() - start),
     p_mode: checkCount ? "full" : "identity",
+    p_cached: snapshot.cached,
   });
   console.info(
     JSON.stringify({
@@ -116,6 +121,8 @@ async function reconcile(
       complete: snapshot.complete,
       limited: snapshot.limited,
       applied,
+      arrivalTargets: targets.length,
+      cached: snapshot.cached,
       error: snapshot.error,
       durationMs: Math.round(performance.now() - start),
       claimGapMs: workspace.visitor_synced_at

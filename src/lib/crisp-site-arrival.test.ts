@@ -5,6 +5,8 @@ import { runInNewContext } from "node:vm";
 import {
   parseSiteArrival,
   verifySiteArrival,
+  parseSiteCheck,
+  wakeSiteArrival,
 } from "../../supabase/functions/_shared/crisp-site-arrival";
 
 const website = "87065a95-c96e-4f0b-867d-a4bbb47e08ec";
@@ -14,6 +16,35 @@ const body = JSON.stringify({ website_id: website, session_id: session, request_
 const script = readFileSync("integrations/wordpress/jellybean-presence/assets/presence.js", "utf8");
 
 describe("signed WordPress arrivals", () => {
+  it("parses a connection check without inventing a visitor session", () => {
+    const check = JSON.stringify({ website_id: website, request_id: website, action: "check" });
+    expect(parseSiteCheck(check)?.action).toBe("check");
+    expect(parseSiteArrival(check)).toBeNull();
+    expect(parseSiteCheck(body)).toBeNull();
+    expect(parseSiteCheck("null")).toBeNull();
+  });
+  it("bounds worker wakes and stops when verification is complete", async () => {
+    const wake = vi.fn(async () => {}),
+      sleep = vi.fn(async () => {});
+    await wakeSiteArrival(wake, async () => true, sleep);
+    expect(wake).toHaveBeenCalledTimes(3);
+    wake.mockClear();
+    await wakeSiteArrival(wake, async () => false, sleep);
+    expect(wake).toHaveBeenCalledTimes(1);
+  });
+  it("leaves wake failures for durable cron recovery rather than looping", async () => {
+    const wake = vi.fn(async () => {
+      throw new Error("unavailable");
+    });
+    await expect(
+      wakeSiteArrival(
+        wake,
+        async () => true,
+        async () => {},
+      ),
+    ).rejects.toThrow("unavailable");
+    expect(wake).toHaveBeenCalledTimes(1);
+  });
   it("accepts identifiers only; rejects malformed/oversized requests", () => {
     expect(parseSiteArrival(body)?.session_id).toBe(session);
     expect(
@@ -52,6 +83,7 @@ function browser(
     ready?: boolean;
     hidden?: boolean;
     status?: number;
+    absent?: boolean;
   } = {},
 ) {
   const callbacks: Record<string, (...args: string[]) => void> = {};
@@ -67,13 +99,15 @@ function browser(
     ...(options.ready === false ? {} : { get: () => session }),
   };
   const intervals: (() => void)[] = [];
+  const previousReady = vi.fn();
   const window = {
     JellyBeanPresence: {
       websiteId: website,
       endpoint: "https://example.com/wp-json/jellybean/v1/arrival",
     },
     CRISP_WEBSITE_ID: options.wrongSite ? "other-site" : website,
-    $crisp: queue,
+    $crisp: options.absent ? undefined : queue,
+    CRISP_READY_TRIGGER: previousReady,
     crypto: { randomUUID: () => website },
     addEventListener: vi.fn(),
   };
@@ -105,10 +139,18 @@ function browser(
     Date,
   };
   runInNewContext(script, context);
-  return { callbacks, fetch, window, context, intervals };
+  return { callbacks, fetch, window, context, intervals, queue, previousReady };
 }
 
 describe("WordPress visitor script", () => {
+  it("handles Crisp loading after late consent and preserves the ready callback", async () => {
+    const b = browser({ absent: true });
+    expect(b.fetch).not.toHaveBeenCalled();
+    b.window.$crisp = b.queue;
+    b.window.CRISP_READY_TRIGGER();
+    expect(b.previousReady).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(b.fetch).toHaveBeenCalledTimes(1));
+  });
   it("signals an already-loaded session once and never loads another widget", async () => {
     const b = browser();
     await vi.waitFor(() => expect(b.fetch).toHaveBeenCalledTimes(1));

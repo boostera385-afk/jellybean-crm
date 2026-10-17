@@ -17,6 +17,24 @@ function responses(...items: Response[]) {
 }
 
 describe("identity-aware presence reads", () => {
+  it("looks for the arriving session beyond the first page without proving absence", async () => {
+    const api = responses(reply([{ session_id: "old" }]), reply([{ session_id: "target" }]));
+    const result = await readPresence(api.get, false, ["target"]);
+    expect(api.paths).toEqual(["list/1", "list/2"]);
+    expect(result.rows).toHaveLength(2);
+    expect(result.complete).toBe(false);
+  });
+  it("bounds arrival-target paging even when an identity is not visible yet", async () => {
+    const api = responses(
+      reply([{ session_id: "a" }]),
+      reply([{ session_id: "b" }]),
+      reply([{ session_id: "c" }]),
+    );
+    const result = await readPresence(api.get, false, ["not-visible"]);
+    expect(result.requests).toBe(3);
+    expect(result.complete).toBe(false);
+    expect(result.error).toBeNull();
+  });
   it("reads identities even when an arrival replaces a departure at the same count", async () => {
     const api = responses(reply([{ session_id: "replacement" }]));
     const result = await readPresence(api.get, false);
@@ -84,6 +102,7 @@ describe("identity-aware presence reads", () => {
     );
     expect(result.complete).toBe(false);
     expect(result.error).toBeNull();
+    expect(result.cached).toBe(true);
   });
   it("keeps earlier pages but rejects duplicates and malformed pages", async () => {
     for (const page of [[{ session_id: "one" }], [{ session_id: "" }], [null]]) {

@@ -8,6 +8,7 @@ export type PresenceSnapshot = {
   complete: boolean;
   requests: number;
   error: string | null;
+  cached: boolean;
 };
 
 export function countCheckDue(lastCheck: string | null, now = Date.now()): boolean {
@@ -19,6 +20,7 @@ export function countCheckDue(lastCheck: string | null, now = Date.now()): boole
 export async function readPresence(
   get: (path: string) => Promise<Response>,
   checkCount: boolean,
+  targetSessions: string[] = [],
 ): Promise<PresenceSnapshot> {
   const snapshot: PresenceSnapshot = {
     rows: [],
@@ -28,13 +30,17 @@ export async function readPresence(
     complete: false,
     requests: 0,
     error: null,
+    cached: false,
   };
   const seen = new Set<string>();
   let cached = false;
   const request = async (path: string) => {
     snapshot.requests++;
     const response = await get(path);
-    if (["HIT", "OFFLINE"].includes(response.headers.get("Bloom-Status") ?? "")) cached = true;
+    if (["HIT", "OFFLINE"].includes(response.headers.get("Bloom-Status") ?? "")) {
+      cached = true;
+      snapshot.cached = true;
+    }
     if (!response.ok)
       throw new Error(
         `Visitor ${path.includes("count") ? "count" : "list"} HTTP ${response.status}`,
@@ -62,7 +68,8 @@ export async function readPresence(
         return snapshot;
       }
     }
-    for (let page = 1; page <= 10; page++) {
+    const pageLimit = targetSessions.length ? 3 : 10;
+    for (let page = 1; page <= pageLimit; page++) {
       const response = await request(`list/${page}`);
       const payload = await response.json();
       if (payload?.error || !Array.isArray(payload?.data)) throw new Error("Invalid visitor list");
@@ -80,7 +87,14 @@ export async function readPresence(
       }
       // 206 is partial even when a cached counter matches this page.
       if (response.status === 206) continue;
-      if (!checkCount) return snapshot; // identities only, never an absence proof
+      if (
+        !checkCount &&
+        (!targetSessions.length ||
+          payload.data.length === 0 ||
+          targetSessions.every((session) => seen.has(session)))
+      )
+        return snapshot;
+      if (!checkCount) continue; // Target not found: bounded paging, never absence proof.
       if (snapshot.rows.length === snapshot.count) {
         snapshot.complete = !snapshot.limited && !cached;
         return snapshot;
@@ -88,6 +102,7 @@ export async function readPresence(
       if (payload.data.length === 0 || snapshot.rows.length > (snapshot.count ?? 0))
         throw new Error("Visitor count/list mismatch");
     }
+    if (!checkCount && targetSessions.length) return snapshot;
     throw new Error("Visitor pagination limit reached");
   } catch (error) {
     snapshot.error = error instanceof Error ? error.message : "Presence refresh failed";

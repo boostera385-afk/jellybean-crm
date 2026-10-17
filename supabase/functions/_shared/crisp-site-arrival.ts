@@ -2,6 +2,39 @@ import { timingSafeEqual } from "./crisp-policy.ts";
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export type SiteArrival = { website_id: string; session_id: string; request_id: string };
+export type SiteCheck = { website_id: string; request_id: string; action: "check" };
+
+/** Connectivity checks authenticate the relay without creating a fake visitor. */
+export function parseSiteCheck(raw: string): SiteCheck | null {
+  if (new TextEncoder().encode(raw).length > 2048) return null;
+  try {
+    const body = JSON.parse(raw);
+    if (
+      body?.action !== "check" ||
+      typeof body.website_id !== "string" ||
+      !UUID.test(body.website_id) ||
+      typeof body.request_id !== "string" ||
+      !UUID.test(body.request_id)
+    )
+      return null;
+    return { website_id: body.website_id, request_id: body.request_id, action: "check" };
+  } catch {
+    return null;
+  }
+}
+
+export async function wakeSiteArrival(
+  wake: () => Promise<void>,
+  pending: () => Promise<boolean>,
+  sleep: () => Promise<void> = () => new Promise((resolve) => setTimeout(resolve, 2000)),
+): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await wake();
+    if (attempt === 2) return;
+    await sleep();
+    if (!(await pending())) return;
+  }
+}
 
 export function parseSiteArrival(raw: string): SiteArrival | null {
   if (new TextEncoder().encode(raw).length > 2048) return null;
