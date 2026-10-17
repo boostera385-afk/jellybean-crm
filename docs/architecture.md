@@ -288,16 +288,47 @@ Raw Leads classification remains in `src/lib/raw-leads-ai.functions.ts`.
 CS generation runs inside the authenticated `cs-compose-lead` Edge Function,
 using Supabase's sealed `OPENAI_API_KEY` secret.
 
-| Purpose        | Model                     | Shape                                                           |
-| -------------- | ------------------------- | --------------------------------------------------------------- |
-| Classification | `gpt-5.4-nano-2026-03-17` | `raw_lead_classification`, `strict: true`, 10 per batch         |
-| Rephrasing     | `gpt-5.4-nano-2026-03-17` | `cs_answer_aware_plan`, strict JSON, draft + independent review |
+| Purpose        | Model                     | Shape                                                   |
+| -------------- | ------------------------- | ------------------------------------------------------- |
+| Classification | `gpt-5.4-nano-2026-03-17` | `raw_lead_classification`, `strict: true`, 10 per batch |
+| Composition    | `gpt-5.4-nano-2026-03-17` | `cs_compose_target`, strict JSON, ONE call              |
 
-CS composition switched from GPT-5.4 to the pinned Nano snapshot on 2026-10-17
-for lower token costs. Both drafting and independent review use Nano; schema,
-reasoning effort, safety guards and permissions are unchanged. The deployed
-`cs-compose-lead` v6 passed two synthetic evaluation cases (known drywall details
-and completed-work/no-contact) without changing customer drafts or sending messages.
+### CS composition is a catalogue lookup, not a generation task
+
+`2026-10-17.catalogue-v3` moved question selection out of the prompt and into
+`cs-ask-catalogue.generated.ts`, measured by `scripts/build-ask-catalogue.py`
+over 23,167 delivered messages. The model no longer chooses, orders or words a
+question. It returns two things only: which item a multi-item post is about,
+and the noun phrase that completes "I saw that you are looking for ___."
+Everything else is deterministic, so grammar, repetition and question choice
+cannot regress with model quality.
+
+Why it changed: v2 asked a nano model to free-write questions under a 78-line,
+~1,450-token prompt of prohibitions with no worked example, then paid a second
+nano call to review the first. Measured against the same export, the delivered
+messages are a rigid three-part template (97.6% close with "so I can check the
+schedule for a visit"), their asks are short fragments, and question choice is
+strongly sub-category dependent. v2 contradicted all three.
+
+| Layer                                                | Source                             |
+| ---------------------------------------------------- | ---------------------------------- |
+| Which asks are candidates                            | ladder per `object\|action`         |
+| Ask order and legal pairs                            | per-sub-category joint pair counts |
+| Exact wording                                        | `intent \| object` lexicon          |
+| Brand / problem / size / quantity suppression        | measured 2-18x suppression         |
+| Availability / ownership / photo / storey suppression | **code** — data showed ~1.0x       |
+| Ask count                                            | **code** — data showed no decrease |
+| Which item a multi-item post is about                | the model                          |
+
+The last three rows are deliberate overrides. The export does NOT suppress
+availability (8.6% asked when given vs 8.5% when not), ownership (9.5% vs
+9.3%), supplied photos (82.9% vs 55.9% — it asks *more*) or storeys, and it
+does not ask fewer questions when the customer said more (76.1% two asks at
+zero known facts, 84.7% at two). Those habits are overridden in
+`cs-detect.ts`, whose `HARD_GUARDS` set is asserted by test so the override
+stays deliberate. A supplied fact is never re-asked, whatever the data did.
+`ADDRESS` is likewise never emitted as slot 1, though 0.5% of delivered
+messages led with it.
 
 Classification is **batched** — `.in()` lookups chunked by 10, posts under 20
 characters skipped, duplicates excluded, at most 50 rows per request, results
@@ -311,15 +342,19 @@ changes the model. The CS shared core is `supabase/functions/_shared/cs-composer
 All manual/bulk/auto CS paths pass a lead ID, not a partial client summary. The
 Edge Function validates JWT, roles and row-level access, then loads the original
 post, summary, saved CS notes, main/sub area and attachment metadata. Outgoing
-drafts and suggested questions are explicitly NOT treated as customer answers.
-Generation returns zero to two complete questions, not a fixed two-slot SMS.
-There is no address quota or historical majority-wording normalization. An
-independent model review checks source context, and deterministic guards suppress
-already-known addresses, timing, symptoms, supplied photos and duplicate intents.
-Existing screenshots are not assumed to be job photos. Failures leave drafts intact.
+drafts and suggested questions are explicitly NOT treated as customer answers,
+and `sourceParts` keeps them out of both the detectors and the model payload.
+Generation returns zero to two asks. Object detection is hierarchical and
+masking, so "garage door" never also counts as "door"; actions are read only
+after object spans are masked, so "washing machine" cannot read as a cleaning
+job. A known brand is scoped to the appliance it was written against, so an LG
+fridge never marks an adjacent stove's brand known. Existing screenshots are not
+assumed to be job photos. A move inside one property never asks for a drop-off
+address. Failures leave drafts intact.
 
-`shared_state.cs_rephrase_prompt` now stores **style preferences only**, tagged
-with `policyVersion`. The migration archives the v1 address-first prompt in
+`shared_state.cs_rephrase_prompt` stores **style preferences only**, tagged
+with `policyVersion`; the v3 bump means a saved preference is ignored until it
+is re-saved against the new version, which is the point of the gate. The migration archives the v1 address-first prompt in
 `value.previous`. The code policy always takes precedence over style preferences.
 `cs_compose_runs` records model/version/intents/warnings/latency, never raw customer
 content; it is service-role-only. `cs_reserve_compose_run` atomically enforces

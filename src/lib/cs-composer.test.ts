@@ -3,327 +3,280 @@ import {
   CS_COMPOSER_MODEL,
   CS_COMPOSER_VERSION,
   CS_COMPOSER_PROMPT,
+  COMPOSE_TARGET_SCHEMA,
   composeAnswerAware,
-  parseComposePlan,
+  joinAsks,
+  parseTargeting,
   renderComposePlan,
-  validateAndFilterPlan,
+  safeComposerError,
   scoreComposeReply,
-  type ComposerInput,
+  sourceParts,
   type ComposePlan,
-  type ComposeQuestion,
-  type KnownFact,
+  type ComposerInput,
 } from "../../supabase/functions/_shared/cs-composer";
 
-const question = (key: ComposeQuestion["key"], text: string, subject = "job"): ComposeQuestion => ({
-  key,
-  text,
-  subject,
-  why: "Needed to scope this job",
-});
-const plan = (questions: ComposeQuestion[], facts: KnownFact[] = []): ComposePlan => ({
-  serviceContext: "a repair",
-  openingLine: "",
-  facts,
-  questions,
-});
 const lead = (input: Partial<ComposerInput>): ComposerInput => ({
   customerName: "Casey Test",
   ...input,
 });
-const address = question("address", "Could you share your complete address?");
-const timing = question("availability", "What is your availability?");
-const photo = question("photos", "Could you send a photo of the repair area?");
-const issue = question("problem", "What issue are you facing with the appliance?");
-
-// Source patterns from cleaned_data.csv, NOT its composed-message labels.
-// No real customer names/phone numbers/addresses are committed.
-describe("answer-aware question guards (CSV regression patterns)", () => {
-  it.each([
-    ["post address", lead({ postText: "Repair at 123 Example Street, Denver CO" })],
-    [
-      "saved notes address",
-      lead({ postText: "Need repair", notes: ["Customer supplied 456 Sample Avenue"] }),
-    ],
-    ["main area address", lead({ postText: "Need repair", mainArea: "789 Demo Road" })],
-    ["sub area address", lead({ postText: "Need repair", subArea: "432 Test Boulevard" })],
-    ["address on file", lead({ notes: ["Address on file"] })],
-    ["address already supplied", lead({ notes: ["Address already shared"] })],
-  ])("does not re-ask %s", (_name, input) => {
-    const result = validateAndFilterPlan(input, plan([address]));
-    expect(result.plan.questions).toHaveLength(0);
-    expect(result.warnings).toContain("address_already_known");
-  });
-  it.each(["Denver, CO", "78738", "an 11x12 room", "a 2800 sq ft basement", "LG model 12345"])(
-    "does not mistake %s for a full street address",
-    (value) => {
-      expect(
-        validateAndFilterPlan(lead({ postText: value }), plan([address])).plan.questions,
-      ).toHaveLength(1);
-    },
-  );
-  it("does not interpret an outgoing draft as known customer facts", () => {
-    const result = validateAndFilterPlan(
-      lead({ previousDraft: "The job is at 123 Example Street tomorrow. Photo attached." }),
-      plan([address, timing]),
-    );
-    expect(result.plan.questions).toHaveLength(2);
-  });
-  it.each([
-    "picture below",
-    "photo attached",
-    "I've posted pictures",
-    "I sent photos",
-    "see the picture",
-  ])("does not request a photo when source says %s", (postText) => {
-    expect(validateAndFilterPlan(lead({ postText }), plan([photo])).plan.questions).toHaveLength(0);
-  });
-  it("does not pretend screenshots prove a job photo has been sent", () => {
-    expect(
-      validateAndFilterPlan(lead({ postText: "Need repair", imageCount: 2 }), plan([photo])).plan
-        .questions,
-    ).toHaveLength(1);
-  });
-  it.each(["No photos attached", "I have not sent photos", "I haven't sent pictures"])(
-    "does not treat negated photo evidence as supplied: %s",
-    (postText) => {
-      expect(validateAndFilterPlan(lead({ postText }), plan([photo])).plan.questions).toHaveLength(
-        1,
-      );
-    },
-  );
-  it.each(["tomorrow", "today after 3pm", "ASAP", "within the next day or two", "Friday morning"])(
-    "does not re-ask general availability after %s",
-    (postText) => {
-      expect(validateAndFilterPlan(lead({ postText }), plan([timing])).plan.questions).toHaveLength(
-        0,
-      );
-    },
-  );
-  it.each([
-    "Whirlpool freezer drawer not closing and frost buildup",
-    "Hot tub has no circulation",
-    "Dishwasher not working",
-    "Fridge isn't cooling; it is leaking",
-    "Off-track garage door",
-  ])("does not re-ask a described symptom: %s", (postText) => {
-    expect(validateAndFilterPlan(lead({ postText }), plan([issue])).plan.questions).toHaveLength(0);
-  });
-  it("allows a symptom question when no symptom was provided", () => {
-    expect(
-      validateAndFilterPlan(lead({ postText: "LG freezer repair recommendation?" }), plan([issue]))
-        .plan.questions,
-    ).toHaveLength(1);
-  });
-  it.each(["Move the hot tub 50 feet to the backyard", "Load a bed and sofa into a moving van"])(
-    "does not invent a drop-off route: %s",
-    (postText) => {
-      const q = question("dropoff_address", "What is the pickup and drop-off address?");
-      expect(validateAndFilterPlan(lead({ postText }), plan([q])).plan.questions).toHaveLength(0);
-    },
-  );
-  it("uses supported evidence to prevent repeated brand/dimension/ownership questions", () => {
-    for (const [key, subject, value] of [
-      ["brand", "refrigerator", "Whirlpool"],
-      ["dimensions", "room", "11x12"],
-      ["ownership", "lights", "I already have the lights"],
-    ] as const) {
-      const fact = { key, subject, value, evidence: value };
-      const q = question(key, "Could you tell me this detail?", subject);
-      expect(
-        validateAndFilterPlan(lead({ postText: value }), plan([q], [fact])).plan.questions,
-      ).toHaveLength(0);
-    }
-  });
-  it("does not apply a known refrigerator brand to a different appliance", () => {
-    const fact: KnownFact = {
-      key: "brand",
-      subject: "refrigerator",
-      value: "LG",
-      evidence: "LG refrigerator",
-    };
-    const q = question("brand", "What brand is the stove?", "stove");
-    expect(
-      validateAndFilterPlan(lead({ postText: "LG refrigerator and a stove" }), plan([q], [fact]))
-        .plan.questions,
-    ).toHaveLength(1);
-  });
-  it("does not mistake a city fact for a complete street address", () => {
-    const fact: KnownFact = { key: "address", subject: "job", value: "Denver", evidence: "Denver" };
-    expect(
-      validateAndFilterPlan(lead({ mainArea: "Denver" }), plan([address], [fact])).plan.questions,
-    ).toHaveLength(1);
-  });
-  it("keeps specific scope refinements even when the general job is known", () => {
-    const fact: KnownFact = {
-      key: "scope",
-      subject: "basement",
-      value: "paint basement",
-      evidence: "paint basement",
-    };
-    const q = question(
-      "scope",
-      "Should painting include the ceiling as well as the walls?",
-      "basement",
-    );
-    expect(
-      validateAndFilterPlan(lead({ postText: "Need to paint basement" }), plan([q], [fact])).plan
-        .questions,
-    ).toHaveLength(1);
-  });
-  it("keeps a specific diagnostic question without re-asking the generic fault", () => {
-    const fact: KnownFact = {
-      key: "problem",
-      subject: "dishwasher",
-      value: "not working",
-      evidence: "not working",
-    };
-    const q = question("problem", "Does the dishwasher display an error code?", "dishwasher");
-    expect(
-      validateAndFilterPlan(lead({ postText: "Dishwasher not working" }), plan([q], [fact])).plan
-        .questions,
-    ).toHaveLength(1);
-  });
-  it("catches a repeated brand even if the model forgot to extract the known fact", () => {
-    const q = question("brand", "What brand is the refrigerator?", "refrigerator");
-    expect(
-      validateAndFilterPlan(lead({ postText: "My Whirlpool refrigerator has frost" }), plan([q]))
-        .plan.questions,
-    ).toHaveLength(0);
-  });
-  it("rejects fabricated fact evidence rather than hiding valid questions", () => {
-    const fact: KnownFact = {
-      key: "address",
-      subject: "job",
-      value: "123 Example Street",
-      evidence: "123 Example Street",
-    };
-    const result = validateAndFilterPlan(
-      lead({ postText: "Need repair" }),
-      plan([address], [fact]),
-    );
-    expect(result.plan.questions).toHaveLength(1);
-    expect(result.warnings).toContain("unsupported_fact");
-  });
-  it("cannot evade the address guard by labelling the question other", () => {
-    const q = { ...address, key: "other" as const };
-    expect(
-      validateAndFilterPlan(lead({ notes: ["123 Example Street"] }), plan([q])).plan.questions,
-    ).toHaveLength(0);
-  });
-  it("drops duplicate questions and never replaces them with address filler", () => {
-    const result = validateAndFilterPlan(
-      lead({ postText: "Need repair" }),
-      plan([address, address]),
-    );
-    expect(result.plan.questions).toEqual([address]);
-    expect(result.warnings).toContain("duplicate_question");
-  });
-  it("does not ask unsafe disassembly or leak placeholders", () => {
-    const q = question("access", "Could you remove the electrical panel cover?");
-    expect(validateAndFilterPlan(lead({}), plan([q])).plan.questions).toHaveLength(0);
-    expect(() =>
-      validateAndFilterPlan(lead({}), { ...plan([]), serviceContext: "(Requirements)" }),
-    ).toThrow();
-  });
-  it.each([
-    "I'll call you tomorrow.",
-    "We are licensed and insured.",
-    "We can come tomorrow.",
-    "The visit is free.",
-    "A free estimate visit.",
-    "The price is $99.",
-  ])("rejects unsupported business claims: %s", (openingLine) => {
-    expect(() => validateAndFilterPlan(lead({}), { ...plan([]), openingLine })).toThrow();
-  });
-  it("renders zero or one question naturally without 'confirm the details'", () => {
-    const input = lead({});
-    expect(renderComposePlan(input, plan([]), "Alex")).toBe(
-      "Hi Casey, this is Alex. I saw you need a repair.",
-    );
-    const msg = renderComposePlan(input, plan([address]), "Alex");
-    expect(msg.match(/\?/g)).toHaveLength(1);
-    expect(msg).not.toMatch(/so I can|confirm the details|kindly/);
-  });
-  it("rejects malformed, truncated or excessive plans", () => {
-    expect(() =>
-      parseComposePlan({
-        serviceContext: "repair",
-        openingLine: "",
-        facts: [],
-        questions: [address, timing, photo],
-      }),
-    ).toThrow();
-    expect(() => parseComposePlan({ serviceContext: "repair", questions: [] })).toThrow();
-    expect(() => parseComposePlan({ ...plan([]), serviceContext: 123 })).toThrow();
-  });
-  it("has explicit case guidance instead of an address quota", () => {
-    expect(CS_COMPOSER_PROMPT).toContain("An address is NOT mandatory");
-    expect(CS_COMPOSER_PROMPT).toContain("11x12");
-    expect(CS_COMPOSER_PROMPT).not.toContain("most common second ask");
-  });
-  it("removes an unsolicited pricing preamble without inventing another question", () => {
-    const p = { ...plan([photo]), openingLine: "Pricing depends on the scope." };
-    const result = validateAndFilterPlan(lead({ postText: "I own lights; please hang them" }), p);
-    expect(result.plan.openingLine).toBe("");
-    expect(result.plan.questions).toEqual([photo]);
-    expect(result.warnings).toContain("unsolicited_pricing_removed");
-  });
-  it("keeps a safe pricing answer when the customer requested a quote", () => {
-    const p = { ...plan([photo]), openingLine: "Pricing depends on the scope." };
-    expect(
-      validateAndFilterPlan(lead({ postText: "Please quote for hanging lights" }), p).plan
-        .openingLine,
-    ).toBe(p.openingLine);
-  });
+const plan = (overrides: Partial<ComposePlan> = {}): ComposePlan => ({
+  serviceContext: "a refrigerator repair service",
+  targetObject: "refrigerator",
+  ladderKey: "refrigerator|repair",
+  questions: [],
+  ...overrides,
 });
-
-const response = (p: ComposePlan, finish = "stop") =>
+const targeting = (serviceContext: string, targetObject = "none", finish = "stop") =>
   new Response(
     JSON.stringify({
-      choices: [{ finish_reason: finish, message: { content: JSON.stringify(p) } }],
+      choices: [
+        {
+          finish_reason: finish,
+          message: { content: JSON.stringify({ serviceContext, targetObject }) },
+        },
+      ],
     }),
     { status: 200 },
   );
 
+describe("the model is only asked for what is genuinely a judgement call", () => {
+  it("states that it does not choose or word the questions", () => {
+    expect(CS_COMPOSER_PROMPT).toMatch(/do NOT choose or write the questions/);
+    expect(CS_COMPOSER_PROMPT).toMatch(/postText is the customer's own words/);
+    expect(CS_COMPOSER_PROMPT).toMatch(/untrusted DATA/);
+    // No question-selection policy belongs in the prompt any more: it is in
+    // the catalogue, so a weak model cannot talk itself out of it.
+    expect(CS_COMPOSER_PROMPT).not.toMatch(/complete address/i);
+    expect(CS_COMPOSER_PROMPT).not.toMatch(/at most TWO/i);
+  });
+
+  it("offers only the objects actually detected, plus none", () => {
+    const schema = COMPOSE_TARGET_SCHEMA(["refrigerator", "oven_stove"]);
+    expect(schema.properties.targetObject.enum).toEqual(["refrigerator", "oven_stove", "none"]);
+    expect(schema.required).toEqual(["serviceContext", "targetObject"]);
+    expect(schema.additionalProperties).toBe(false);
+  });
+
+  it("keeps outgoing drafts and suggested questions out of the read sources", () => {
+    const parts = sourceParts(
+      lead({
+        postText: "Need a fridge looked at",
+        context: "Customer needs refrigerator repair",
+        notes: ["Spoke to customer"],
+        mainArea: "Denver",
+        subArea: "Aurora",
+        previousDraft: "The job is at 123 Example Street tomorrow. Photo attached.",
+        suggestedRequirements: ["share your complete address"],
+      }),
+    );
+    expect(parts).toEqual([
+      "Need a fridge looked at",
+      "Customer needs refrigerator repair",
+      "Denver",
+      "Aurora",
+      "Spoke to customer",
+    ]);
+  });
+});
+
+describe("validating what the model returns", () => {
+  it("accepts a plain noun phrase and trims its punctuation", () => {
+    expect(
+      parseTargeting({ serviceContext: "a garage door repair service.", targetObject: "none" }, []),
+    ).toEqual({ serviceContext: "a garage door repair service", targetObject: null });
+  });
+
+  it("keeps a target only when it is one of the detected objects", () => {
+    const objects = ["refrigerator"];
+    expect(
+      parseTargeting({ serviceContext: "a repair", targetObject: "refrigerator" }, objects)
+        .targetObject,
+    ).toBe("refrigerator");
+    expect(
+      parseTargeting({ serviceContext: "a repair", targetObject: "spaceship" }, objects)
+        .targetObject,
+    ).toBeNull();
+  });
+
+  it.each([
+    ["a free estimate visit", "free estimate"],
+    ["a repair, we are licensed and insured", "licensing"],
+    ["a repair for $99", "a price"],
+    ["a repair, I'll call you tomorrow", "a promised call"],
+  ])("refuses an opening that claims %s", (serviceContext) => {
+    expect(() => parseTargeting({ serviceContext, targetObject: "none" }, [])).toThrow(
+      /Unsupported composer opening/,
+    );
+  });
+
+  it.each([
+    ["a placeholder", "(Service Context)"],
+    ["a brace placeholder", "a repair of {object}"],
+    ["a template label", "Customer needs: a repair"],
+  ])("refuses an opening containing %s", (_label, serviceContext) => {
+    expect(() => parseTargeting({ serviceContext, targetObject: "none" }, [])).toThrow();
+  });
+
+  it("refuses an empty, oversized or question-shaped opening", () => {
+    expect(() => parseTargeting({ serviceContext: "  ", targetObject: "none" }, [])).toThrow();
+    expect(() =>
+      parseTargeting({ serviceContext: "a".repeat(300), targetObject: "none" }, []),
+    ).toThrow();
+    expect(() =>
+      parseTargeting({ serviceContext: "what do you need?", targetObject: "none" }, []),
+    ).toThrow();
+    expect(() => parseTargeting({ serviceContext: 123, targetObject: "none" }, [])).toThrow();
+    expect(() => parseTargeting(null, [])).toThrow();
+  });
+});
+
+describe("rendering the house template", () => {
+  it("renders the team's exact three-part shape", () => {
+    const message = renderComposePlan(
+      lead({}),
+      plan({
+        questions: [
+          { key: "BRAND/MODEL", object: "refrigerator", text: "share the brand name" },
+          { key: "ADDRESS", object: null, text: "share your complete address" },
+        ],
+      }),
+      "Martin",
+    );
+    expect(message).toBe(
+      "Hi Casey, this is Martin. I saw that you are looking for a refrigerator repair service. " +
+        "Could you kindly share the brand name and your complete address, " +
+        "so I can check the schedule for a visit?",
+    );
+    expect(message.match(/\?/g)).toHaveLength(1);
+  });
+
+  it("elides a repeated leading verb, as the delivered messages do", () => {
+    // "your complete address" stands alone 3,908 times in the export.
+    expect(joinAsks(["share a picture of the door", "share your complete address"])).toBe(
+      "share a picture of the door and your complete address",
+    );
+    // Different verbs are both kept.
+    expect(joinAsks(["let me know the size", "share your complete address"])).toBe(
+      "let me know the size and share your complete address",
+    );
+    expect(joinAsks(["share some pictures"])).toBe("share some pictures");
+    expect(joinAsks([])).toBe("");
+  });
+
+  it("drops the question sentence entirely when nothing is left to ask", () => {
+    expect(renderComposePlan(lead({}), plan(), "Martin")).toBe(
+      "Hi Casey, this is Martin. I saw that you are looking for a refrigerator repair service.",
+    );
+  });
+
+  it("sends one ask without padding it out to two", () => {
+    const message = renderComposePlan(
+      lead({}),
+      plan({ questions: [{ key: "ADDRESS", object: null, text: "share your complete address" }] }),
+      "Martin",
+    );
+    expect(message).toMatch(/Could you kindly share your complete address, so I can check/);
+    expect(message).not.toMatch(/ and /);
+  });
+
+  it.each([
+    ["Casey Test", "Casey"],
+    ["María-José Díaz", "María-José"],
+    ["", "there"],
+    ["123", "there"],
+    ["<script>", "there"],
+  ])("greets %s safely", (customerName, expected) => {
+    expect(renderComposePlan(lead({ customerName }), plan(), "Martin")).toContain(
+      `Hi ${expected}, this is Martin.`,
+    );
+  });
+});
+
 describe("the exact shared generation pipeline", () => {
-  it("always performs independent review using full original saved context", async () => {
-    const original = lead({
-      postText: "Need repair",
-      notes: ["Address on file"],
-      previousDraft: "Old outgoing draft",
-    });
+  it("makes ONE model call and pins the model and its controls", async () => {
+    const fetcher = vi.fn().mockResolvedValue(targeting("a refrigerator repair service"));
+    const result = await composeAnswerAware(
+      lead({ postText: "My fridge stopped working", service: "Refrigerator Repair" }),
+      { apiKey: "test-key", fetcher },
+    );
+    // v2 spent a second call on a nano model reviewing its own nano output.
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetcher.mock.calls[0][1].body);
+    expect(CS_COMPOSER_MODEL).toBe("gpt-5.4-nano-2026-03-17");
+    expect(body.model).toBe(CS_COMPOSER_MODEL);
+    expect(body.reasoning_effort).toBe("low");
+    expect(body.max_completion_tokens).toBe(2000);
+    expect(body.store).toBe(false);
+    expect(body.response_format.json_schema.strict).toBe(true);
+    expect(body).not.toHaveProperty("temperature");
+    expect(body).not.toHaveProperty("max_tokens");
+    expect(result.model).toBe(CS_COMPOSER_MODEL);
+    expect(result.version).toBe(CS_COMPOSER_VERSION);
+    expect(result.catalogueRows).toBeGreaterThan(20_000);
+  });
+
+  it("never sends the outgoing draft to the model", async () => {
+    const fetcher = vi.fn().mockResolvedValue(targeting("a refrigerator repair service"));
+    await composeAnswerAware(
+      lead({
+        postText: "My fridge stopped working",
+        previousDraft: "Hi Casey, this is Alex. Could you kindly share your complete address?",
+        suggestedRequirements: ["share your complete address"],
+      }),
+      { apiKey: "test-key", fetcher },
+    );
+    const sent = fetcher.mock.calls[0][1].body as string;
+    expect(sent).not.toContain("previousDraft");
+    expect(sent).not.toContain("this is Alex");
+  });
+
+  it("asks the sub-category's questions and records which were suppressed", async () => {
+    const fetcher = vi.fn().mockResolvedValue(targeting("a gutter cleaning service", "gutter"));
+    const result = await composeAnswerAware(
+      lead({
+        postText: "Need the gutters cleaned on my two story house",
+        service: "Gutter Cleaning",
+      }),
+      { apiKey: "test-key", fetcher },
+    );
+    expect(result.plan.ladderKey).toBe("gutter|clean");
+    expect(result.plan.questions.map((question) => question.key)).not.toContain("STORIES");
+    expect(result.warnings).toContain("answered_STORIES");
+  });
+
+  it("flags a multi-item post so a reviewer can check the targeting", async () => {
     const fetcher = vi
       .fn()
-      .mockResolvedValueOnce(response(plan([address])))
-      .mockResolvedValueOnce(response(plan([])));
-    const result = await composeAnswerAware(original, { apiKey: "test-key", fetcher });
-    expect(fetcher).toHaveBeenCalledTimes(2);
-    const first = JSON.parse(fetcher.mock.calls[0][1].body);
-    const second = JSON.parse(fetcher.mock.calls[1][1].body);
-    expect(CS_COMPOSER_MODEL).toBe("gpt-5.4-nano-2026-03-17");
-    expect(first.model).toBe("gpt-5.4-nano-2026-03-17");
-    expect(second.model).toBe("gpt-5.4-nano-2026-03-17");
-    expect(result.model).toBe("gpt-5.4-nano-2026-03-17");
-    expect(first.max_completion_tokens).toBe(6000);
-    expect(first.reasoning_effort).toBe("medium");
-    expect(second.response_format).toEqual(first.response_format);
-    expect(first.response_format.json_schema.strict).toBe(true);
-    expect(first).not.toHaveProperty("temperature");
-    expect(first).not.toHaveProperty("max_tokens");
-    expect(first.store).toBe(false);
-    expect(JSON.parse(second.messages[1].content).lead).toEqual(original);
-    expect(second.messages[0].content).toContain("independent final reviewer");
-    expect(result.version).toBe(CS_COMPOSER_VERSION);
-    expect(result.plan.questions).toHaveLength(0);
+      .mockResolvedValue(targeting("an appliance repair service", "refrigerator"));
+    const result = await composeAnswerAware(
+      lead({ postText: "My LG refrigerator is not cooling and the stove is dead" }),
+      { apiKey: "test-key", fetcher },
+    );
+    expect(result.warnings).toContain("multiple_objects");
+    expect(result.plan.targetObject).toBe("refrigerator");
+    // The LG belongs to the fridge, so the brand is known for it...
+    expect(result.plan.questions.map((question) => question.key)).not.toContain("BRAND/MODEL");
   });
+
+  it("falls back to the first detected object when the model picks an unknown one", async () => {
+    const fetcher = vi.fn().mockResolvedValue(targeting("a repair service", "spaceship"));
+    const result = await composeAnswerAware(lead({ postText: "My fridge is broken" }), {
+      apiKey: "test-key",
+      fetcher,
+    });
+    expect(result.plan.targetObject).toBe("refrigerator");
+    expect(result.warnings).toContain("retargeted");
+  });
+
   it("fails closed on refusal or token-budget truncation", async () => {
-    const fetcher = vi.fn().mockResolvedValue(response(plan([address]), "length"));
+    const fetcher = vi.fn().mockResolvedValue(targeting("a repair", "none", "length"));
     await expect(
       composeAnswerAware(lead({ postText: "Need repair" }), { apiKey: "test-key", fetcher }),
     ).rejects.toThrow(/incomplete/);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
-  it("does not downgrade model or drop controls on provider validation errors", async () => {
+
+  it("does not downgrade the model or drop controls on a provider validation error", async () => {
     const fetcher = vi
       .fn()
       .mockResolvedValue(new Response("unsupported parameter", { status: 400 }));
@@ -332,12 +285,40 @@ describe("the exact shared generation pipeline", () => {
     ).rejects.toThrow(/400/);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
-  it("never calls a model for missing customer context", async () => {
+
+  it("retries once on a rate limit, then gives up without a model switch", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 429 }))
+      .mockResolvedValueOnce(targeting("a repair service"));
+    const result = await composeAnswerAware(lead({ postText: "Need repair" }), {
+      apiKey: "test-key",
+      fetcher,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetcher.mock.calls[1][1].body).model).toBe(CS_COMPOSER_MODEL);
+    expect(result.plan.serviceContext).toBe("a repair service");
+  });
+
+  it("never calls a model when there is no customer context", async () => {
     const fetcher = vi.fn();
     await expect(composeAnswerAware(lead({}), { apiKey: "test-key", fetcher })).rejects.toThrow(
       /context/,
     );
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("reduces any unexpected failure to a safe code", () => {
+    expect(safeComposerError(new Error("Composer provider failed (500;request_failed)"))).toBe(
+      "Composer provider failed (500;request_failed)",
+    );
+    expect(safeComposerError(new Error("Unsupported composer opening"))).toBe(
+      "Unsupported composer opening",
+    );
+    // A message that might carry customer text never escapes.
+    expect(safeComposerError(new Error("row 42 for 123 Example Street failed"))).toBe(
+      "generation_failed",
+    );
   });
 });
 
@@ -345,13 +326,14 @@ describe("regression gates distinguish refinement from repetition", () => {
   it("accepts a specific diagnostic, but rejects the same generic fault question", () => {
     const test = { forbiddenPhrases: ["what issue", "what problem", "what is wrong"] };
     expect(
-      scoreComposeReply(test, "Is the garage door stuck open or closed?", ["problem"]).pass,
+      scoreComposeReply(test, "Is the garage door stuck open or closed?", ["PROBLEM"]).pass,
     ).toBe(true);
     expect(
-      scoreComposeReply(test, "What issue are you facing with the garage door?", ["problem"]).pass,
+      scoreComposeReply(test, "What issue are you facing with the garage door?", ["PROBLEM"]).pass,
     ).toBe(false);
   });
-  it("accepts a contextual 'both appliances' acknowledgement, without accepting a dropped appliance", () => {
+
+  it("accepts a contextual 'both appliances' acknowledgement, without a dropped appliance", () => {
     const test = {
       mustMentionAny: [
         ["washer", "both appliances"],
@@ -359,12 +341,13 @@ describe("regression gates distinguish refinement from repetition", () => {
       ],
     };
     expect(
-      scoreComposeReply(
-        test,
-        "Routine maintenance for both appliances. Is the dryer gas or electric?",
-        ["installation_type"],
-      ).pass,
+      scoreComposeReply(test, "Routine maintenance for both appliances.", ["PHOTO"]).pass,
     ).toBe(true);
     expect(scoreComposeReply(test, "This is for dryer maintenance only.", []).pass).toBe(false);
+  });
+
+  it("enforces the two-ask ceiling", () => {
+    expect(scoreComposeReply({}, "message", ["PHOTO", "ADDRESS"]).pass).toBe(true);
+    expect(scoreComposeReply({}, "message", ["PHOTO", "ADDRESS", "SIZE"]).pass).toBe(false);
   });
 });

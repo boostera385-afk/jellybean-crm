@@ -244,6 +244,13 @@ one-line change with clear value.
 
 Test coverage is unit-only — no component, integration, or E2E layer exists.
 
+CS composition is the exception worth knowing about: because v3 selection is
+deterministic, `scripts/eval-ask-catalogue.ts` replays the entire delivered
+export through the real selection code with no API calls, and reports
+per-sub-category agreement against a computed ceiling. It is the regression
+gate a model change cannot silently pass. Run it before and after touching
+the catalogue, the detectors or the policy.
+
 ---
 
 ## P6 — Documentation drift already addressed
@@ -272,6 +279,12 @@ Also stale or misleading:
   **not implemented**. It references `OPENAI_COMPOSER_MODEL` and treats the
   `gpt-5.4-nano-2026-03-17` model as configurable; neither is true today. It is
   a forward-looking proposal, not a description of current behaviour.
+- **`src/lib/compose-style.ts`** and `normalizeAdjacentRequirements` in
+  `src/lib/raw-leads-ai.functions.ts` are v1 wording normalisers with no
+  runtime importer — only `scripts/eval-compose.ts` and their own tests use
+  them. `2026-10-17.catalogue-v3` supersedes both: wording now comes from
+  `cs-ask-catalogue.generated.ts` and the repeated-verb elision lives in
+  `joinAsks`. They are safe to delete once the v1 benchmark script goes.
 - **`OPENAI_MODEL`** in `.env.example` — no code reads it. Model IDs are pinned
   in `raw-leads-ai.functions.ts`.
 - **`VITE_SUPABASE_PROJECT_ID`** — declared, never read.
