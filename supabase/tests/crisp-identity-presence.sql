@@ -67,22 +67,30 @@ BEGIN
     AND nullif(trim(coalesce(auto_greet_revisit_message,'')),'') IS NOT NULL) THEN
     RAISE EXCEPTION 'Revisit defaults missing'; END IF;
   token:=public.crisp_claim_presence(rw);
-  PERFORM public.crisp_finish_presence_v2(rw,token,now(),'[{"crisp_session_id":"v1","nickname":"Sam"}]',true,1,1,false,NULL,1,20,'full');
+  PERFORM public.crisp_finish_presence_v2(rw,token,now()-interval '8 hours','[{"crisp_session_id":"v1","nickname":"Sam"}]',true,1,1,false,NULL,1,20,'full');
   IF NOT EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=rw AND crisp_session_id='v1'
     AND state='pending' AND is_revisit=false AND content='Hello') THEN
     RAISE EXCEPTION 'First greeting changed'; END IF;
-  -- Say the first greeting was delivered 7 hours ago; the visitor returns.
+   -- Say the first greeting was delivered 7 hours ago; continuous presence is NOT a return.
   UPDATE public.crisp_greeting_jobs SET state='sent',sent_at=now()-interval '7 hours' WHERE crisp_website_id=rw AND crisp_session_id='v1';
   ALTER TABLE public.crisp_visitors DISABLE TRIGGER crisp_enqueue_greeting;
-  UPDATE public.crisp_visitors SET auto_greeted_at=now()-interval '7 hours' WHERE crisp_website_id=rw AND crisp_session_id='v1';
+   UPDATE public.crisp_visitors SET auto_greeted_at=now()-interval '7 hours' WHERE crisp_website_id=rw AND crisp_session_id='v1';
   ALTER TABLE public.crisp_visitors ENABLE TRIGGER crisp_enqueue_greeting;
+  UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=rw;
+  token:=public.crisp_claim_presence(rw);
+  PERFORM public.crisp_finish_presence_v2(rw,token,now(),'[{"crisp_session_id":"v1","nickname":"Sam"}]',true,1,1,false,NULL,1,20,'full');
+  IF EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=rw AND state='pending') THEN
+    RAISE EXCEPTION 'Continuous visit was greeted again after cooldown'; END IF;
+  -- A validated departure followed by >=2 minutes away establishes a new visit.
+  UPDATE public.crisp_visitors SET is_online=false,presence_observed_at=now()-interval '3 minutes'
+    WHERE crisp_website_id=rw AND crisp_session_id='v1';
   UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=rw;
   token:=public.crisp_claim_presence(rw);
   PERFORM public.crisp_finish_presence_v2(rw,token,now(),'[{"crisp_session_id":"v1","nickname":"Sam"}]',true,1,1,false,NULL,1,20,'full');
   IF NOT EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=rw AND crisp_session_id='v1'
     AND state='pending' AND is_revisit=true AND content LIKE 'Welcome back%') THEN
     RAISE EXCEPTION 'Returning visitor was not greeted again'; END IF;
-  -- Inside the cooldown window a returning visitor is NOT greeted again.
+   -- Inside the cooldown window a returning visitor is NOT greeted again.
   UPDATE public.crisp_greeting_jobs SET state='sent',sent_at=now() WHERE crisp_website_id=rw AND crisp_session_id='v1' AND is_revisit;
   ALTER TABLE public.crisp_visitors DISABLE TRIGGER crisp_enqueue_greeting;
   UPDATE public.crisp_visitors SET auto_greeted_at=now()-interval '15 minutes' WHERE crisp_website_id=rw AND crisp_session_id='v1';
@@ -124,9 +132,39 @@ BEGIN
   token:=public.crisp_claim_presence(rw);
   PERFORM public.crisp_finish_presence_v2(rw,token,now(),'[{"crisp_session_id":"legacy"}]',true,3,3,false,NULL,1,20,'full');
   IF NOT EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE crisp_website_id=rw AND crisp_session_id='legacy'
-    AND state='pending' AND is_revisit=false AND content='Hello') THEN
+    AND state='pending' AND is_revisit=false AND content='Hello' AND expires_at>now()) THEN
     RAISE EXCEPTION 'Pre-pipeline returning visitor still blocked'; END IF;
   RAISE NOTICE 'Revisit greeting checks passed';
+END $$;
+
+-- 404/403 breaker: persistent not-found pauses polling; success restores counts.
+DO $$
+DECLARE w text:='continuous-test-'||gen_random_uuid(); token uuid;
+BEGIN
+  INSERT INTO public.crisp_workspaces(crisp_website_id,workspace_name,enabled,greeting_worker_enabled,auto_greet_enabled)
+    VALUES(w,'Continuous visit regression',true,true,true);
+  INSERT INTO public.crisp_visitors(crisp_website_id,crisp_session_id,is_online,auto_greeted_at,presence_observed_at)
+    VALUES(w,'long-visit',false,now()-interval '2 hours',now()-interval '3 hours');
+  token:=public.crisp_claim_presence(w);
+  PERFORM public.crisp_finish_presence_v2(w,token,now()-interval '1 hour','[{"crisp_session_id":"long-visit"}]',false,NULL,NULL,NULL,NULL,1,10,'identity');
+  IF (SELECT count(*) FROM public.crisp_greeting_jobs WHERE crisp_website_id=w)<>1 THEN
+    RAISE EXCEPTION 'Verified returning visit not queued'; END IF;
+  UPDATE public.crisp_greeting_jobs SET state='sent',sent_at=now()-interval '59 minutes' WHERE crisp_website_id=w;
+  UPDATE public.crisp_visitors SET auto_greeted_at=now()-interval '59 minutes' WHERE crisp_website_id=w;
+  UPDATE public.crisp_visitors SET nickname='metadata change' WHERE crisp_website_id=w;
+  UPDATE public.crisp_workspaces SET visitor_synced_at=NULL WHERE crisp_website_id=w;
+  token:=public.crisp_claim_presence(w);
+  PERFORM public.crisp_finish_presence_v2(w,token,now(),'[{"crisp_session_id":"long-visit"}]',false,NULL,NULL,NULL,NULL,1,10,'identity');
+  IF (SELECT count(*) FROM public.crisp_greeting_jobs WHERE crisp_website_id=w)<>1 THEN
+    RAISE EXCEPTION 'Long continuous visit re-greeted after cooldown'; END IF;
+  UPDATE public.crisp_visitors SET is_online=false,presence_observed_at=now()-interval '1 minute' WHERE crisp_website_id=w;
+  UPDATE public.crisp_visitors SET is_online=true,presence_observed_at=now() WHERE crisp_website_id=w;
+  IF (SELECT count(*) FROM public.crisp_greeting_jobs WHERE crisp_website_id=w)<>1 THEN
+    RAISE EXCEPTION 'Brief presence flap re-greeted'; END IF;
+  UPDATE public.crisp_visitors SET is_online=false,presence_observed_at=now()-interval '3 minutes' WHERE crisp_website_id=w;
+  UPDATE public.crisp_visitors SET is_online=true,presence_observed_at=now() WHERE crisp_website_id=w;
+  IF (SELECT count(*) FROM public.crisp_greeting_jobs WHERE crisp_website_id=w)<>2 THEN
+    RAISE EXCEPTION 'Next genuine visit not greeted'; END IF;
 END $$;
 
 -- 404/403 breaker: persistent not-found pauses polling; success restores counts.
