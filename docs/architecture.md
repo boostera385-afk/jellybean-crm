@@ -284,12 +284,14 @@ plus an entry in `STATUS_LABEL` and `STATUS_TONE`
 
 ### AI usage
 
-Two call sites, two models (`src/lib/raw-leads-ai.functions.ts`):
+Raw Leads classification remains in `src/lib/raw-leads-ai.functions.ts`.
+CS generation runs inside the authenticated `cs-compose-lead` Edge Function,
+using Supabase's sealed `OPENAI_API_KEY` secret.
 
-| Purpose        | Model                     | Shape                                                        |
-| -------------- | ------------------------- | ------------------------------------------------------------ |
-| Classification | `gpt-5.4-nano-2026-03-17` | `raw_lead_classification`, `strict: true`, 10 per batch      |
-| Rephrasing     | `gpt-5.4-mini-2026-03-17` | `lead_rephrase`, `strict: true`, temperature 0.2, one retry  |
+| Purpose        | Model                     | Shape                                                           |
+| -------------- | ------------------------- | --------------------------------------------------------------- |
+| Classification | `gpt-5.4-nano-2026-03-17` | `raw_lead_classification`, `strict: true`, 10 per batch         |
+| Rephrasing     | `gpt-5.4-2026-03-05`      | `cs_answer_aware_plan`, strict JSON, draft + independent review |
 
 Classification is **batched** — `.in()` lookups chunked by 10, posts under 20
 characters skipped, duplicates excluded, at most 50 rows per request, results
@@ -297,8 +299,43 @@ written back through the single `batch_update_raw_lead_decisions` RPC.
 
 Responses are parsed and validated by the exported pure function
 `parseAndValidateAiResults`, which is directly unit-tested. Model identifiers
-are pinned in code; the rephrase model can be overridden at deploy time with
-`OPENAI_COMPOSE_MODEL` (falls back to the pinned default only).
+and the CS safety policy are pinned in code; no environment variable silently
+changes the model. The CS shared core is `supabase/functions/_shared/cs-composer.ts`.
+
+All manual/bulk/auto CS paths pass a lead ID, not a partial client summary. The
+Edge Function validates JWT, roles and row-level access, then loads the original
+post, summary, saved CS notes, main/sub area and attachment metadata. Outgoing
+drafts and suggested questions are explicitly NOT treated as customer answers.
+Generation returns zero to two complete questions, not a fixed two-slot SMS.
+There is no address quota or historical majority-wording normalization. An
+independent model review checks source context, and deterministic guards suppress
+already-known addresses, timing, symptoms, supplied photos and duplicate intents.
+Existing screenshots are not assumed to be job photos. Failures leave drafts intact.
+
+`shared_state.cs_rephrase_prompt` now stores **style preferences only**, tagged
+with `policyVersion`. The migration archives the v1 address-first prompt in
+`value.previous`. The code policy always takes precedence over style preferences.
+`cs_compose_runs` records model/version/intents/warnings/latency, never raw customer
+content; it is service-role-only. `cs_reserve_compose_run` atomically enforces
+30 generation requests per actor/minute. `cs_compose_eval_jobs` permits management
+administrators to queue bounded QA fixtures with hashed, expiring, single-use
+tickets. Normal browser roles cannot create, claim or read these jobs. The Edge
+gateway still requires a signed JWT; QA tickets cannot access live leads or alter
+customer drafts.
+The intentional service-only RLS setup appears as an informational
+[RLS enabled / no policy advisor](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy),
+not as an exposed client data path. Database regression tests verify the revoked
+client grants, ticket expiry/replay protection and atomic rate limit.
+
+The 2026-10-17 source CSV audit scanned **27,558** rows (194 duplicate context/post
+pairs). It flagged 34 potential repeated-address, 172 timing, 74 symptom, 19 brand,
+22 supplied-photo and 8 same-property-routing cases. These are **heuristic review
+candidates**, not ground-truth accuracy measurements. The CSV is not clean enough
+to blindly fine-tune or use its delivered replies as ideal labels. Raw CSV/customer
+data is not committed. Re-run `scripts/audit-compose-csv.py` for local counts and
+row-number-only diagnostics; `scripts/smoke-compose-live.ts` uses the actual shared
+pipeline, or invokes the protected deployed Edge Function with a signed-in user's
+JWT. Its intent gates do not replace human relevance review.
 
 Auto-rephrase is gated by the `shared_state` toggle `cs_auto_rephrase_enabled`,
 **off by default**, and never overwrites non-empty `marketing_notes`.

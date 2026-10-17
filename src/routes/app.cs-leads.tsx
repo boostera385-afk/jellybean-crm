@@ -90,7 +90,11 @@ import { NumberNameSelect } from "@/components/number-name-select";
 import { STATUS_LABEL, STATUS_TONE, pinnedImportantFor } from "@/lib/lead-statuses";
 import { renderCsComposeSuggestion } from "@/lib/cs-compose-template";
 import { rephraseLeadTemplateWithAi, autoRephraseLeadWithAi } from "@/lib/raw-leads-ai.functions";
-import { DEFAULT_REPHRASE_PROMPT, isCustomRephrasePrompt } from "@/lib/cs-rephrase-prompt";
+import {
+  DEFAULT_REPHRASE_PROMPT,
+  isCustomRephrasePrompt,
+  CS_COMPOSER_VERSION,
+} from "@/lib/cs-rephrase-prompt";
 import { SERVICE_CATEGORIES } from "@/data/service-options";
 
 import { cn } from "@/lib/utils";
@@ -502,7 +506,6 @@ function Inner() {
   const isAdmin = auth.primaryRole === "admin" || auth.primaryRole === "cs_admin";
   const composeTemplatesList = useCsComposeTemplatesList(auth.user?.id);
 
-  const [bulkTemplateId, setBulkTemplateId] = useState<string>("");
   const [bulkRephrasing, setBulkRephrasing] = useState(false);
   const [aiPrompt, setAiPrompt] = useState(DEFAULT_REPHRASE_PROMPT);
   const [promptDirty, setPromptDirty] = useState(false);
@@ -520,8 +523,8 @@ function Inner() {
         .eq("key", "cs_rephrase_prompt")
         .maybeSingle();
       if (error) return DEFAULT_REPHRASE_PROMPT;
-      const v = data?.value as { text?: string } | null;
-      const stored = v?.text ?? "";
+      const v = data?.value as { text?: string; policyVersion?: string } | null;
+      const stored = v?.policyVersion === CS_COMPOSER_VERSION ? (v.text ?? "") : "";
       // A stored copy of the old prompt is ignored when composing, so show the
       // box blank rather than displaying instructions that have no effect.
       return isCustomRephrasePrompt(stored) ? stored : DEFAULT_REPHRASE_PROMPT;
@@ -544,7 +547,7 @@ function Inner() {
       const { error } = await supabase.from("shared_state").upsert(
         {
           key: "cs_rephrase_prompt",
-          value: { text: aiPrompt } as never,
+          value: { text: aiPrompt, policyVersion: CS_COMPOSER_VERSION } as never,
           updated_by: auth.user?.id ?? null,
           updated_at: new Date().toISOString(),
         } as never,
@@ -552,7 +555,7 @@ function Inner() {
       );
       if (error) throw error;
       setPromptDirty(false);
-      toast.success("Prompt saved for all users");
+      toast.success("Style preferences saved for all users");
       qc.invalidateQueries({ queryKey: ["cs-rephrase-prompt"] });
     } catch (e) {
       toast.error(friendlyError(e));
@@ -562,32 +565,14 @@ function Inner() {
   };
 
   const rephraseFn = useServerFn(rephraseLeadTemplateWithAi);
-  const finalTemplates =
-    composeTemplatesList.templates.length > 0
-      ? composeTemplatesList.templates
-      : DEFAULT_COMPOSE_TEMPLATES;
-
-  useEffect(() => {
-    if (finalTemplates.length > 0 && !bulkTemplateId) {
-      setBulkTemplateId(finalTemplates[0].id);
-    }
-  }, [finalTemplates, bulkTemplateId]);
 
   async function runBulkRephrase() {
     if (selectedIds.size === 0) return;
     const selectedLeads = (list.data ?? []).filter((l) => selectedIds.has(l.id));
-    const targets = selectedLeads.filter(
-      (lead) => lead.context?.trim() && (lead.requirement_1?.trim() || lead.requirement_2?.trim()),
-    );
+    const targets = selectedLeads.filter((lead) => lead.context?.trim() || lead.post_text?.trim());
 
     if (targets.length === 0) {
-      toast.error("None of the selected leads have both post text and requirements added.");
-      return;
-    }
-
-    const templateObj = finalTemplates.find((t) => t.id === bulkTemplateId) || finalTemplates[0];
-    if (!templateObj) {
-      toast.error("No template selected.");
+      toast.error("None of the selected leads have customer post text or context.");
       return;
     }
 
@@ -598,14 +583,7 @@ function Inner() {
         try {
           const result = await rephraseFn({
             data: {
-              template: templateObj.template,
-              customerName: lead.customer_name || "there",
-              contextText: lead.context,
-              exactRequirement: lead.post_text,
-              service: lead.service,
-              requirement1: lead.requirement_1 || "",
-              requirement2: lead.requirement_2 || "",
-              systemPrompt: isCustomRephrasePrompt(aiPrompt) ? aiPrompt : null,
+              leadId: lead.id,
             },
           });
 
@@ -1665,7 +1643,7 @@ function Inner() {
               {/* Prompt section */}
               <div className="lg:col-span-2 space-y-2">
                 <Label className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium block">
-                  System Prompt / Instructions
+                  Optional style preferences
                 </Label>
                 <Textarea
                   value={aiPrompt}
@@ -1674,13 +1652,15 @@ function Inner() {
                     setPromptDirty(true);
                   }}
                   rows={5}
+                  maxLength={2000}
                   className="text-[12.5px] min-h-[120px]"
-                  placeholder="Leave blank to use the trained default, built from your delivered leads. Type here only to override it for every CS agent."
+                  placeholder="Optional tone or wording preferences. Leave blank for the default conversational style."
                 />
                 <div className="flex justify-between items-center text-[11px] text-muted-foreground">
                   <span>
-                    Blank uses the trained default built from delivered leads. Saved text overrides
-                    it for all CS agents and admins in real time.
+                    AI reads saved post text, CS notes and location data before asking up to two
+                    missing details. Style preferences cannot override these safeguards. Save lead
+                    edits first.
                   </span>
                   <Button
                     size="sm"
@@ -1690,7 +1670,7 @@ function Inner() {
                     disabled={!promptDirty || savingPrompt}
                   >
                     {savingPrompt && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-                    {promptDirty ? "Save prompt" : "Saved"}
+                    {promptDirty ? "Save style" : "Saved"}
                   </Button>
                 </div>
               </div>
@@ -1701,23 +1681,10 @@ function Inner() {
                   <h4 className="text-[12px] font-semibold text-foreground/90 uppercase tracking-wide">
                     Bulk AI Rephrase
                   </h4>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                      Select Base Template
-                    </Label>
-                    <Select value={bulkTemplateId} onValueChange={setBulkTemplateId}>
-                      <SelectTrigger className="h-8 text-[12px]">
-                        <SelectValue placeholder="Select template..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {finalTemplates.map((t) => (
-                          <SelectItem key={t.id} value={t.id} className="text-[11.5px]">
-                            {t.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Uses each lead's saved context, not a fixed question template. An independent
+                    review checks for repeated or irrelevant questions.
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -1739,13 +1706,10 @@ function Inner() {
                       {
                         (list.data ?? []).filter(
                           (l) =>
-                            selectedIds.has(l.id) &&
-                            l.post_text?.trim() &&
-                            (l.requirement_1?.trim() || l.requirement_2?.trim()),
+                            selectedIds.has(l.id) && (l.post_text?.trim() || l.context?.trim()),
                         ).length
                       }{" "}
-                      of {selectedIds.size} selected (requires exact post text and at least one
-                      requirement).
+                      of {selectedIds.size} selected (requires post text or context).
                     </div>
                   )}
                 </div>
@@ -2362,24 +2326,16 @@ function LeadCard({
   const serviceLabel = formatLeadServiceLabel(lead.service);
 
   const [rephrasing, setRephrasing] = useState(false);
-  const [selectedTemplateText, setSelectedTemplateText] = useState("");
   const rephraseFn = useServerFn(rephraseLeadTemplateWithAi);
 
   async function handleRephrase(e: React.MouseEvent) {
     e.stopPropagation();
-    if (!lead.context) return;
+    if (!lead.context && !lead.post_text) return;
     setRephrasing(true);
     try {
-      const templateToUse = selectedTemplateText || compose || finalTemplates[0]?.template || "";
       const result = await rephraseFn({
         data: {
-          template: templateToUse,
-          customerName: lead.customer_name || "there",
-          contextText: lead.context,
-          exactRequirement: lead.post_text,
-          service: lead.service,
-          requirement1: requirement1,
-          requirement2: requirement2,
+          leadId: lead.id,
         },
       });
       if (result?.rephrased) {
@@ -2865,7 +2821,6 @@ function LeadCard({
                 if (selectedTpl) {
                   const generated = renderCsComposeSuggestion(selectedTpl.template, lead);
                   setCompose(generated);
-                  setSelectedTemplateText(selectedTpl.template);
                   await saveField({ marketing_notes: generated } as Partial<Lead>);
                   qc.invalidateQueries({ queryKey: ["cs_leads"] });
                 }
@@ -2882,7 +2837,7 @@ function LeadCard({
                 ))}
               </SelectContent>
             </Select>
-            {lead.context && (
+            {(lead.context || lead.post_text) && (
               <Button
                 type="button"
                 variant="outline"
@@ -3415,23 +3370,15 @@ function LeadDrawer({
       : null;
 
   const [rephrasing, setRephrasing] = useState(false);
-  const [selectedTemplateText, setSelectedTemplateText] = useState("");
   const rephraseFn = useServerFn(rephraseLeadTemplateWithAi);
 
   async function handleRephrase() {
-    if (!lead.context) return;
+    if (!lead.context && !lead.post_text) return;
     setRephrasing(true);
     try {
-      const templateToUse = selectedTemplateText || compose || finalTemplates[0]?.template || "";
       const result = await rephraseFn({
         data: {
-          template: templateToUse,
-          customerName: lead.customer_name || "there",
-          contextText: lead.context,
-          exactRequirement: lead.post_text,
-          service: lead.service,
-          requirement1: requirement1,
-          requirement2: requirement2,
+          leadId: lead.id,
         },
       });
       if (result?.rephrased) {
@@ -3691,7 +3638,6 @@ function LeadDrawer({
                         if (selectedTpl) {
                           const generated = renderCsComposeSuggestion(selectedTpl.template, lead);
                           setCompose(generated);
-                          setSelectedTemplateText(selectedTpl.template);
                         }
                       }}
                     >
@@ -3706,7 +3652,7 @@ function LeadDrawer({
                         ))}
                       </SelectContent>
                     </Select>
-                    {lead.context && (
+                    {(lead.context || lead.post_text) && (
                       <Button
                         type="button"
                         variant="outline"

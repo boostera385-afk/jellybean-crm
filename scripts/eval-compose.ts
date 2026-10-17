@@ -1,5 +1,8 @@
 /**
- * Score the trained compose prompt against the previous hand-written one.
+ * HISTORICAL STYLE BENCHMARK ONLY (v1). This does NOT evaluate today's CS
+ * answer-aware composer or determine whether a question is sensible. Use
+ * scripts/smoke-compose-live.ts for the exact production generation pipeline.
+ * Score the historical delivered-style prompt against the hand-written one.
  *
  * Both are run over held-out delivered leads that scripts/build-compose-style.py
  * excluded from the exemplar bank and the canonical rules, so the examples

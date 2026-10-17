@@ -25,3 +25,7 @@ verify_jwt = false
 
 [functions.crisp-sync-history]
 verify_jwt = false
+
+# Gateway JWT validation PLUS getUser/roles/RLS inside the handler.
+[functions.cs-compose-lead]
+verify_jwt = true

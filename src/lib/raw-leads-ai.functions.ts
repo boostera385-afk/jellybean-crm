@@ -3,8 +3,6 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logActivity } from "@/lib/activity-log";
-import { DEFAULT_CS_COMPOSE_TEMPLATE } from "@/lib/cs-compose-template";
-import { INPUT_SEMANTICS_ADDENDUM, isCustomRephrasePrompt } from "@/lib/cs-rephrase-prompt";
 
 // FROZEN PROMPT — batch-aware default used when no saved CRM prompt is available.
 export const FROZEN_LEAD_PROMPT = `You classify each item in the \`leads\` array independently as a residential home-service lead.
@@ -55,31 +53,6 @@ type RawLeadAiResult = {
 const OPENAI_BATCH_SIZE = 10;
 const MAX_POST_TEXT_CHARS = 1500;
 const PRIMARY_MODEL = "gpt-5.4-nano-2026-03-17";
-
-/**
- * The rephrase/compose model, pinned so prompt tuning is reproducible.
- *
- * gpt-4o-mini — the previous composer — hallucinated generic questions
- * ("let me know what issue you are facing") even when the customer's own
- * words, sent as `exact`, already stated the issue. gpt-5.4-mini handles
- * "what is genuinely missing" reasoning far better at a negligible cost
- * difference for CS-pipeline volume. Override with OPENAI_COMPOSE_MODEL.
- *
- * Deliberately NOT falling back to OPENAI_MODEL: a stray OPENAI_MODEL value
- * in the environment (an old deploy had it set to gpt-4o-mini) would silently
- * undo this upgrade. The override must be explicit COMPOSE-specific.
- */
-const COMPOSE_MODEL_DEFAULT = "gpt-5.4-mini-2026-03-17";
-const COMPOSE_TEMPERATURE = 0.2;
-// Reasoning tokens count against this budget; medium reasoning on the mini
-// model needs headroom beyond the small JSON answer itself.
-const COMPOSE_MAX_TOKENS = 1200;
-const COMPOSE_REASONING_EFFORT = "medium";
-const COMPOSE_TIMEOUT_MS = 20_000;
-
-function composeModel(): string {
-  return process.env.OPENAI_COMPOSE_MODEL?.trim() || COMPOSE_MODEL_DEFAULT;
-}
 
 type OpenAiResponse = {
   id?: string;
@@ -407,6 +380,7 @@ async function ensureRequesterCanRephrase(userId: string) {
     .in("role", [
       "admin",
       "sub_admin",
+      "cs_admin",
       "cs",
       "scraping",
       "maturing",
@@ -420,57 +394,15 @@ async function ensureRequesterCanRephrase(userId: string) {
 }
 
 const rephraseInputSchema = z.object({
-  template: z.string(),
-  customerName: z.string(),
-  contextText: z.string().nullable().optional(),
-  exactRequirement: z.string().nullable().optional(),
-  service: z.string().nullable().optional(),
-  requirement1: z.string().nullable().optional(),
-  requirement2: z.string().nullable().optional(),
-  systemPrompt: z.string().nullable().optional(),
+  leadId: z.string().uuid(),
 });
-
-/**
- * Resolve the system prompt for one rephrase call.
- *
- * Priority: caller-supplied override → saved `cs_rephrase_prompt` (when it is
- * a deliberate customisation, not a stale copy of the retired default) → the
- * trained compose prompt. Reading the saved prompt here means every path —
- * single lead, bulk, auto — honours the same override; previously only bulk
- * did, so the prompt editor looked broken for half the pipeline.
- */
-async function resolveComposeSystemPrompt(customSystemPrompt?: string | null): Promise<string> {
-  let prompt = (customSystemPrompt ?? "").trim();
-  if (!prompt) {
-    try {
-      const { data } = await supabaseAdmin
-        .from("shared_state")
-        .select("value")
-        .eq("key", "cs_rephrase_prompt")
-        .maybeSingle();
-      const stored = (data?.value as { text?: string } | null)?.text ?? "";
-      if (isCustomRephrasePrompt(stored)) prompt = stored.trim();
-    } catch {
-      // The saved prompt is a convenience, never a hard dependency.
-    }
-  }
-  // Input semantics describe how to READ the lead, not how to write the
-  // output, so they ride along on every call — even with a saved custom
-  // prompt, which an admin may replace without re-saving these rules.
-  const { buildComposeSystemPrompt } = await import("@/lib/compose-style");
-  return `${prompt || buildComposeSystemPrompt()}\n\n${INPUT_SEMANTICS_ADDENDUM}`;
-}
-
-// One retry covers transient 429/5xx failures; validation errors are never retried.
-function isRetryableComposeStatus(status: number) {
-  return status === 429 || status >= 500;
-}
 
 const LEADING_VERB_RE = /^(share|let me know|send me|send|tell me|tell|confirm|provide)\b/i;
 const QUESTION_WORD_RE = /^(what|when|where|which|who|how|whether|if|why)\b/;
 
 /**
- * Tidy two adjacent requirements for the fixed sentence around them.
+ * Legacy v1 compatibility helper. V2 renders complete standalone questions and
+ * does not run this wording normalizer on generated replies.
  *
  * The 2026-10-16 live test surfaced two patterns the exemplars never show:
  * - a repeated leading verb across the pair ("share a picture of the doors and
@@ -498,309 +430,33 @@ export function normalizeAdjacentRequirements(req1: string, req2: string): [stri
   return [a, b];
 }
 
-/**
- * One OpenAI chat completion for a compose rephrase.
- *
- * gpt-4o-mini ran with no temperature, no token cap, no timeout and no retry:
- * the randomness was a direct source of the question noise. Generation
- * controls keep the output low-variance, the abort signal stops the caller
- * hanging on a wedged request, and one backoff retry absorbs transient
- * failures. If the pinned model rejects an optional generation control, the
- * fallback attempt drops the controls so a real answer still comes back.
- */
-async function callComposeOpenAi({
-  model,
-  systemPrompt,
-  fewShot,
-  userContent,
-}: {
-  model: string;
-  systemPrompt: string;
-  fewShot: Array<{ role: "user" | "assistant"; content: string }>;
-  userContent: string;
-}): Promise<{ ok: boolean; status: number; body: OpenAiResponse }> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("Missing OPENAI_API_KEY secret");
-
-  const request = {
-    model,
-    // Explicit reasoning measurably sharpens "what is genuinely missing?"
-    // without changing the few-shot format (carried over from the team's nano
-    // experiment; the mini model keeps it as well).
-    reasoning_effort: COMPOSE_REASONING_EFFORT,
-    messages: [
-      { role: "system", content: systemPrompt },
-      ...fewShot,
-      { role: "user", content: userContent },
-    ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "lead_rephrase",
-        strict: true,
-        schema: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            serviceContext: { type: "string" },
-            requirement1: { type: "string" },
-            requirement2: { type: "string" },
-          },
-          required: ["serviceContext", "requirement1", "requirement2"],
-        },
-      },
-    },
-  } satisfies {
-    model: string;
-    reasoning_effort: string;
-    messages: Array<{ role: string; content: string }>;
-    response_format: {
-      type: "json_schema";
-      json_schema: {
-        name: string;
-        strict: boolean;
-        schema: Record<string, unknown>;
-      };
-    };
-  };
-  const controls = { temperature: COMPOSE_TEMPERATURE, max_tokens: COMPOSE_MAX_TOKENS };
-
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const withControls = attempt === 0;
-    try {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(withControls ? { ...request, ...controls } : request),
-        // Browsers do not support AbortSignal.timeout, but this runs server side only.
-        signal: AbortSignal.timeout(COMPOSE_TIMEOUT_MS),
-      });
-      const body = (await response.json()) as OpenAiResponse;
-      if (response.ok) return { ok: true, status: response.status, body };
-      const message = body.error?.message ?? "";
-      if (
-        withControls &&
-        /temperature|max[_ -]?tokens|unsupported|unknown parameter/i.test(message)
-      ) {
-        continue; // Model rejected an optional control — retry once without them.
-      }
-      if (!withControls || !isRetryableComposeStatus(response.status)) {
-        return { ok: false, status: response.status, body }; // Caller converts it to a thrown Error, as before.
-      }
-    } catch (err) {
-      if (attempt === 0) continue; // Network error or timeout: retry once.
-      throw err;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 400));
-  }
-  throw new Error("OpenAI compose call did not return a response"); // Unreachable safeguard.
-}
-
-export async function executeAiRephraseCore({
-  customerName,
-  contextText,
-  exactRequirement,
-  service,
-  requirement1,
-  requirement2,
-  systemPrompt: customSystemPrompt,
-}: {
-  /** Still accepted from callers, but no longer decides the sender name. */
-  template?: string;
-  customerName: string;
-  contextText?: string | null;
-  exactRequirement?: string | null;
-  service?: string | null;
-  requirement1?: string | null;
-  requirement2?: string | null;
-  systemPrompt?: string | null;
-}): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("Missing OPENAI_API_KEY secret");
-
-  // Imported here rather than at module scope: app.cs-leads.tsx imports this
-  // file, and compose-style carries the generated style data (~320KB). A static
-  // import would ship all of it to the browser for no reason.
-  const { canonicalizeRequirement, selectComposeExemplars } = await import("@/lib/compose-style");
-  const { senderForTick, fallbackTick } = await import("@/lib/compose-senders");
-
-  // The roster advances every LEADS_PER_SENDER messages. The counter lives in
-  // the database because the run of ten has to hold across requests, server
-  // instances and redeploys. If it cannot be read, fall back to a time window
-  // so the name still varies rather than pinning every message to one again.
-  let senderTick = fallbackTick();
-  try {
-    const { data: tick, error: tickError } = await supabaseAdmin.rpc("cs_next_compose_sender_tick");
-    if (!tickError && tick !== null && tick !== undefined) senderTick = Number(tick);
-  } catch {
-    // Keep the time-based fallback.
-  }
-
-  // The system prompt and examples come from the delivered messages
-  // (src/lib/compose-style.ts, scripts/build-compose-style.py). A prompt
-  // saved in the UI overrides it, resolved here for every call path.
-
-  // The live input must have the same shape as the exemplar inputs below, or
-  // the examples teach the model to read a different payload. `exact` carries
-  // the customer's own words; the exemplars cannot show a real customer voice,
-  // so the reading rules live in INPUT_SEMANTICS_ADDENDUM on the system prompt
-  // instead. They are still used as the fallback if the model reply fails to parse.
-  const exemplars = selectComposeExemplars(service, 6);
-  const fewShot = exemplars.flatMap((ex) => [
-    {
-      role: "user" as const,
-      content: JSON.stringify({ context: ex.context, exact: ex.exact, service: ex.service }),
-    },
-    { role: "assistant" as const, content: JSON.stringify(ex.out) },
-  ]);
-
-  const userContent = JSON.stringify({
-    context: contextText || "",
-    exact: trimForAi(exactRequirement || ""),
-    service: service || "",
-  });
-
-  const response = await callComposeOpenAi({
-    model: composeModel(),
-    systemPrompt: await resolveComposeSystemPrompt(customSystemPrompt),
-    fewShot,
-    userContent,
-  });
-
-  if (!response.ok) {
-    throw new Error(response.body.error?.message ?? `OpenAI request failed (${response.status})`);
-  }
-
-  const rephrased = response.body.choices?.[0]?.message?.content || "";
-
-  // Parse the JSON output from AI
-  let serviceContext = "";
-  let req1 = "";
-  let req2 = "";
-
-  try {
-    const parsed = JSON.parse(rephrased.trim());
-    serviceContext = parsed.serviceContext || "";
-    req1 = parsed.requirement1 || "";
-    req2 = parsed.requirement2 || "";
-  } catch {
-    // Fallback in case JSON parsing fails
-    serviceContext = contextText || "";
-    req1 = requirement1 || "";
-    req2 = requirement2 || "";
-  }
-
-  // Helper functions for sanitization & normalization
-  const extractFirstName = (fullName: string): string => {
-    const name = fullName.trim().split(/\s+/)[0];
-    return name || "there";
-  };
-
-  const sanitizeForbiddenPhrases = (text: string): string => {
-    if (!text) return "";
-    let clean = text;
-    const replacements: Array<[RegExp, string]> = [
-      [/I understand/gi, ""],
-      [/seeking/gi, "looking for"],
-      [/repair or replacement/gi, "repair"],
-      [/damaged or non-functioning/gi, ""],
-      [/provide the service address/gi, "share your complete address"],
-      [/our schedule/gi, "the schedule"],
-      [/arrange a visit/gi, "check the schedule for a visit"],
-    ];
-    for (const [regex, rep] of replacements) {
-      clean = clean.replace(regex, rep);
-    }
-    return clean.replace(/\s+/g, " ").trim();
-  };
-
-  // Snap the ask onto the team's majority wording (see compose-style.ts).
-  // The previous hardcoded rules rewrote every picture request to
-  // "send me a picture of it" - wording that appears nowhere in the delivered
-  // messages, where the object is always named - and sent any requirement
-  // merely containing "when" or "time" to availability.
-  const normalizeRequirement = (req: string): string =>
-    canonicalizeRequirement(sanitizeForbiddenPhrases(req));
-
-  const normalizeServiceContext = (ctx: string): string => {
-    if (!ctx) return "your service";
-    // Keep the word "service" AND the customer's specifics. The delivered style
-    // is "a garage door repair service to repair an off track roll up garage
-    // door", not a bare "garage door repair"; the old version stripped
-    // /\bservice\b/ and dropped any " for ..." clause that shared a word with
-    // the head, which left sentences like "looking for a window replacement  ."
-    let clean = sanitizeForbiddenPhrases(ctx).replace(/\s+/g, " ").trim();
-    // Ingestion sometimes prefixes the context with paste labels, and several
-    // delivered messages opened with the template words duplicated:
-    // "looking for looking for someone to repair ...". Strip the labels and
-    // the leading verb so the fixed sentence around serviceContext completes
-    // them naturally.
-    clean = clean
-      .replace(/\b(?:customer\s+needs?|service\s+needed?)\s*:\s*/gi, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .replace(/^(?:customer\s+needs?|customer\s+request(?:ed)?|need|needs)\s*:?\s*/i, "")
-      .replace(/^(?:i\s+am\s+|i'?m\s+)?looking\s+for\s+/i, "")
-      .trim();
-    clean = clean.replace(/[.?,;!]$/, "");
-    if (clean.length > 0) clean = clean.charAt(0).toLowerCase() + clean.slice(1);
-    return clean || "your service";
-  };
-
-  // Apply sanitization and normalization
-  const finalFirstName = extractFirstName(customerName);
-  const finalSenderName = senderForTick(senderTick);
-  const finalServiceContext = normalizeServiceContext(serviceContext);
-  const [finalReq1, finalReq2] = normalizeAdjacentRequirements(
-    normalizeRequirement(req1),
-    normalizeRequirement(req2),
-  );
-
-  // Build requirements part: join with " and " if both are present
-  let requirementsPart = "";
-  if (finalReq1 && finalReq2) {
-    requirementsPart = `${finalReq1} and ${finalReq2}`;
-  } else if (finalReq1) {
-    requirementsPart = finalReq1;
-  } else if (finalReq2) {
-    requirementsPart = finalReq2;
-  } else {
-    requirementsPart = "confirm the details";
-  }
-
-  // Build the final strict SMS format
-  const finalSms = `Hi ${finalFirstName}, this is ${finalSenderName}. I saw that you are looking for ${finalServiceContext}. Could you kindly ${requirementsPart}, so I can check the schedule for a visit?`;
-
-  return finalSms;
-}
-
 export const rephraseLeadTemplateWithAi = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => rephraseInputSchema.parse(input))
   .handler(async ({ data, context }) => {
     await ensureRequesterCanRephrase(context.userId);
-    const finalSms = await executeAiRephraseCore({
-      template: data.template,
-      customerName: data.customerName,
-      contextText: data.contextText,
-      exactRequirement: data.exactRequirement,
-      service: data.service,
-      requirement1: data.requirement1,
-      requirement2: data.requirement2,
-      systemPrompt: data.systemPrompt,
+    const { data: result, error } = await context.supabase.functions.invoke("cs-compose-lead", {
+      body: { leadId: data.leadId },
     });
-    return { rephrased: finalSms };
+    if (error || !result?.rephrased) {
+      throw new Error(
+        "Could not safely compose a reply. Your existing draft has not been changed.",
+      );
+    }
+    return result as {
+      rephrased: string;
+      runId: string;
+      model: string;
+      version: string;
+      warnings: string[];
+    };
   });
 
 export const autoRephraseLeadWithAi = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({ leadId: z.string().min(1) }).parse(input))
-  .handler(async ({ data }) => {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return { success: false, reason: "Missing OPENAI_API_KEY" };
+  .handler(async ({ data, context }) => {
+    await ensureRequesterCanRephrase(context.userId);
 
     // Check if auto-rephrase toggle is enabled (default is OFF)
     const { data: toggleState } = await supabaseAdmin
@@ -820,10 +476,10 @@ export const autoRephraseLeadWithAi = createServerFn({ method: "POST" })
       return { success: false, reason: "Auto-rephrase is disabled (toggle is OFF)" };
     }
 
-    const { data: lead, error } = await supabaseAdmin
+    const { data: lead, error } = await context.supabase
       .from("qualified_leads")
       .select(
-        "id, customer_name, context, post_text, service, requirement_1, requirement_2, marketing_notes",
+        "id, updated_at, customer_name, context, post_text, service, requirement_1, requirement_2, marketing_notes",
       )
       .eq("id", data.leadId)
       .maybeSingle();
@@ -841,25 +497,28 @@ export const autoRephraseLeadWithAi = createServerFn({ method: "POST" })
     }
 
     try {
-      const finalSms = await executeAiRephraseCore({
-        template: DEFAULT_CS_COMPOSE_TEMPLATE,
-        customerName: lead.customer_name || "there",
-        contextText: lead.context,
-        // The single and bulk rephrase paths already sent the customer's own
-        // words and the service label; the auto path silently omitted both,
-        // which pushed every auto-composed message toward generic questions.
-        exactRequirement: lead.post_text,
-        service: lead.service,
-        requirement1: lead.requirement_1 || "",
-        requirement2: lead.requirement_2 || "",
-      });
+      const { data: result, error: composeError } = await context.supabase.functions.invoke(
+        "cs-compose-lead",
+        {
+          body: { leadId: lead.id },
+        },
+      );
+      if (composeError || !result?.rephrased) throw new Error("Could not safely compose a reply");
+      const finalSms = result.rephrased as string;
 
       if (finalSms) {
         // Update database with rephrased SMS
-        await supabaseAdmin
+        const { data: saved, error: saveError } = await context.supabase
           .from("qualified_leads")
           .update({ marketing_notes: finalSms } as never)
-          .eq("id", lead.id);
+          .eq("id", lead.id)
+          .eq("updated_at", lead.updated_at)
+          .select("id");
+        if (saveError || !saved?.length)
+          return {
+            success: false,
+            reason: "Lead changed while composing; draft was not overwritten",
+          };
 
         return { success: true, rephrased: finalSms };
       }
