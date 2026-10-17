@@ -20,6 +20,7 @@ function get_transient($key) { return isset($GLOBALS['transients'][$key]) ? $GLO
 function set_transient($key, $value, $ttl) { $GLOBALS['transients'][$key] = $value; }
 function wp_remote_post($url, $args) { $GLOBALS['outbound'][] = array($url, $args); return array('status' => $GLOBALS['transport_status']); }
 function wp_remote_retrieve_response_code($result) { return $result['status']; }
+function wp_remote_retrieve_body($result) { return json_encode(array('status' => 'accepted')); }
 function is_wp_error($result) { return false; }
 class WP_REST_Response {
     public $data; public $status;

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: JellyBean Visitor Presence
  * Description: Sends signed arrival hints to JellyBean using your existing Crisp widget. Does not install another chat widget.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Requires at least: 6.2
  * Requires PHP: 7.4
  * License: GPL-2.0-or-later
@@ -20,6 +20,7 @@ final class JellyBean_Visitor_Presence {
         add_action('admin_init', array(__CLASS__, 'settings'));
         add_action('wp_enqueue_scripts', array(__CLASS__, 'enqueue'), 100);
         add_action('rest_api_init', array(__CLASS__, 'routes'));
+        add_action('admin_post_jellybean_presence_check', array(__CLASS__, 'connection_check'));
     }
 
     public static function activate() {
@@ -29,10 +30,17 @@ final class JellyBean_Visitor_Presence {
 
     private static function config() {
         $config = get_option(self::OPTION, array());
+        if (!is_array($config)) { $config = array(); }
         if (defined('JELLYBEAN_PRESENCE_KEY')) {
             $config['key'] = JELLYBEAN_PRESENCE_KEY;
         }
         return $config;
+    }
+
+    private static function configured($config) {
+        return isset($config['website_id'], $config['key']) && is_string($config['website_id']) &&
+            is_string($config['key']) && preg_match('/^' . self::UUID . '$/D', $config['website_id']) &&
+            preg_match('/^[0-9a-f]{64}$/D', $config['key']) && '' !== self::origin();
     }
 
     private static function origin() {
@@ -59,6 +67,8 @@ final class JellyBean_Visitor_Presence {
         if (!current_user_can('manage_options') || !is_array($input)) {
             return $old;
         }
+        if ((isset($input['website_id']) && !is_string($input['website_id'])) ||
+            (isset($input['key']) && !is_string($input['key']))) { return $old; }
         $id = isset($input['website_id']) ? strtolower(trim((string) $input['website_id'])) : '';
         if (!preg_match('/^' . self::UUID . '$/D', $id)) {
             add_settings_error(self::OPTION, 'invalid_id', 'Enter the Crisp Website ID (UUID), not the plugin ID.');
@@ -81,9 +91,14 @@ final class JellyBean_Visitor_Presence {
             return;
         }
         $config = self::config();
+        $check = get_transient('jb_check_' . get_current_user_id());
+        if ($check) {
+            delete_transient('jb_check_' . get_current_user_id());
+        }
         ?>
         <div class="wrap">
             <h1>JellyBean Visitor Presence</h1>
+            <?php if ($check) : ?><div class="notice notice-info"><p><?php echo esc_html($check); ?></p></div><?php endif; ?>
             <p>Keep the existing Crisp plugin active. This relay does not install a second widget or send messages itself.</p>
             <?php settings_errors(self::OPTION); ?>
             <form method="post" action="options.php">
@@ -103,6 +118,12 @@ final class JellyBean_Visitor_Presence {
                 </table>
                 <?php submit_button(); ?>
             </form>
+            <h2>Connection diagnostics</h2>
+            <p>Save settings first. This checks the signing key and backend enrollment only; it does not create a visitor or send a greeting.</p>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                <input type="hidden" name="action" value="jellybean_presence_check">
+                <?php wp_nonce_field('jellybean_presence_check'); submit_button('Test backend connection', 'secondary'); ?>
+            </form>
             <p>Turn off the relay here or deactivate this plugin to roll back. Existing Crisp chat and CRM polling keep running.</p>
             <p>Browser endpoint: <code><?php echo esc_html(rest_url('jellybean/v1/arrival')); ?></code></p>
         </div>
@@ -111,10 +132,10 @@ final class JellyBean_Visitor_Presence {
 
     public static function enqueue() {
         $config = self::config();
-        if (empty($config['enabled']) || empty($config['key']) || empty($config['website_id']) || '' === self::origin()) {
+        if (empty($config['enabled']) || !self::configured($config)) {
             return;
         }
-        wp_enqueue_script('jellybean-presence', plugins_url('assets/presence.js', __FILE__), array(), '1.0.0', true);
+        wp_enqueue_script('jellybean-presence', plugins_url('assets/presence.js', __FILE__), array(), '1.1.0', true);
         // ONLY public configuration. No shared key, visitor name, email or token.
         wp_add_inline_script('jellybean-presence', 'window.JellyBeanPresence=' . wp_json_encode(array(
             'websiteId' => $config['website_id'],
@@ -133,8 +154,52 @@ final class JellyBean_Visitor_Presence {
 
     public static function permission($request) {
         $config = self::config();
-        return !empty($config['enabled']) && !empty($config['key']) &&
-            '' !== self::origin() && self::origin() === $request->get_header('origin');
+        return !empty($config['enabled']) && self::configured($config) &&
+            self::origin() === $request->get_header('origin');
+    }
+
+    private static function send($payload, $config) {
+        $raw = wp_json_encode($payload);
+        $timestamp = sprintf('%.0f', microtime(true) * 1000);
+        return wp_remote_post(self::BACKEND, array(
+            'timeout' => 5, 'redirection' => 0, 'sslverify' => true,
+            'headers' => array('Content-Type' => 'application/json',
+                'X-JellyBean-Origin' => self::origin(), 'X-JellyBean-Timestamp' => $timestamp,
+                'X-JellyBean-Signature' => hash_hmac('sha256', $timestamp . '.' . $raw, $config['key'])),
+            'body' => $raw, 'limit_response_size' => 1024,
+        ));
+    }
+
+    public static function connection_check() {
+        if (!current_user_can('manage_options')) { wp_die('Not authorized.', '', array('response' => 403)); }
+        check_admin_referer('jellybean_presence_check');
+        $rate_key = 'jb_check_rate_' . get_current_user_id();
+        if (get_transient($rate_key)) { wp_die('Please wait ten seconds before testing again.', '', array('response' => 429)); }
+        set_transient($rate_key, true, 10);
+        $config = self::config();
+        $message = 'Save a valid Website ID, dedicated site key, and HTTPS Site Address first.';
+        if (self::configured($config)) {
+            $result = self::send(array('website_id' => $config['website_id'],
+                'request_id' => wp_generate_uuid4(), 'action' => 'check'), $config);
+            if (is_wp_error($result)) {
+                $message = 'Connection failed: hosting outbound HTTPS, DNS, TLS, or timeout. Ask your hosting administrator to check server logs.';
+            } else {
+                $code = wp_remote_retrieve_response_code($result);
+                $body = json_decode(wp_remote_retrieve_body($result), true);
+                if (200 === $code && is_array($body) && isset($body['status']) && 'connected' === $body['status']) {
+                    $message = 'Connected: site key and origin accepted. Next test a fresh visitor; this check does not verify widget loading or visible message delivery.';
+                } elseif (401 === $code || 403 === $code) {
+                    $message = 'Authentication rejected: check exact origin, Website ID, key, backend enrollment, paused workspace, and server clock.';
+                } elseif (429 === $code) {
+                    $message = 'Rate limited. Wait a minute before testing again.';
+                } else {
+                    $message = 'Backend check failed (HTTP ' . intval($code) . '). Ask CRM operations to inspect the endpoint logs.';
+                }
+            }
+        }
+        set_transient('jb_check_' . get_current_user_id(), $message, 60);
+        wp_safe_redirect(admin_url('options-general.php?page=jellybean-presence'));
+        exit;
     }
 
     private static function response($status, $code) {
@@ -173,24 +238,17 @@ final class JellyBean_Visitor_Presence {
         if (get_transient($session_key)) {
             return self::response('duplicate', 200);
         }
-        $raw = wp_json_encode(array('website_id' => $config['website_id'],
-            'session_id' => $body['session_id'], 'request_id' => $body['request_id']));
-        $timestamp = sprintf('%.0f', microtime(true) * 1000);
-        $signature = hash_hmac('sha256', $timestamp . '.' . $raw, $config['key']);
-        $result = wp_remote_post(self::BACKEND, array(
-            'timeout' => 5, 'redirection' => 0, 'sslverify' => true,
-            'headers' => array('Content-Type' => 'application/json',
-                'X-JellyBean-Origin' => self::origin(), 'X-JellyBean-Timestamp' => $timestamp,
-                'X-JellyBean-Signature' => $signature),
-            'body' => $raw, 'limit_response_size' => 1024,
-        ));
+        $result = self::send(array('website_id' => $config['website_id'],
+            'session_id' => $body['session_id'], 'request_id' => $body['request_id']), $config);
         if (is_wp_error($result)) {
             return self::response('unavailable', 503);
         }
         $code = wp_remote_retrieve_response_code($result);
-        if ($code >= 200 && $code < 300) {
+        $receipt = json_decode(wp_remote_retrieve_body($result), true);
+        if ($code >= 200 && $code < 300 && is_array($receipt) && isset($receipt['status']) &&
+            in_array($receipt['status'], array('accepted', 'duplicate'), true)) {
             set_transient($session_key, true, 120);
-            return self::response('accepted', 202);
+            return self::response($receipt['status'], 'duplicate' === $receipt['status'] ? 200 : 202);
         }
         // Never forward raw backend errors, keys or headers to visitors.
         return self::response(429 === $code ? 'limited' : 'unavailable', 429 === $code ? 429 : 503);

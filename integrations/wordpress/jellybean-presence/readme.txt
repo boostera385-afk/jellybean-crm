@@ -1,7 +1,7 @@
 === JellyBean Visitor Presence ===
 Requires at least: 6.2
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPL-2.0-or-later
 
 Uses the existing Crisp widget to send signed, rate-limited arrival hints to your
@@ -16,7 +16,10 @@ Install via Plugins > Add New > Upload Plugin. Then Settings > JellyBean Presenc
 Obtain the correct Crisp Website ID and dedicated per-site signing key from CRM
 operations using a secure channel. HTTPS is required. Backend enrollment must
 match the site's exact origin, including www if used. Leave existing Crisp chat
-active. See the accompanying office handoff guide before enabling.
+active. Save settings, then click Test backend connection. This authenticated
+diagnostic does not create a visitor or send any greeting. See the accompanying
+office handoff guide before enabling. Upload the plugin ZIP itself, not an outer
+handoff ZIP containing another ZIP.
 
 This plugin makes outbound HTTPS POST requests to:
 https://fjscqsatzsmfivpczaud.supabase.co/functions/v1/crisp-site-arrival
