@@ -1,0 +1,9 @@
+{
+  "$schema": "https://playground.wordpress.net/blueprint-schema.json",
+  "steps": [
+    {
+      "step": "runPHP",
+      "code": "<?php try { require '/tests/install-wordpress.php'; } catch (Throwable $e) { echo $e->getMessage() . PHP_EOL . $e->getTraceAsString(); throw $e; }"
+    }
+  ]
+}
