@@ -1,3 +1,25 @@
+/**
+ * The one-click compose suggestion.
+ *
+ * The templates below are team-editable text with three placeholders. Until
+ * now only two were ever substituted: `(Requirement)` was left in the message
+ * verbatim, and `(Service Context)` was replaced with the whole raw context
+ * sentence, so the chip inserted things like
+ *
+ *   "Hi John, this is Alex. I saw that you are looking for Customer needs
+ *    refrigerator repair, not cooling.. Could you kindly (Requirement), so I
+ *    can check the schedule for a visit?"
+ *
+ * All three are now filled from the ask catalogue generated from the team's
+ * delivered messages, the same source the AI composer uses, so the chip needs
+ * no model call and still asks the question that sub-category asks - minus
+ * anything the customer already told us.
+ */
+import { detect, normalizeSource } from "../../supabase/functions/_shared/cs-detect";
+import { selectAsks, wordingFor } from "../../supabase/functions/_shared/cs-ask-policy";
+import { joinAsks } from "../../supabase/functions/_shared/cs-composer";
+import { CS_ASK_CATALOGUE } from "../../supabase/functions/_shared/cs-ask-catalogue.generated";
+
 export const CS_COMPOSE_TEMPLATE_KEY = "cs_compose_template";
 
 export const DEFAULT_CS_COMPOSE_TEMPLATE =
@@ -34,26 +56,154 @@ export function firstName(fullName: string | null | undefined) {
   return fullName?.trim().split(/\s+/)[0] || "there";
 }
 
-export function serviceContextForLead(lead: {
+export type SuggestionLead = {
+  customer_name?: string | null;
   service?: string | null;
   context?: string | null;
   pass_it_to?: string | null;
   post_text?: string | null;
-}) {
-  return lead.context?.trim() || "your service";
+  cs_notes?: unknown;
+  requirement_1?: string | null;
+  requirement_2?: string | null;
+};
+
+/** The sources the detectors may read. Outgoing drafts and the suggested
+ *  requirements are deliberately absent: they are not customer answers. */
+function leadSources(lead: SuggestionLead): string[] {
+  const notes = Array.isArray(lead.cs_notes)
+    ? lead.cs_notes
+        .map((note) =>
+          note && typeof note === "object" && "text" in note
+            ? String((note as { text: unknown }).text ?? "")
+            : "",
+        )
+        .filter(Boolean)
+    : [];
+  return [lead.post_text, lead.context, ...notes].filter((value): value is string =>
+    Boolean(value?.trim()),
+  );
 }
 
-export function renderCsComposeSuggestion(
-  template: string,
-  lead: {
-    customer_name?: string | null;
-    service?: string | null;
-    context?: string | null;
-    pass_it_to?: string | null;
-    post_text?: string | null;
-  },
-) {
-  return template
-    .replace(/\(Person first name\)/gi, firstName(lead.customer_name))
-    .replace(/\(Service Context\)/gi, serviceContextForLead(lead));
+/** How the team names a job done to a thing: "a refrigerator repair service". */
+const ACTION_NOUNS: Record<string, string> = {
+  repair: "repair",
+  install: "installation",
+  replace: "replacement",
+  clean: "cleaning",
+  remove: "removal",
+  move: "moving",
+  maintain: "maintenance",
+};
+/** Trades the team names directly rather than as "<x> service". */
+const TRADES =
+  /^(?:plumber|electrician|handyman|locksmith|roofer|painter|carpenter|technician|contractor|mover|movers|cleaner|exterminator)$/;
+
+const article = (phrase: string) => (/^[aeiou]/i.test(phrase) ? "an" : "a");
+
+function fromService(service: string | null | undefined): string {
+  const clean = normalizeSource(service ?? "").replace(/^general\s+/, "");
+  if (!clean) return "";
+  if (/^movers$/.test(clean)) return "movers";
+  if (TRADES.test(clean)) return `${article(clean)} ${clean}`;
+  const withNoun = /\bservices?$/.test(clean) ? clean.replace(/s$/, "") : `${clean} service`;
+  return `${article(withNoun)} ${withNoun}`;
+}
+
+function fromDetectedJob(lead: SuggestionLead): string {
+  const sources = leadSources(lead);
+  if (!sources.length) return "";
+  const detection = detect(sources);
+  const object = detection.objects[0];
+  if (!object) return "";
+  const label = CS_ASK_CATALOGUE.objectLabels[object]?.[0];
+  if (!label) return "";
+  const action = detection.action ? ACTION_NOUNS[detection.action] : undefined;
+  const phrase = action ? `${label} ${action} service` : `${label} service`;
+  return `${article(phrase)} ${phrase}`;
+}
+
+/** Last resort: the customer's own words, reduced to a phrase that reads
+ *  correctly after "looking for" instead of a whole pasted sentence. */
+function fromContext(lead: SuggestionLead): string {
+  const raw = (lead.context || lead.post_text || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  const phrase = raw
+    .replace(/^(?:customer\s+)?(?:is\s+)?(?:looking for|seeking|needs?|wants?|requires?)\s+/i, "")
+    .split(/[.!?;]|,\s+(?:and|but|so)\b/)[0]
+    .trim()
+    .replace(/^(?:a|an|the)\s+/i, "");
+  // At least two words: a bare noun like "help" gives "a help", which is the
+  // kind of broken phrase this whole function exists to stop.
+  if (!/\s/.test(phrase) || phrase.length < 8 || phrase.length > 90) return "";
+  return `${article(phrase)} ${phrase.toLowerCase()}`;
+}
+
+/**
+ * The noun phrase that completes "I saw that you are looking for ___".
+ *
+ * The lead's own `service` column is preferred because it is the team's own
+ * classification; the detected job is next, then the customer's words trimmed
+ * to a phrase. "your service" only survives when the lead has nothing at all.
+ */
+export function serviceContextForLead(lead: SuggestionLead) {
+  return (
+    fromService(lead.service) ||
+    fromDetectedJob(lead) ||
+    fromContext(lead) ||
+    // Grammatical, claims nothing, invents no detail. The old fallback was
+    // "your service", which read as "looking for your service".
+    "the service you need"
+  );
+}
+
+/**
+ * The asks, in the team's own wording.
+ *
+ * Catalogue first: it knows what this sub-category asks and drops anything the
+ * customer already supplied. The lead's stored `requirement_1/2` are used only
+ * when the catalogue has nothing to offer, and the catalogue's own no-object
+ * fallback (scope, then address) is the floor - so the placeholder can never
+ * reach a customer.
+ */
+export function requirementForLead(lead: SuggestionLead) {
+  const sources = leadSources(lead);
+  if (sources.length) {
+    const detection = detect(sources);
+    const selection = selectAsks(
+      detection,
+      lead.service,
+      detection.objects[0] ?? null,
+      normalizeSource(sources.join("\n")),
+    );
+    if (selection.asks.length) return joinAsks(selection.asks.map((ask) => ask.fragment));
+  }
+  const stored = [lead.requirement_1, lead.requirement_2]
+    .map((value) => (value ?? "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  if (stored.length) return joinAsks(stored);
+  const floor = [wordingFor("SCOPE", null), wordingFor("ADDRESS", null)].filter(
+    (phrase): phrase is string => Boolean(phrase),
+  );
+  return joinAsks(floor);
+}
+
+/** Any placeholder a template carries that we cannot fill, e.g. one the team
+ *  invented in a custom template. Dropped rather than sent to a customer. */
+const UNFILLED_PLACEHOLDER = /\s*\([^)]*\)/g;
+
+export function renderCsComposeSuggestion(template: string, lead: SuggestionLead) {
+  return (
+    template
+      .replace(/\(Person first name\)/gi, firstName(lead.customer_name))
+      .replace(/\(Service Context\)/gi, serviceContextForLead(lead))
+      .replace(/\(Requirement\)/gi, requirementForLead(lead))
+      .replace(/\(Sender\)/gi, "Alex")
+      .replace(UNFILLED_PLACEHOLDER, "")
+      .replace(/\s{2,}/g, " ")
+      // A removed placeholder can leave its connector stranded ("service -,").
+      .replace(/\s*[\u2014\u2013-]\s*([.,?!])/g, "$1")
+      .replace(/\s+([.,?!])/g, "$1")
+      .replace(/([.,])\1+/g, "$1")
+      .trim()
+  );
 }
