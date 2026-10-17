@@ -2,10 +2,15 @@
 
 ## What you are installing
 
-Install **jellybean-presence-1.0.0.zip** once on each approved WordPress website.
+Install **jellybean-presence-1.1.0.zip** once on each approved WordPress website.
 The same ZIP works for all sites. Do not edit theme files or individual pages.
 Keep the existing Crisp chat plugin/snippet active: this plugin does not replace
 it, install another widget, or send messages itself.
+
+**Important: upload the plugin ZIP itself.** If your email/download is an outer
+handoff ZIP containing instructions and another ZIP, extract that outer archive
+first. WordPress cannot install an archive containing only another ZIP. Version
+1.1.0 supersedes the previous 1.0.0 handoff.
 
 **Start with Fast Fix only.** Roll out other healthy sites after CRM operations
 checks the first-site telemetry. Do not enable the two paused drywall workspaces.
@@ -38,7 +43,7 @@ from PHP to `fjscqsatzsmfivpczaud.supabase.co`.
 
 1. Back up the site and follow your normal plugin change process.
 2. Open **Plugins → Add New Plugin → Upload Plugin**.
-3. Choose `jellybean-presence-1.0.0.zip` → **Install Now → Activate**.
+3. Choose `jellybean-presence-1.1.0.zip` → **Install Now → Activate**.
 4. Open **Settings → JellyBean Presence**.
 5. Enter this site's **Crisp Website ID** and its dedicated signing key.
    Existing keys are never displayed again; an empty password field keeps the
@@ -46,6 +51,8 @@ from PHP to `fjscqsatzsmfivpczaud.supabase.co`.
    `wp-config.php` using your secret deployment process (never publish that file).
 6. Tick **Enable arrival relay** and click **Save Changes**.
 7. Confirm the displayed origin matches the one enrolled by operations exactly.
+   Click **Test backend connection**. Expect **Connected**. This checks the key,
+   origin, and backend enrollment without creating visitors or sending messages.
 8. Clear the page/CDN cache once. Exclude the `jellybean-presence` script handle
    and `assets/presence.js` from delay-until-interaction features. Do not defer
    the existing Crisp widget until a click if silent-visitor greeting is required.
@@ -76,13 +83,18 @@ subsite separately. No automatic network-wide settings or secret sharing.
    job → accepted send, then compares with the visible greeting time. Only then
    approve rollout. A previously greeted session may correctly receive no new
    greeting because the normal conversation/cooldown rules still apply.
+6. To distinguish widget loading from relay delays, inspect
+   `window.JellyBeanPresenceStatus` in the browser console. It contains local
+   timestamps and a phase only, no signing key or message text. `messageReceivedAt`
+   is a Crisp SDK event, not proof that a person saw the message; record visible
+   display time separately. No arrival request should occur before Crisp consent.
 
 Troubleshooting:
 
 | Symptom                  | Check                                                                                                                              |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
 | No arrival request       | Plugin enabled; ID matches `CRISP_WEBSITE_ID`; Crisp consent/session loaded; no JS delay/WAF block; test a genuinely fresh session |
-| 403 from WordPress       | Site origin mismatch (www/redirect/proxy), disabled relay, missing key                                                             |
+| 401/403 from WordPress   | Site origin mismatch (www/redirect/proxy), disabled relay, missing key                                                             |
 | 503                      | Incorrect or unenrolled key/origin, PHP outbound HTTPS blocked, backend unavailable; ask operations                                |
 | 429                      | Rate protection; stop repeated reloads, leave polling active                                                                       |
 | 202 but slow/no greeting | Operations checks Crisp identity visibility/cache, active poll lease, API quota, prior conversations and greeting cooldown         |

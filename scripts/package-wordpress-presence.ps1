@@ -5,7 +5,7 @@ $output = Join-Path $root 'releases\wordpress'
 New-Item -ItemType Directory -Force $output | Out-Null
 # Package only this reviewed plugin folder. Never include environment files,
 # provisioning output, API keys or the whole repository.
-$zip = Join-Path $output 'jellybean-presence-1.0.0.zip'
+$zip = Join-Path $output 'jellybean-presence-1.1.0.zip'
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $stream = [System.IO.File]::Open($zip, [System.IO.FileMode]::Create)
@@ -26,6 +26,6 @@ try {
     $stream.Dispose()
 }
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-Set-Content -Path "$zip.sha256" -Value "$hash  jellybean-presence-1.0.0.zip" -Encoding ascii
+Set-Content -Path "$zip.sha256" -Value "$hash  jellybean-presence-1.1.0.zip" -Encoding ascii
 Write-Output "Created $zip"
 Write-Output "SHA256: $hash"

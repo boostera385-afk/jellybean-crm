@@ -1,0 +1,34 @@
+JELLYBEAN WORDPRESS PLUGIN 1.1.0 - OFFICE HANDOFF
+
+UPLOAD THIS FILE TO WORDPRESS:
+  jellybean-presence-1.1.0.zip
+
+Do NOT upload a larger ZIP containing this ZIP, instructions, or a key text file.
+If your email attachment is a handoff ZIP, extract it first, then upload ONLY the
+plugin ZIP named above. "No valid plugins were found" commonly means the outer
+handoff archive was uploaded instead of the plugin inside it.
+
+FAST FIX FIRST:
+1. WordPress > Plugins > Add New > Upload Plugin.
+2. Select jellybean-presence-1.1.0.zip > Install Now > Activate.
+3. Settings > JellyBean Presence.
+4. Website ID: 87065a95-c96e-4f0b-867d-a4bbb47e08ec
+5. Enter the dedicated Fast Fix key provided separately by the authorized admin.
+6. Enable arrival relay > Save Changes > Test backend connection.
+7. Expect "Connected". Clear site/CDN cache and test a fresh private window.
+8. Keep the EXISTING Crisp plugin active. Do not add another chat widget.
+
+Send CRM operations: connection test result, site URL, test time/timezone, and
+observed greeting delay. Never send credentials or cookies in screenshots.
+If installation fails, send the EXACT error and filename uploaded, plus your
+WordPress/PHP versions. Do not repeatedly reinstall or change theme files.
+
+Connected means authentication works, NOT that a greeting was visibly delivered.
+Five-second detection is a target, not a verified guarantee. Only Fast Fix is
+enrolled initially. Other websites require their own verified origins and keys.
+
+SHORT MESSAGE TO FORWARD:
+Sir, please ask the website team to upload ONLY jellybean-presence-1.1.0.zip on
+Fast Fix first, keeping the existing Crisp plugin active. Configure the Website
+ID and securely supplied site key, then click Test backend connection. Please
+share the result so CRM operations can verify detection and greeting timing.

@@ -68,11 +68,21 @@ WordPress installation and real navigation-to-visible-greeting testing remain pe
 - Browser retries at most twice on network/5xx, same request ID, with backoff.
   4xx/429 stops submissions for that page. No network heartbeat.
 - PHP transport timeout: 5 seconds; no redirect following; TLS verification on.
-- Durable pending flag survives wake-up failure. Cron can claim it later. A
-  consumed REST read that cannot see the new identity falls back to polling;
-  never forge presence or remove quota controls to meet a latency target.
-- Identity-first one-page reads are used for pending arrival hints. A visitor on
-  a later page or not yet visible through Crisp's API may not be detected instantly.
+- Arrival records track attempts, verification, next check, and expiry. A cached
+  or empty read does not consume the hint permanently: at most three checks over
+  30 seconds are eligible. The handler attempts up to three worker wakes with
+  two-second backoff; existing leases, quotas, and breaker checks still apply.
+  Cron recovers failed wake-ups. Exhausted/expired hints fall back to polling.
+- Arrival-target reads search up to three pages for the specific pending session
+  IDs. A later page, cache delay, or blocked consent can still prevent instant
+  detection. No unsupported cache-busting, fake presence or unbounded retries.
+- Signed `action=check` requests verify enrollment without creating arrivals,
+  visitors or greeting jobs. WordPress exposes the action only through an
+  administrator capability + nonce-protected form, throttled to once/10 seconds.
+- Revisit greetings require a verified offline-to-online boundary after at least
+  two minutes away, plus the existing cooldown. Continuous visits and metadata
+  updates never establish a new visit. The visit watermark is preserved across
+  reloads; visitors who have replied remain suppressed.
 
 ## Verify
 
@@ -88,6 +98,16 @@ Correlate `crisp_site_arrivals.received_at` and its session ID with greeting job
 `created_at`/`sent_at`. These are server-side timestamps, not navigation time or
 proof of visible rendering. The website team must measure navigation → visible
 greeting separately. Backend 202 indicates a durable hint, not a sent greeting.
+
+```sql
+select w.workspace_name,a.received_at,a.attempts,a.verified_at,a.next_attempt_at,a.expires_at,
+       case when a.verified_at is not null then 'verified'
+            when a.expires_at<=now() or a.attempts>=3 then 'polling_fallback'
+            else 'awaiting_crisp_identity' end as verification_status
+from public.crisp_site_arrivals a
+join public.crisp_workspaces w using(crisp_website_id)
+order by a.received_at desc limit 50;
+```
 
 Daily `crisp-site-arrival-cleanup` removes dedup rows older than seven days.
 Use existing Supabase log retention for coarse outcome logs; no signing keys,
@@ -112,6 +132,30 @@ future authenticated hints; it cannot recall a greeting already queued/sent.
 - `php -l integrations/wordpress/jellybean-presence/jellybean-presence.php`
 - `php integrations/wordpress/tests/relay-test.php`
 - `supabase/tests/crisp-site-bridge.sql` (transactional regression suite)
+- `supabase/tests/crisp-arrival-recovery.sql` (bounded retries/cache/target checks)
+- `bun run test:crisp-sql` runs the checked-in offline PGlite harness.
+- Real WordPress installer + activation + REST tests: run pinned Playground CLI
+  3.1.58 `run-blueprint --blueprint integrations/wordpress/tests/install-blueprint.json`
+  with `releases/wordpress` mounted as `/release` and
+  `integrations/wordpress/tests` mounted as `/tests`. The test deliberately checks
+  that a nested handoff ZIP fails while the exact 1.1.0 plugin ZIP installs.
+- Windows wrapper: `powershell -File scripts/test-wordpress-presence.ps1`
+  (optional `-Php 7.4 -WordPress 6.2` for the minimum advertised versions).
 
-The office handoff is `releases/wordpress/INSTALLATION.md`. The ZIP contains only
+The office handoff is `releases/wordpress/START-HERE.txt` plus `INSTALLATION.md`.
+Upload only `jellybean-presence-1.1.0.zip`, NOT an outer handoff archive. The ZIP contains only
 reviewed PHP/JS/readme files; per-site keys must always be delivered separately.
+
+## Validation on 2026-10-17
+
+- Real WordPress installer, activation, settings, anonymous REST permissions,
+  HMAC transport, admin nonce-protected diagnostics, deduplication and uninstall
+  passed on WP 6.2/PHP 7.4 and latest WP/PHP 8.4 (also WP 6.8/PHP 8.3 installer/REST).
+- Nested outer ZIP failure reproduced as `incompatible_archive_no_plugins`.
+- Four transactional SQL suites passed locally and on production through MCP.
+- Worker v26 and arrival endpoint v2 deployed. Signed diagnostics returned
+  `connected`; forged, stale and wrong-origin requests returned 401. No arrival
+  rows were created by diagnostic checks. The two 404 workspaces remain paused.
+- These are backend/local WordPress checks, NOT a real office-site installation
+  or navigation-to-visible-greeting latency measurement. Fast Fix still needs
+  administrator installation and a controlled fresh visit before wider rollout.
