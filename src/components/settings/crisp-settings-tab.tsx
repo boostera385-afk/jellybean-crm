@@ -4,6 +4,11 @@ import { toast } from "sonner";
 import { Loader2, Sparkles, Building2, MessageSquare } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { updateCrispWorkspaceAutoGreet } from "@/lib/crisp.functions";
+import {
+  CRISP_FIRST_GREETING,
+  CRISP_REVISIT_GREETING,
+  CRISP_GREETING_MAX_LENGTH,
+} from "@/lib/crisp-greeting-policy";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -207,12 +212,16 @@ function CrispWorkspaceAutoGreetCard({
         </Label>
         <Textarea
           id={`greet-msg-${workspace.id}`}
-          placeholder="Hi there! 👋 Thanks for visiting — can we help you find anything?"
+          placeholder={CRISP_FIRST_GREETING}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           className="min-h-24 text-xs resize-none"
-          maxLength={2000}
+          maxLength={CRISP_GREETING_MAX_LENGTH}
         />
+        <p className="text-[11px] text-muted-foreground">
+          {message.length}/{CRISP_GREETING_MAX_LENGTH} characters. Keep it to one short question; do
+          not use names.
+        </p>
       </div>
 
       <div className="rounded-lg border border-border/60 p-3.5 space-y-3">
@@ -239,12 +248,16 @@ function CrispWorkspaceAutoGreetCard({
               </Label>
               <Textarea
                 id={`revisit-msg-${workspace.id}`}
-                placeholder="Welcome back, {{name}}! If you still have any questions, I'm right here and happy to help."
+                placeholder={CRISP_REVISIT_GREETING}
                 value={revisitMessage}
                 onChange={(e) => setRevisitMessage(e.target.value)}
                 className="min-h-20 text-xs resize-none"
-                maxLength={2000}
+                maxLength={CRISP_GREETING_MAX_LENGTH}
               />
+              <p className="text-[11px] text-muted-foreground">
+                {revisitMessage.length}/{CRISP_GREETING_MAX_LENGTH} characters. Sent only on an
+                eligible genuine return.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor={`revisit-hours-${workspace.id}`} className="text-xs font-semibold">

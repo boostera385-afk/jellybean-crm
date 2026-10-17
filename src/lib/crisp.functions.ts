@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { crispFetch } from "../../supabase/functions/_shared/crisp-api";
+import { validateCrispGreeting } from "./crisp-greeting-policy";
 
 const CRISP_ROLES = ["admin", "cs_admin", "cs"];
 const CRISP_VISITOR_TIME_ZONE = "Asia/Karachi";
@@ -1046,17 +1047,11 @@ export const updateCrispWorkspaceAutoGreet = createServerFn({ method: "POST" })
       if (enabled && !message) {
         throw new Error("An auto-greeting message is required to enable auto-greeting.");
       }
-      if (message.length > 2000) {
-        throw new Error("Auto-greeting message must be 2000 characters or fewer.");
-      }
+      validateCrispGreeting(message, "Auto-greeting message");
       const revisitEnabled =
         input?.revisitEnabled === undefined ? true : Boolean(input.revisitEnabled);
       const revisitMessage = String(input?.revisitMessage ?? "").trim();
-      if (revisitEnabled && revisitMessage.length > 2000) {
-        throw new Error("Revisit greeting message must be 2000 characters or fewer.");
-      }
-      // Stored as seconds with a 5-minute floor so one browsing session can
-      // never stack greetings, and a 7-day ceiling.
+      validateCrispGreeting(revisitMessage, "Revisit greeting message");
       // Stored as seconds with a 5-minute floor so one browsing session can
       // never stack greetings, and a 7-day ceiling. Default 30 minutes.
       let revisitAfterHours = Number(input?.revisitAfterHours ?? 0.5);

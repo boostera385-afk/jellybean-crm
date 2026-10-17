@@ -6,7 +6,7 @@ DECLARE w text := 'pipeline-test-'||gen_random_uuid(); token uuid; job public.cr
   n integer; observed timestamptz:=now(); payload jsonb; x boolean;
 BEGIN
   INSERT INTO public.crisp_workspaces(crisp_website_id,workspace_name,enabled,auto_greet_enabled,auto_greet_message,greeting_worker_enabled)
-    VALUES(w,'Pipeline test',false,true,'Hello {{ name }}',true);
+    VALUES(w,'Pipeline test',false,true,'Hello there',true);
   IF public.claim_crisp_visitor_sync(w,now()) THEN RAISE EXCEPTION 'Legacy greeting sender active after cutover'; END IF;
   IF has_function_privilege('anon','public.claim_crisp_visitor_sync(text,timestamptz)','execute') THEN RAISE EXCEPTION 'Anonymous presence claim'; END IF;
   IF has_function_privilege('authenticated','public.crisp_reserve_request(text,boolean)','execute') THEN RAISE EXCEPTION 'Public budget mutation'; END IF;
@@ -29,13 +29,13 @@ BEGIN
   IF (SELECT live_visitor_count FROM public.crisp_workspaces WHERE crisp_website_id=w)<>2 THEN
     RAISE EXCEPTION 'Arrival did not raise live counter from webhook event'; END IF;
   SELECT * INTO job FROM public.crisp_claim_greetings(w);
-  IF job.content<>'Hello Tester' THEN RAISE EXCEPTION 'Template/job creation failed'; END IF;
+  IF job.content<>'Hello there' THEN RAISE EXCEPTION 'Template/job creation failed'; END IF;
   IF NOT public.crisp_begin_greeting(job.id,job.lease_token) THEN RAISE EXCEPTION 'Send claim failed'; END IF;
   PERFORM public.crisp_complete_greeting(job.id,job.lease_token,'uncertain',NULL,'Lost response');
   SELECT count(*) INTO n FROM public.crisp_claim_greetings(w);
   IF n<>0 THEN RAISE EXCEPTION 'Ambiguous send retried'; END IF;
   PERFORM public.crisp_apply_event(jsonb_build_object('website_id',w,'event','message:received','timestamp',(extract(epoch from now()-interval '900 milliseconds')*1000)::bigint,
-    'data',jsonb_build_object('session_id','new','from','operator','fingerprint','out-1','content','Hello Tester')));
+    'data',jsonb_build_object('session_id','new','from','operator','fingerprint','out-1','content','Hello there')));
   IF NOT EXISTS(SELECT 1 FROM public.crisp_greeting_jobs WHERE id=job.id AND state='sent' AND external_fingerprint='out-1') THEN RAISE EXCEPTION 'Outgoing confirmation failed'; END IF;
   payload:=jsonb_build_object('website_id',w,'event','message:send','timestamp',(extract(epoch from now())*1000)::bigint,
     'data',jsonb_build_object('session_id','new','from','user','fingerprint','in-1','content','Need help'));

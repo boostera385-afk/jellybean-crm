@@ -50,6 +50,7 @@ CREATE TRIGGER trg_qualified_leads_updated_at BEFORE UPDATE ON public.qualified_
     "crisp_wordpress_presence_bridge",
     "crisp_verified_visit_boundaries",
     "crisp_arrival_verification_recovery",
+    "crisp_compact_greeting_messages",
   ];
   const files = readdirSync(`${root}/supabase/migrations`);
   for (const name of names) {
@@ -62,6 +63,7 @@ CREATE TRIGGER trg_qualified_leads_updated_at BEFORE UPDATE ON public.qualified_
     "crisp-identity-presence.sql",
     "crisp-site-bridge.sql",
     "crisp-arrival-recovery.sql",
+    "crisp-compact-greetings.sql",
   ]) {
     await db.exec(read(`supabase/tests/${test}`));
     console.log(`PASS: ${test}`);
