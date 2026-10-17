@@ -635,6 +635,12 @@ function CrispInboxInner() {
   const workspacesRef = useRef(workspaces);
   const handledConversationLinkRef = useRef<string | null>(null);
   const handledVisitorLinkRef = useRef<string | null>(null);
+  // Synchronous double-submit locks. React state is asynchronous, so two rapid
+  // submit events on mobile (double-tap on Send, or virtual-keyboard Enter plus
+  // a tap) both observe the stale `false` from state and would send the same
+  // message twice to the visitor. Refs update synchronously within the event.
+  const isSendingRef = useRef(false);
+  const isMessagingVisitorRef = useRef(false);
 
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId;
@@ -1360,7 +1366,10 @@ function CrispInboxInner() {
   // Sending an operator reply clears the unread/needs-reply state for this conversation!
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedConversationId || !messageInput.trim() || isSending) return;
+    if (!selectedConversationId || !messageInput.trim()) return;
+    // Refs update synchronously; see the lock comment above.
+    if (isSendingRef.current) return;
+    isSendingRef.current = true;
 
     setIsSending(true);
     const content = messageInput.trim();
@@ -1422,13 +1431,16 @@ function CrispInboxInner() {
       toast.error((err as Error).message || "An unexpected error occurred");
       setMessageInput(content);
     } finally {
+      isSendingRef.current = false;
       setIsSending(false);
     }
   };
 
   const handleMessageVisitor = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedVisitor || !visitorMessage.trim() || isMessagingVisitor) return;
+    if (!selectedVisitor || !visitorMessage.trim()) return;
+    if (isMessagingVisitorRef.current) return;
+    isMessagingVisitorRef.current = true;
 
     setIsMessagingVisitor(true);
     const sendStarted = performance.now();
@@ -1457,6 +1469,7 @@ function CrispInboxInner() {
     } catch (error) {
       toast.error((error as Error).message || "Could not message this visitor");
     } finally {
+      isMessagingVisitorRef.current = false;
       setIsMessagingVisitor(false);
     }
   };
