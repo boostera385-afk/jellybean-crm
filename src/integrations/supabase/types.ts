@@ -350,22 +350,34 @@ export type Database = {
       }
       crisp_site_arrivals: {
         Row: {
+          attempts: number
           crisp_session_id: string
           crisp_website_id: string
+          expires_at: string
+          next_attempt_at: string
           received_at: string
           request_id: string
+          verified_at: string | null
         }
         Insert: {
+          attempts?: number
           crisp_session_id: string
           crisp_website_id: string
+          expires_at?: string
+          next_attempt_at?: string
           received_at?: string
           request_id: string
+          verified_at?: string | null
         }
         Update: {
+          attempts?: number
           crisp_session_id?: string
           crisp_website_id?: string
+          expires_at?: string
+          next_attempt_at?: string
           received_at?: string
           request_id?: string
+          verified_at?: string | null
         }
         Relationships: [
           {
@@ -484,6 +496,7 @@ export type Database = {
           timezone_minutes: number | null
           updated_at: string
           user_agent: string | null
+          visit_started_at: string
         }
         Insert: {
           active?: boolean
@@ -514,6 +527,7 @@ export type Database = {
           timezone_minutes?: number | null
           updated_at?: string
           user_agent?: string | null
+          visit_started_at?: string
         }
         Update: {
           active?: boolean
@@ -544,6 +558,7 @@ export type Database = {
           timezone_minutes?: number | null
           updated_at?: string
           user_agent?: string | null
+          visit_started_at?: string
         }
         Relationships: []
       }
@@ -1697,6 +1712,24 @@ export type Database = {
         Returns: boolean
       }
       crisp_get_site_bridge: { Args: { p_website_id: string }; Returns: Json }
+      crisp_finish_presence_v3: {
+        Args: {
+          p_active: number
+          p_cached: boolean
+          p_complete: boolean
+          p_count: number
+          p_duration_ms: number
+          p_error: string
+          p_limited: boolean
+          p_mode: string
+          p_requests: number
+          p_rows: Json
+          p_started_at: string
+          p_token: string
+          p_website_id: string
+        }
+        Returns: boolean
+      }
       crisp_get_workspace_secret: {
         Args: { p_secret_id: string }
         Returns: Json
@@ -1710,6 +1743,7 @@ export type Database = {
         Args: { p_limit?: number; p_website_id?: string }
         Returns: number
       }
+      crisp_pending_site_sessions: { Args: { p_website_id: string }; Returns: string[] }
       crisp_provision_site_bridge: {
         Args: { p_key: string; p_origin: string; p_website_id: string }
         Returns: undefined
