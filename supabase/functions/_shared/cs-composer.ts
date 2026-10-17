@@ -1,6 +1,6 @@
 /** Shared by the app, Edge Function and tests. No database, env or SDK imports. */
 export const CS_COMPOSER_VERSION = "2026-10-17.answer-aware-v2";
-export const CS_COMPOSER_MODEL = "gpt-5.4-2026-03-05";
+export const CS_COMPOSER_MODEL = "gpt-5.4-nano-2026-03-17";
 
 export const QUESTION_KEYS = [
   "address",

@@ -300,8 +300,14 @@ describe("the exact shared generation pipeline", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     const first = JSON.parse(fetcher.mock.calls[0][1].body);
     const second = JSON.parse(fetcher.mock.calls[1][1].body);
-    expect(first.model).toBe(CS_COMPOSER_MODEL);
+    expect(CS_COMPOSER_MODEL).toBe("gpt-5.4-nano-2026-03-17");
+    expect(first.model).toBe("gpt-5.4-nano-2026-03-17");
+    expect(second.model).toBe("gpt-5.4-nano-2026-03-17");
+    expect(result.model).toBe("gpt-5.4-nano-2026-03-17");
     expect(first.max_completion_tokens).toBe(6000);
+    expect(first.reasoning_effort).toBe("medium");
+    expect(second.response_format).toEqual(first.response_format);
+    expect(first.response_format.json_schema.strict).toBe(true);
     expect(first).not.toHaveProperty("temperature");
     expect(first).not.toHaveProperty("max_tokens");
     expect(first.store).toBe(false);

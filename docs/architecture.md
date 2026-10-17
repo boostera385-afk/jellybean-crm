@@ -291,7 +291,13 @@ using Supabase's sealed `OPENAI_API_KEY` secret.
 | Purpose        | Model                     | Shape                                                           |
 | -------------- | ------------------------- | --------------------------------------------------------------- |
 | Classification | `gpt-5.4-nano-2026-03-17` | `raw_lead_classification`, `strict: true`, 10 per batch         |
-| Rephrasing     | `gpt-5.4-2026-03-05`      | `cs_answer_aware_plan`, strict JSON, draft + independent review |
+| Rephrasing     | `gpt-5.4-nano-2026-03-17` | `cs_answer_aware_plan`, strict JSON, draft + independent review |
+
+CS composition switched from GPT-5.4 to the pinned Nano snapshot on 2026-10-17
+for lower token costs. Both drafting and independent review use Nano; schema,
+reasoning effort, safety guards and permissions are unchanged. The deployed
+`cs-compose-lead` v6 passed two synthetic evaluation cases (known drywall details
+and completed-work/no-contact) without changing customer drafts or sending messages.
 
 Classification is **batched** — `.in()` lookups chunked by 10, posts under 20
 characters skipped, duplicates excluded, at most 50 rows per request, results
