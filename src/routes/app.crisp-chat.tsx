@@ -50,6 +50,7 @@ import {
   syncCrispHistory,
   type CrispVisitor,
 } from "@/lib/crisp.functions";
+import { mergeIncomingMessage } from "@/lib/crisp-chat-messages";
 import { useCrispVisitors } from "@/hooks/use-crisp-visitors";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -1049,11 +1050,10 @@ function CrispInboxInner() {
           if (activeId && newMsg && newMsg.conversation_id === activeId) {
             const nearBottom = isNearBottom();
 
-            // Append new message without discarding loaded older pages
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === newMsg.id)) return prev;
-              return [...prev, newMsg];
-            });
+            // Append without discarding loaded older pages. A previously
+            // appended optimistic placeholder for this same send is upgraded
+            // in place so the reply never renders twice.
+            setMessages((prev) => mergeIncomingMessage(prev, newMsg));
 
             if (nearBottom) {
               setTimeout(() => scrollToBottom("smooth"), 30);
@@ -1379,14 +1379,17 @@ function CrispInboxInner() {
         toast.error(res.error || "Could not send message");
         setMessageInput(content);
       } else {
-        // Optimistically append message to UI instantly
+        // Optimistically append message to UI instantly. Carry Crisp's send
+        // fingerprint so the realtime acknowledgement can replace this
+        // placeholder instead of duplicating the bubble.
         setMessages((prev) => {
+          const now = Date.now();
           const tempMsg: MessageRecord = {
-            id: `temp_${Date.now()}`,
+            id: `temp_${now}`,
             conversation_id: selectedConversationId,
             crisp_website_id: activeConversation?.crisp_website_id || "",
             crisp_session_id: activeConversation?.crisp_session_id || "",
-            crisp_message_id: `temp_${Date.now()}`,
+            crisp_message_id: res.crisp_message_id ?? null,
             sender_type: "operator",
             direction: "outgoing",
             content: content,
