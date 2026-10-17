@@ -159,3 +159,30 @@ reviewed PHP/JS/readme files; per-site keys must always be delivered separately.
 - These are backend/local WordPress checks, NOT a real office-site installation
   or navigation-to-visible-greeting latency measurement. Fast Fix still needs
   administrator installation and a controlled fresh visit before wider rollout.
+
+## Validation on 2026-10-17 (plugin v1.2.0 + compact greetings)
+
+- Greeting copy shortened and made name-free for all 13 workspaces via migration
+  `20261017053142_crisp_compact_greeting_messages` (applied on production through
+  MCP). New 120-char and `{{name}}`-rejection CHECK constraints verified by
+  `supabase/tests/crisp-compact-greetings.sql` (local PGlite + production).
+  Pending greeting jobs adopted the new copy; delivered history untouched.
+- Save-side enforcement: `src/lib/crisp-greeting-policy.ts` (vitest covered) and
+  settings UI counters/placeholders updated. tsc, ESLint, prettier, and all 192
+  vitest tests pass.
+- Plugin v1.2.0 adds `assets/chat-safety.css`, which disables only the legacy
+  `isolated-govee-popup-frame` promotion iframe found on goveeinstallation.com and
+  goveeinstallers.net (transparent fixed iframe, z-index 2147483646, overlapping
+  Crisp's preview/close area). Live-browser probes (Playwright + Edge, desktop and
+  390x844 mobile emulation) confirmed the overlap; Crisp itself stayed untouched.
+- Regression `scripts/test-crisp-chat-safety.mjs` (`bun run test:crisp-chat-safety`)
+  proves the native close control remains clickable on mouse and touch, and the
+  launcher/unrelated iframes are unaffected, including after the legacy snippet
+  redisplay attempt.
+- Real WordPress install/activation/REST/uninstall passed for v1.2.0 on
+  WP 6.2/PHP 7.4 and latest WP/PHP 8.4. PHP lint and 16 offline relay tests pass.
+- Release: `releases/wordpress/jellybean-presence-1.2.0.zip`
+  SHA256 `CC8D56594BF8B5A6C3EC00D2CA8F0403CAF0AFEF7F4D136A6020B4B0CF361DBF`;
+  contents scanned: no credentials. Handoff copied to Downloads
+  `JellyBean-WordPress-1.2.0` with `START-HERE.txt`, `INSTALLATION.md`,
+  `CLOSE-BUTTON-FIX.txt`.

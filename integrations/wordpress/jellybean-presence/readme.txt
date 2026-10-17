@@ -1,7 +1,7 @@
 === JellyBean Visitor Presence ===
 Requires at least: 6.2
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPL-2.0-or-later
 
 Uses the existing Crisp widget to send signed, rate-limited arrival hints to your
@@ -20,6 +20,13 @@ active. Save settings, then click Test backend connection. This authenticated
 diagnostic does not create a visitor or send any greeting. See the accompanying
 office handoff guide before enabling. Upload the plugin ZIP itself, not an outer
 handoff ZIP containing another ZIP.
+
+Version 1.2.0 also disables the known legacy isolated-govee-popup-frame promotion
+overlay, which can sit over Crisp's dismiss control. This narrowly scoped style
+loads while the plugin is active, independently of relay/key configuration.
+It does not hide Crisp or mark unread messages as read. Prefer removing the
+old Govee popup snippet in WPCode permanently. Deactivate this plugin to remove
+both the style protection and arrival relay.
 
 This plugin makes outbound HTTPS POST requests to:
 https://fjscqsatzsmfivpczaud.supabase.co/functions/v1/crisp-site-arrival

@@ -14,12 +14,12 @@ function jb_assert($condition, $message) {
     echo 'PASS: ' . $message . "\n";
 }
 
-$release = '/release/jellybean-presence-1.1.0.zip';
+$release = '/release/jellybean-presence-1.2.0.zip';
 jb_assert(is_file($release), 'Exact release ZIP is mounted');
 // Reproduce the office packaging mistake with a harmless local fixture.
 $zip = new ZipArchive();
 $zip->open('/tmp/office-handoff.zip', ZipArchive::CREATE);
-$zip->addFile($release, 'handoff/jellybean-presence-1.1.0.zip');
+$zip->addFile($release, 'handoff/jellybean-presence-1.2.0.zip');
 $zip->addFromString('handoff/INSTALLATION.txt', 'Extract this archive first.');
 $zip->close();
 $bad = new Plugin_Upgrader(new Automatic_Upgrader_Skin());
@@ -34,10 +34,12 @@ $installed = $upgrader->install($release);
 jb_assert(true === $installed, 'Real WordPress installer accepts plugin release ZIP');
 $slug = 'jellybean-presence/jellybean-presence.php';
 $plugins = get_plugins();
-jb_assert(isset($plugins[$slug]) && '1.1.0' === $plugins[$slug]['Version'], 'WordPress discovers plugin header and version');
+jb_assert(isset($plugins[$slug]) && '1.2.0' === $plugins[$slug]['Version'], 'WordPress discovers plugin header and version');
 jb_assert(null === activate_plugin($slug, '', false, false), 'Plugin activates without a fatal error');
 jb_assert(is_plugin_active($slug), 'WordPress records active plugin');
 jb_assert(false === get_option('jellybean_presence')['enabled'], 'Fresh installation is disabled until configured');
+JellyBean_Visitor_Presence::enqueue();
+jb_assert(isset(wp_styles()->registered['jellybean-chat-safety']), 'Legacy popup protection works without enabling the arrival relay');
 
 update_option('home', 'https://example.com');
 JellyBean_Visitor_Presence::settings();

@@ -1,7 +1,7 @@
-JELLYBEAN WORDPRESS PLUGIN 1.1.0 - OFFICE HANDOFF
+JELLYBEAN WORDPRESS PLUGIN 1.2.0 - OFFICE HANDOFF
 
 UPLOAD THIS FILE TO WORDPRESS:
-  jellybean-presence-1.1.0.zip
+  jellybean-presence-1.2.0.zip
 
 Do NOT upload a larger ZIP containing this ZIP, instructions, or a key text file.
 If your email attachment is a handoff ZIP, extract it first, then upload ONLY the
@@ -10,7 +10,7 @@ handoff archive was uploaded instead of the plugin inside it.
 
 FAST FIX FIRST:
 1. WordPress > Plugins > Add New > Upload Plugin.
-2. Select jellybean-presence-1.1.0.zip > Install Now > Activate.
+2. Select jellybean-presence-1.2.0.zip > Install Now > Activate.
 3. Settings > JellyBean Presence.
 4. Website ID: 87065a95-c96e-4f0b-867d-a4bbb47e08ec
 5. Enter the dedicated Fast Fix key provided separately by the authorized admin.
@@ -27,8 +27,20 @@ Connected means authentication works, NOT that a greeting was visibly delivered.
 Five-second detection is a target, not a verified guarantee. Only Fast Fix is
 enrolled initially. Other websites require their own verified origins and keys.
 
+FIX FOR SIR'S CLOSE-BUTTON REPORT:
+Version 1.2.0 also prevents the old Govee popup iframe from covering Crisp's close
+button. Install/update it on the affected Govee sites and clear page/CDN caches.
+This style protection works on activation without a key. Leave the arrival relay
+OFF on unenrolled sites. Keep the original Crisp plugin ON. Alternatively, the
+website administrator can remove the old Govee popup snippet in WPCode; see the
+separate CLOSE-BUTTON-FIX.txt. Do not install two copies of this JellyBean plugin.
+
+First and returning-visitor greeting texts have already been shortened in CRM.
+Existing delivered messages/history are not rewritten or force-resent.
+
 SHORT MESSAGE TO FORWARD:
-Sir, please ask the website team to upload ONLY jellybean-presence-1.1.0.zip on
-Fast Fix first, keeping the existing Crisp plugin active. Configure the Website
-ID and securely supplied site key, then click Test backend connection. Please
-share the result so CRM operations can verify detection and greeting timing.
+Sir, greetings are now short for first and returning visitors. Please ask the
+website team to update the attached plugin to version 1.2.0 on the affected Govee
+sites and clear caches; it disables the duplicate popup overlay that can block
+Crisp's close button. Keep the original Crisp plugin active. Please confirm the
+close button works on desktop and mobile after the update.

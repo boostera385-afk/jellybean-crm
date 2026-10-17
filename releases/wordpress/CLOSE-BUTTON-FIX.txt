@@ -1,0 +1,39 @@
+CLOSE BUTTON ON GOVEE WEBSITES - WEBSITE ADMINISTRATOR
+
+Evidence: goveeinstallation.com and goveeinstallers.net include a separate
+custom popup iframe with ID isolated-govee-popup-frame. It is fixed above Crisp
+(z-index 2147483646) and its transparent hit area can intercept clicks/taps.
+This popup is NOT the actual Crisp widget.
+
+PREFERRED PERMANENT FIX:
+In WordPress > WPCode (or your snippet manager), find the custom snippet containing
+"isolated-govee-popup-frame" or "GOVEE_OPEN_CRISP" and disable that duplicate
+promotion only. Keep the original Crisp chat plugin/widget enabled. Clear all
+page/CDN caches. Do not delete unrelated snippets or conversation history.
+
+PLUGIN FIX:
+Update/install jellybean-presence-1.2.0.zip and activate it. The narrowly scoped
+CSS protection runs without any signing key or relay enrollment. Leave the
+arrival relay OFF on sites not yet enrolled by CRM operations.
+
+ALTERNATIVE QUICK CSS FIX (if updating the plugin must wait):
+Add this under the site's approved Additional CSS process, then clear caches:
+
+iframe#isolated-govee-popup-frame {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+ACCEPTANCE CHECK:
+On both desktop and mobile, receive/open a chat preview and click/tap its X.
+It must dismiss and stay dismissed during the same visit. The Crisp launcher
+must remain visible and able to reopen chat. Test once more after page reload.
+If it still fails, send the exact URL plus a recording; another site-specific
+overlay or widget setting may need investigation. Do not force-hide Crisp or
+mark messages read as a workaround.
+
+GREETING TEXTS:
+First visit (Govee): Hi! Need help installing Govee lights?
+Eligible returning visit: Welcome back! How can we help?
+These texts are already updated in JellyBean. Templates now have a 120-character
+limit; no unverified names. Previously delivered history is not altered.

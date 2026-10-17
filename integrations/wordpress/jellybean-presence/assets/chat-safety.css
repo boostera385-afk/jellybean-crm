@@ -1,0 +1,7 @@
+/* A legacy WPCode promotion uses a transparent fixed iframe above Crisp. Its
+   empty hit area can cover the real dismiss button on desktop and mobile.
+   Keep only Crisp's native greeting/launcher. Do not target .crisp-client. */
+iframe#isolated-govee-popup-frame {
+  display: none !important;
+  pointer-events: none !important;
+}

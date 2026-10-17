@@ -2,7 +2,7 @@
 /**
  * Plugin Name: JellyBean Visitor Presence
  * Description: Sends signed arrival hints to JellyBean using your existing Crisp widget. Does not install another chat widget.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Requires at least: 6.2
  * Requires PHP: 7.4
  * License: GPL-2.0-or-later
@@ -100,6 +100,7 @@ final class JellyBean_Visitor_Presence {
             <h1>JellyBean Visitor Presence</h1>
             <?php if ($check) : ?><div class="notice notice-info"><p><?php echo esc_html($check); ?></p></div><?php endif; ?>
             <p>Keep the existing Crisp plugin active. This relay does not install a second widget or send messages itself.</p>
+            <p>The legacy Govee popup overlay is disabled while this plugin is active so it cannot cover Crisp's close control. The relay switch below controls arrival signals only.</p>
             <?php settings_errors(self::OPTION); ?>
             <form method="post" action="options.php">
                 <?php settings_fields('jellybean_presence_group'); ?>
@@ -131,11 +132,14 @@ final class JellyBean_Visitor_Presence {
     }
 
     public static function enqueue() {
+        // Independent of relay enrollment. Disable only the known duplicate
+        // WPCode iframe, not Crisp, its launcher or other website controls.
+        wp_enqueue_style('jellybean-chat-safety', plugins_url('assets/chat-safety.css', __FILE__), array(), '1.2.0');
         $config = self::config();
         if (empty($config['enabled']) || !self::configured($config)) {
             return;
         }
-        wp_enqueue_script('jellybean-presence', plugins_url('assets/presence.js', __FILE__), array(), '1.1.0', true);
+        wp_enqueue_script('jellybean-presence', plugins_url('assets/presence.js', __FILE__), array(), '1.2.0', true);
         // ONLY public configuration. No shared key, visitor name, email or token.
         wp_add_inline_script('jellybean-presence', 'window.JellyBeanPresence=' . wp_json_encode(array(
             'websiteId' => $config['website_id'],

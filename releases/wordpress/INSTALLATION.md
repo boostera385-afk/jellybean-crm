@@ -2,7 +2,7 @@
 
 ## What you are installing
 
-Install **jellybean-presence-1.1.0.zip** once on each approved WordPress website.
+Install **jellybean-presence-1.2.0.zip** once on each approved WordPress website.
 The same ZIP works for all sites. Do not edit theme files or individual pages.
 Keep the existing Crisp chat plugin/snippet active: this plugin does not replace
 it, install another widget, or send messages itself.
@@ -10,7 +10,19 @@ it, install another widget, or send messages itself.
 **Important: upload the plugin ZIP itself.** If your email/download is an outer
 handoff ZIP containing instructions and another ZIP, extract that outer archive
 first. WordPress cannot install an archive containing only another ZIP. Version
-1.1.0 supersedes the previous 1.0.0 handoff.
+1.2.0 supersedes the previous 1.0.0/1.1.0 handoffs. If already installed, upload
+the new ZIP and choose **Replace current with uploaded**; saved settings remain.
+
+### Visitor-side close button fix (Govee sites)
+
+The sites contain a separate WPCode promotion iframe named
+`isolated-govee-popup-frame`. Its transparent high-z-index hit area can overlap
+Crisp. Version 1.2.0 disables only that legacy iframe. It does not hide Crisp,
+mark messages read, or force the chat open/closed. This CSS protection activates
+without configuring the presence relay. Install/activate the plugin on affected
+Govee sites, clear caches, and leave the relay OFF until that site's enrollment.
+Alternatively remove the old popup snippet in WPCode permanently; see
+`CLOSE-BUTTON-FIX.txt`. Do not remove the actual Crisp widget snippet/plugin.
 
 **Start with Fast Fix only.** Roll out other healthy sites after CRM operations
 checks the first-site telemetry. Do not enable the two paused drywall workspaces.
@@ -43,7 +55,7 @@ from PHP to `fjscqsatzsmfivpczaud.supabase.co`.
 
 1. Back up the site and follow your normal plugin change process.
 2. Open **Plugins → Add New Plugin → Upload Plugin**.
-3. Choose `jellybean-presence-1.1.0.zip` → **Install Now → Activate**.
+3. Choose `jellybean-presence-1.2.0.zip` → **Install Now → Activate**.
 4. Open **Settings → JellyBean Presence**.
 5. Enter this site's **Crisp Website ID** and its dedicated signing key.
    Existing keys are never displayed again; an empty password field keeps the
@@ -107,6 +119,10 @@ Untick **Enable arrival relay** or deactivate **JellyBean Visitor Presence**.
 Keep the original Crisp plugin active. Existing polling and Marketplace hooks
 continue unchanged. Clear the page cache again. Ask operations to disable that
 site's bridge or rotate/revoke its dedicated key.
+
+The relay switch stops arrival signals only. Deactivating the entire plugin also
+removes the legacy-popup CSS protection; remove the old WPCode popup permanently
+if it must remain fixed after deactivation.
 
 Uninstalling removes this plugin's saved settings/key for the current site.
 Short-lived WordPress rate/dedup transients expire naturally. On multisite,

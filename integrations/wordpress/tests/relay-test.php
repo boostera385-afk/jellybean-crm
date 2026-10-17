@@ -12,6 +12,7 @@ function current_user_can($capability) { return true; }
 function add_settings_error() {}
 function plugins_url($path, $file) { return 'https://example.com/plugins/' . $path; }
 function wp_enqueue_script() {}
+function wp_enqueue_style() {}
 function wp_add_inline_script($handle, $value) { $GLOBALS['inline'] = $value; }
 function rest_url($path) { return 'https://example.com/wp-json/' . $path; }
 function wp_json_encode($value, $flags = 0) { return json_encode($value, $flags); }
