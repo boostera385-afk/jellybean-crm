@@ -95,6 +95,16 @@ describe("the service context reads correctly after 'looking for'", () => {
     ).toBe("a driveway service");
   });
 
+  it("documents the single phrase not taken from the delivered messages", () => {
+    // Every ask phrase is lifted verbatim from the export (asserted over the
+    // whole catalogue in cs-ask-catalogue.test.ts). This last-resort service
+    // context is the one exception, reached on 0.41% of leads. If this ever
+    // needs to change it is a copy decision, not a measured one.
+    expect(serviceContextForLead(lead({ service: null, context: "help" }))).toBe(
+      "the service you need",
+    );
+  });
+
   it("never produces a bare noun with an article", () => {
     // "help" would otherwise render as "a help".
     const phrase = serviceContextForLead(lead({ service: null, context: "Customer needs help" }));

@@ -4,7 +4,7 @@ import type { AskIntent } from "./cs-ask-catalogue-types.ts";
 import { detect, normalizeSource, type Detection } from "./cs-detect.ts";
 import { fragmentsAreSafe, selectAsks, type SelectedAsk } from "./cs-ask-policy.ts";
 
-export const CS_COMPOSER_VERSION = "2026-10-19.catalogue-v3.1";
+export const CS_COMPOSER_VERSION = "2026-10-19.catalogue-v3.2";
 export const CS_COMPOSER_MODEL = "gpt-5.4-nano-2026-03-17";
 
 export type ComposerInput = {

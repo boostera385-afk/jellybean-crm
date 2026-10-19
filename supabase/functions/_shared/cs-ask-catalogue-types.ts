@@ -57,7 +57,11 @@ export type AskCatalogue = {
    *  is consulted before the global list. */
   pairsByKey: Record<string, AskPair[]>;
   solo: Partial<Record<AskIntent, number>>;
-  /** Keyed `INTENT|object`; phrase may contain a single `{object}` slot. */
+  /** Keyed `INTENT|object`; phrase may contain one `{object}`/`{objects}` slot. */
   wording: Record<string, { phrase: string; n: number }>;
+  /** Keyed `INTENT|object|action`, consulted first: one object's phrase is not
+   *  interchangeable across jobs, since a sofa being cleaned is not "items
+   *  that need to be moved". */
+  wordingByAction: Record<string, { phrase: string; n: number }>;
   genericWording: Record<string, { phrase: string; n: number }>;
 };

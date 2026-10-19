@@ -97,22 +97,86 @@ export function resolveLadder(
  *  which the catalogue has a measured form for 29 objects. */
 const OBJECT_BOUND_INTENTS = new Set<AskIntent>(["OWNERSHIP", "QUANTITY", "SIZE"]);
 
-/** The team's phrase for this ask, with the object slotted in. Object-specific
- *  wording wins; a generic phrase is used only when one was measured. */
-export function wordingFor(intent: AskIntent, object: string | null): string | null {
-  const specific = object ? CS_ASK_CATALOGUE.wording[`${intent}|${object}`] : undefined;
-  if (!specific && OBJECT_BOUND_INTENTS.has(intent)) return null;
-  const entry = specific ?? CS_ASK_CATALOGUE.genericWording[intent];
-  if (!entry) return null;
+/** The verbs a phrase uses to name the job it belongs to. Used to catch a
+ *  phrase borrowed from the wrong job: a sofa being CLEANED must never be
+ *  asked about as "items that need to be moved". */
+const ACTION_WORDS: Record<string, RegExp> = {
+  move: /\bmov(?:e|ed|es|ing)\b/i,
+  clean: /\bclean(?:ed|s|ing)?\b|\bwash(?:ed|es|ing)?\b/i,
+  install: /\binstall\w*|\bmount\w*|\bassembl\w*|\bhang\w*|\bhung\b/i,
+  replace: /\breplac\w*/i,
+  remove: /\bremov\w*|\bhaul\w*/i,
+  repair: /\brepair\w*|\bfix\w*/i,
+  maintain: /\bmaintenance\b|\binspect\w*/i,
+};
+
+/** Jobs close enough that each other's wording still reads correctly: fitting
+ *  a new unit and swapping an old one are described the same way. */
+const COMPATIBLE: Record<string, string[]> = {
+  install: ["replace"],
+  replace: ["install"],
+};
+
+/** True when a phrase names a job other than the one this lead is about. */
+export function contradictsAction(phrase: string, action: string | null): boolean {
+  if (!action) return false;
+  const allowed = [action, ...(COMPATIBLE[action] ?? [])];
+  if (allowed.some((name) => ACTION_WORDS[name]?.test(phrase))) return false;
+  return Object.entries(ACTION_WORDS).some(
+    ([name, pattern]) => !allowed.includes(name) && pattern.test(phrase),
+  );
+}
+
+function render(phrase: string, object: string | null): string | null {
   const [singular, plural] = CS_ASK_CATALOGUE.objectLabels[object ?? ""] ?? ["", ""];
-  const phrase = entry.phrase
+  const filled = phrase
     .replace(/\{objects\}/g, plural)
     .replace(/\{object\}/g, singular)
     .replace(/\s+/g, " ")
     .trim();
   // An unfilled slot would reach a customer as "{object}". Drop the ask rather
   // than send a placeholder; the next candidate takes the slot.
-  return phrase.includes("{") || !phrase ? null : phrase;
+  return filled.includes("{") || !filled ? null : filled;
+}
+
+/**
+ * The team's phrase for this ask, and which object it is scoped to.
+ *
+ * Most specific first: the phrase measured for this object doing THIS job,
+ * then the object's phrase whatever the job, then an object-free generic. A
+ * candidate naming a different job is skipped rather than sent, and an
+ * object-bound intent is dropped entirely rather than falling back to a vague
+ * generic ("let me know the size" - of what?).
+ */
+export function resolveWording(
+  intent: AskIntent,
+  object: string | null,
+  action: string | null,
+): { phrase: string; object: string | null } | null {
+  const scoped = object && action ? `${intent}|${object}|${action}` : "";
+  const objectForms = [
+    scoped ? CS_ASK_CATALOGUE.wordingByAction[scoped] : undefined,
+    object ? CS_ASK_CATALOGUE.wording[`${intent}|${object}`] : undefined,
+  ];
+  for (const entry of objectForms) {
+    if (!entry) continue;
+    const phrase = render(entry.phrase, object);
+    if (phrase && !contradictsAction(phrase, action)) return { phrase, object };
+  }
+  if (OBJECT_BOUND_INTENTS.has(intent)) return null;
+  const generic = CS_ASK_CATALOGUE.genericWording[intent];
+  if (!generic) return null;
+  const phrase = render(generic.phrase, null);
+  return phrase && !contradictsAction(phrase, action) ? { phrase, object: null } : null;
+}
+
+/** Phrase only; see resolveWording. */
+export function wordingFor(
+  intent: AskIntent,
+  object: string | null,
+  action: string | null = null,
+): string | null {
+  return resolveWording(intent, object, action)?.phrase ?? null;
 }
 
 type Candidate = { entry: LadderEntry; fragment: string; object: string | null };
@@ -135,52 +199,26 @@ function candidatesFor(
       suppressed.push(entry.intent);
       continue;
     }
-    const object = CS_ASK_CATALOGUE.wording[`${entry.intent}|${targetObject}`]
-      ? targetObject
-      : null;
-    let fragment = wordingFor(entry.intent, object);
+    const resolved = resolveWording(entry.intent, targetObject, detection.action);
+    if (!resolved) continue;
+    let { phrase: fragment, object } = resolved;
     // Moving inside one property is not a route: fall back to the plain
     // address ask rather than requesting a drop-off the job does not have.
-    if (
-      fragment &&
-      entry.intent === "ADDRESS" &&
-      detection.sameSite &&
-      /pick.?up/i.test(fragment)
-    ) {
-      fragment = wordingFor("ADDRESS", null);
+    if (entry.intent === "ADDRESS" && detection.sameSite && /pick.?up/i.test(fragment)) {
+      const plain = resolveWording("ADDRESS", null, detection.action);
+      if (!plain) continue;
+      fragment = plain.phrase;
+      object = null;
     }
-    // Historical wording must still fit today's job. For example the window
-    // QUANTITY phrase says "need to be cleaned", which is wrong for replacement.
-    if (fragment && entry.intent === "OWNERSHIP") {
+    // An off-track door does not establish a broken spring: never introduce a
+    // replacement component the customer has never mentioned. This is a
+    // separate rule from the action guard above - it is about not inventing a
+    // part, not about naming the wrong job.
+    if (entry.intent === "OWNERSHIP") {
       const part = /\breplacement ([a-z][a-z-]*)/i.exec(fragment)?.[1];
-      // An off-track door does not establish a broken spring. Do not introduce
-      // a replacement component that the customer has never mentioned.
       if (part && !new RegExp(`\\b${part.replace(/s$/, "")}s?\\b`, "i").test(sources)) continue;
     }
-    if (
-      fragment &&
-      entry.intent === "PHOTO" &&
-      detection.action &&
-      detection.action !== "repair" &&
-      /\brepair(?:ed)?\b/i.test(fragment)
-    ) {
-      fragment = wordingFor("PHOTO", null);
-    }
-    if (
-      fragment &&
-      detection.action &&
-      detection.action !== "clean" &&
-      /\b(?:cleaned|cleaning)\b/i.test(fragment)
-    )
-      continue;
-    if (
-      fragment &&
-      detection.action &&
-      !["install", "replace"].includes(detection.action) &&
-      /where .*\binstalled\b/i.test(fragment)
-    )
-      continue;
-    if (fragment) candidates.push({ entry, fragment, object });
+    candidates.push({ entry, fragment, object });
   }
   return { candidates, suppressed };
 }
