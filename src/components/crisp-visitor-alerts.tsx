@@ -60,6 +60,12 @@ function visitorLocation(visitor: CrispVisitor): string {
  * visitor leaves their card disappears on its own. The only action is "Send
  * Message", which jumps straight into the Crisp chat tab deep-linked to that
  * visitor so an operator can reach out.
+ *
+ * These cards are ambient, so they sit at z-40: BELOW the dialog layer. Every
+ * dialog, sheet and alert-dialog is z-50, and the comboboxes that have to open
+ * inside one are z-[70]/z-[80]. At z-[95] a visitor going live floated over an
+ * open record and covered that dialog's own buttons, which is the one thing an
+ * ambient notification must never do.
  */
 export function CrispVisitorAlerts() {
   const { roles, primaryRole, user } = useAuth();
@@ -196,7 +202,7 @@ export function CrispVisitorAlerts() {
 
   return (
     <div
-      className={`pointer-events-none fixed bottom-4 right-4 z-[95] flex max-w-[calc(100vw-2rem)] flex-col items-end ${onCrispTab ? "lg:hidden" : ""}`}
+      className={`pointer-events-none fixed bottom-4 right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end ${onCrispTab ? "lg:hidden" : ""}`}
     >
       <div className="pointer-events-auto flex w-80 max-w-full flex-col gap-2 max-h-[50vh] overflow-y-auto overscroll-contain pr-0.5">
         {liveVisitors.map((visitor) => {
