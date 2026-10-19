@@ -314,7 +314,7 @@ strongly sub-category dependent. v2 contradicted all three.
 | ----------------------------------------------------- | ---------------------------------- |
 | Which asks are candidates                             | ladder per `object\|action`        |
 | Ask order and legal pairs                             | per-sub-category joint pair counts |
-| Exact wording                                         | `intent \| object` lexicon         |
+| Exact wording                                         | `intent\|object\|action` lexicon   |
 | Brand / problem / size / quantity suppression         | measured 2-18x suppression         |
 | Availability / ownership / photo / storey suppression | **code** — data showed ~1.0x       |
 | Ask count                                             | **code** — data showed no decrease |
@@ -343,6 +343,24 @@ Manual one-click suggestions read saved main/sub-area fields as well as CS
 notes, and do not fall back to stale requirements after suppression. A completed
 job gets a short acknowledgment, not a new pair of qualification questions.
 Existing auto-rephrase and sending toggles are not changed by this renderer fix.
+
+Wording is keyed `intent|object|action` and falls back to `intent|object`,
+because a phrase does not travel between jobs: a sofa being cleaned must not be
+asked about as "items that need to be moved". Where no action-scoped phrase was
+well enough attested, `contradictsAction` rejects an object-level phrase that
+names a different job and the next candidate takes the slot. Object detection
+is likewise job-aware: `furniture_assembly` precedes `furniture_move` (395
+assembly rows were being sent the moving ask, though only 6.6% of them ever
+mentioned a pickup route) and `roof` precedes `pipe_leak` (96 roof-leak rows
+were getting the plumbing ladder instead of storeys and address).
+
+Every one of the 565 phrases the catalogue can emit appears verbatim in the
+delivered messages; a test asserts this over the whole catalogue. The single
+exception anywhere in the system is the chip's last-resort service context
+("the service you need"), reached on 0.41% of the export where there is no
+service column, no identifiable object and no usable context. On those rows the
+team wrote a trade it had inferred by hand, so there is no house wording to
+copy; the string is flagged in code and by test as a copy decision.
 
 Classification is **batched** — `.in()` lookups chunked by 10, posts under 20
 characters skipped, duplicates excluded, at most 50 rows per request, results

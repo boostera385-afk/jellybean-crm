@@ -12,6 +12,7 @@ import {
   HARD_GUARDS,
 } from "../../supabase/functions/_shared/cs-detect";
 import {
+  contradictsAction,
   fragmentsAreSafe,
   resolveLadder,
   selectAsks,
@@ -294,6 +295,65 @@ describe("sub-category ladders decide the lead ask", () => {
     const ladder = CS_ASK_CATALOGUE.ladders.none.entries.map((entry) => entry.intent);
     expect(ladder).toContain("SCOPE");
     expect(ladder).toContain("ADDRESS");
+  });
+});
+
+describe("a phrase is never borrowed from a different kind of job", () => {
+  it("asks an assembly job about assembling, not moving", () => {
+    // 395 assembly rows: the team asked for a photo of the items "that need to
+    // be assembled" plus a plain address. Only 26 of them (6.6%) ever
+    // mentioned a pickup route, and furniture_move's pattern was swallowing
+    // the word "furniture" and sending them the moving ask.
+    const selection = ask("Furniture Assembly", "Looking for someone to assemble a bed frame");
+    expect(selection.ladderKey).toMatch(/^furniture_assembly/);
+    const text = selection.asks.map((entry) => entry.fragment).join(" and ");
+    expect(text).toMatch(/assembled/);
+    expect(text).not.toMatch(/moved|pick.?up/i);
+  });
+
+  it("still asks a real move for the route", () => {
+    const text = ask("Moving Help", "Need movers for a sofa, moving to our new place")
+      .asks.map((entry) => entry.fragment)
+      .join(" and ");
+    expect(text).toMatch(/moved/);
+    expect(text).toMatch(/pickup and drop off addresses/);
+  });
+
+  it("treats a roof leak as a roof job, not plumbing", () => {
+    // 96 rows said "roof" but pipe_leak's \bleak\w* claimed them first. The
+    // team asked those about storeys and the address.
+    const selection = ask("Roof Leak Repair", "I have a roof leak over the kitchen");
+    expect(selection.ladderKey).toMatch(/^roof/);
+    expect(intents(selection)).toContain("STORIES");
+  });
+
+  it("does not ask a sofa being cleaned about items that need to be moved", () => {
+    // furniture_move|clean is upholstery cleaning. No action-scoped phrase
+    // reached the threshold here, so the guard has to reject the object-level
+    // phrase rather than send a contradiction.
+    const text = ask("Carpet Cleaning Service", "Need my sofa and couch cleaned")
+      .asks.map((entry) => entry.fragment)
+      .join(" and ");
+    expect(text).not.toMatch(/moved|pick.?up/i);
+  });
+
+  it("rejects any phrase naming an action other than this job's", () => {
+    expect(contradictsAction("share pictures of the items that need to be moved", "clean")).toBe(
+      true,
+    );
+    expect(contradictsAction("share pictures of the items that need to be moved", "move")).toBe(
+      false,
+    );
+    // Action-neutral phrasing is always allowed.
+    expect(contradictsAction("share your complete address", "clean")).toBe(false);
+    expect(contradictsAction("share some pictures", "move")).toBe(false);
+    // No detected action means nothing to contradict.
+    expect(contradictsAction("items that need to be moved", null)).toBe(false);
+  });
+
+  it("prefers the phrase measured for this object doing this job", () => {
+    expect(wordingFor("PHOTO", "furniture_move", "move")).toMatch(/moved/);
+    expect(wordingFor("PHOTO", "furniture_assembly", "install")).toMatch(/assembled/);
   });
 });
 

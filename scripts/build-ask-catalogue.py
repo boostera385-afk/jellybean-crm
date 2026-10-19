@@ -83,6 +83,7 @@ OBJECTS: list[tuple[str, str, str, str]] = [
     ("faucet", r"faucet|spigot", "faucet", "faucets"),
     ("toilet", r"toilet|commode", "toilet", "toilets"),
     ("sink_drain", r"\bsink\b|\bdrains?\b|\bclog\w*", "sink", "sinks"),
+    ("roof", r"\broof\w*", "roof", "roofs"),
     ("pipe_leak", r"\bpipes?\b|\bplumbing\b|\bleak\w*", "pipe", "pipes"),
     ("shower_tub", r"shower|bathtub|\btubs?\b", "shower", "showers"),
     ("door", r"\bdoors?\b|\bgates?\b", "door", "doors"),
@@ -91,7 +92,6 @@ OBJECTS: list[tuple[str, str, str, str]] = [
     ("paint", r"\bpaint\w*", "area", "areas"),
     ("floor", r"\bfloor\w*|\btiles?\b|laminate|hardwood|vinyl plank", "floor", "floors"),
     ("carpet", r"\bcarpets?\b|\brugs?\b|upholstery", "carpet", "carpets"),
-    ("roof", r"\broof\w*", "roof", "roofs"),
     ("gutter", r"\bgutters?\b|downspout", "gutter", "gutters"),
     ("fence", r"\bfences?\b|\bfencing\b", "fence", "fences"),
     ("deck", r"\bdecks?\b|\bpatios?\b|\bporch\w*", "deck", "decks"),
@@ -110,6 +110,7 @@ OBJECTS: list[tuple[str, str, str, str]] = [
         "pests",
     ),
     ("junk", r"\bjunk\b|\bdebris\b|\btrash\b|\bhaul\w*|cleanout|clean.?out", "junk", "junk"),
+    ("furniture_assembly", r"assembl\w*|put together|\bikea\b", "item", "items"),
     (
         "furniture_move",
         r"\bmov(?:e|ing|ers)\b|\bsofa\b|\bcouch\b|\bmattress\b|\bpiano\b|\bfurniture\b",
@@ -517,6 +518,7 @@ def main() -> int:
 
     # ---- wording lexicon ----------------------------------------------
     lexicon: dict[str, Counter] = defaultdict(Counter)
+    by_action: dict[str, Counter] = defaultdict(Counter)
     generic: dict[str, Counter] = defaultdict(Counter)
     for row in rows:
         primary = row["objects"][0] if row["objects"] else None
@@ -541,7 +543,13 @@ def main() -> int:
             )
             if len(row["objects"]) > 1 and not names_primary:
                 continue
-            lexicon[f"{intent}|{primary}"][slot_for(primary, phrase)] += 1
+            slotted = slot_for(primary, phrase)
+            lexicon[f"{intent}|{primary}"][slotted] += 1
+            # Also keyed by action, because one object's phrase is not
+            # interchangeable across jobs: a sofa being CLEANED is not
+            # "items that need to be moved".
+            if row["action"]:
+                by_action[f"{intent}|{primary}|{row['action']}"][slotted] += 1
 
     wording = {}
     for key, counter in lexicon.items():
@@ -551,6 +559,14 @@ def main() -> int:
     # A generic phrase is only emitted when the data actually contains an
     # object-free form. Where it does not, the intent simply cannot be used
     # without object-specific wording - better than inventing a phrase.
+    wording_by_action = {}
+    for key, counter in by_action.items():
+        phrase, n = pick_phrase(counter)
+        # A higher bar than the object-level lexicon: an action-scoped phrase
+        # only earns its place when it is well attested, otherwise the
+        # object-level phrase is the safer answer.
+        if n >= 5:
+            wording_by_action[key] = {"phrase": phrase, "n": n}
     generic_wording = {}
     for intent, counter in generic.items():
         phrase, n = pick_phrase(counter)
@@ -574,6 +590,7 @@ def main() -> int:
         "pairsByKey": pairs_by_key,
         "solo": solo,
         "wording": wording,
+        "wordingByAction": wording_by_action,
         "genericWording": generic_wording,
     }
 
@@ -597,7 +614,10 @@ def main() -> int:
     print(f"pair grammar         {len(pairs)} global ordered pairs ({two_ask} two-ask rows)")
     print(f"  per-ladder pairs   {len(pairs_by_key)} keys")
     print(f"solo intents         {len(solo)}")
-    print(f"wording entries      {len(wording)} object-specific + {len(generic_wording)} generic")
+    print(
+        f"wording entries      {len(wording)} object + {len(wording_by_action)} object+action"
+        f" + {len(generic_wording)} generic"
+    )
     print(f"written              {out_path}")
     return 0
 

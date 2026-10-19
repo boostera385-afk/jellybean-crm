@@ -33,3 +33,7 @@ supabase/.temp/
 *.sln
 *.sw?
 package-lock.json
+
+# Python bytecode from scripts/
+__pycache__/
+*.pyc

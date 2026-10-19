@@ -156,8 +156,14 @@ export function serviceContextForLead(lead: SuggestionLead) {
     fromService(lead.service) ||
     fromDetectedJob(lead) ||
     fromContext(lead) ||
-    // Grammatical, claims nothing, invents no detail. The old fallback was
-    // "your service", which read as "looking for your service".
+    // THE ONE PHRASE IN THIS SYSTEM NOT TAKEN FROM THE DELIVERED MESSAGES.
+    // Reached on 0.41% of the export (114 of 27,558 rows): no service column,
+    // no identifiable object, and a context too short to make a phrase from.
+    // On those rows the team wrote a trade it had inferred by hand ("a
+    // handyman", "an electrician"), so there is no house wording to copy and
+    // guessing a trade would assert something we do not know. This is
+    // grammatical, claims nothing and invents no detail; change the wording
+    // freely, it is a copy decision rather than a measured one.
     "the service you need"
   );
 }
