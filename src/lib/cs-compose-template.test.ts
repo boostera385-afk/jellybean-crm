@@ -129,6 +129,40 @@ describe("the asks come from the catalogue, minus what the customer said", () =>
     );
     expect(asks).not.toMatch(/single or double story/);
   });
+  it.each(["main_area", "sub_area"] as const)("does not re-ask an address saved in %s", (field) => {
+    const asks = requirementForLead(
+      lead({
+        service: "Gutter Cleaning",
+        post_text: "Need the gutters cleaned",
+        [field]: "123 Example Street, Denver, CO",
+      }),
+    );
+    expect(asks).not.toMatch(/address/i);
+  });
+  it("does not resurrect answered questions through a stored or generic fallback", () => {
+    const known = lead({
+      service: "Gutter Cleaning",
+      post_text:
+        "Clean the gutters on my two story house tomorrow. I sent photos. Each gutter run is 20 feet.",
+      cs_notes: [{ text: "Address on file" }],
+      requirement_1: "share your complete address",
+    });
+    expect(requirementForLead(known)).toBe("");
+    const message = renderCsComposeSuggestion(SCHEDULE, known);
+    expect(message).not.toMatch(/kindly|schedule|\(Requirement\)|address|\?/i);
+    expect(message).toContain("looking for a gutter cleaning service.");
+  });
+  it("acknowledges a completed job without a new scheduling question", () => {
+    const message = renderCsComposeSuggestion(
+      SCHEDULE,
+      lead({
+        post_text: "The repair is done. I do not need any more help.",
+        service: "Handyman",
+      }),
+    );
+    expect(message).toContain("no further service is needed");
+    expect(message).not.toMatch(/looking for|schedule|kindly|\?/);
+  });
 
   it("elides a repeated leading verb, as the delivered messages do", () => {
     expect(

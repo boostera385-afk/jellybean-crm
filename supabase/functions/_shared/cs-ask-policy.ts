@@ -25,7 +25,7 @@
  */
 import { CS_ASK_CATALOGUE } from "./cs-ask-catalogue.generated.ts";
 import type { AskIntent, Ladder, LadderEntry } from "./cs-ask-catalogue-types.ts";
-import { isAnswered, type Detection } from "./cs-detect.ts";
+import { detect, isAnswered, type Detection } from "./cs-detect.ts";
 
 export type SelectedAsk = {
   intent: AskIntent;
@@ -126,6 +126,11 @@ function candidatesFor(
   const candidates: Candidate[] = [];
   const suppressed: AskIntent[] = [];
   for (const entry of ladder.entries) {
+    if (
+      entry.intent === "OWNERSHIP" &&
+      ["clean", "maintain", "move", "remove"].includes(detection.action ?? "")
+    )
+      continue;
     if (isAnswered(entry.intent, detection, targetObject, sources)) {
       suppressed.push(entry.intent);
       continue;
@@ -144,6 +149,37 @@ function candidatesFor(
     ) {
       fragment = wordingFor("ADDRESS", null);
     }
+    // Historical wording must still fit today's job. For example the window
+    // QUANTITY phrase says "need to be cleaned", which is wrong for replacement.
+    if (fragment && entry.intent === "OWNERSHIP") {
+      const part = /\breplacement ([a-z][a-z-]*)/i.exec(fragment)?.[1];
+      // An off-track door does not establish a broken spring. Do not introduce
+      // a replacement component that the customer has never mentioned.
+      if (part && !new RegExp(`\\b${part.replace(/s$/, "")}s?\\b`, "i").test(sources)) continue;
+    }
+    if (
+      fragment &&
+      entry.intent === "PHOTO" &&
+      detection.action &&
+      detection.action !== "repair" &&
+      /\brepair(?:ed)?\b/i.test(fragment)
+    ) {
+      fragment = wordingFor("PHOTO", null);
+    }
+    if (
+      fragment &&
+      detection.action &&
+      detection.action !== "clean" &&
+      /\b(?:cleaned|cleaning)\b/i.test(fragment)
+    )
+      continue;
+    if (
+      fragment &&
+      detection.action &&
+      !["install", "replace"].includes(detection.action) &&
+      /where .*\binstalled\b/i.test(fragment)
+    )
+      continue;
     if (fragment) candidates.push({ entry, fragment, object });
   }
   return { candidates, suppressed };
@@ -160,9 +196,9 @@ function candidatesFor(
  * suppression wins, so the result is "what this team asks for this kind of
  * job, minus whatever the customer already told us".
  *
- * When no measured pair survives, one ask is sent, weighted by how often that
- * intent stood alone: a photo or an address is normal on its own, a storey
- * count is not.
+ * When no measured pair survives, two distinct useful surviving facts are
+ * preferred. Only when no safe pair remains is one ask sent, weighted by how
+ * often that intent stood alone. An answered fact is never reinstated.
  */
 export function selectAsks(
   detection: Detection,
@@ -170,8 +206,54 @@ export function selectAsks(
   targetObject: string | null,
   sources: string,
 ): AskSelection {
+  // The post may use an inflection absent from the measured verb patterns
+  // (e.g. lights "hung"). An explicit service action can fill that gap, but a
+  // generic "handyman service" is NOT evidence of a maintenance job.
+  if (!detection.action && service?.trim()) {
+    const inferred = detect([service]).action;
+    if (inferred && (inferred !== "maintain" || /maintenance|inspect|tune.?up/i.test(service))) {
+      detection = { ...detection, action: inferred };
+    }
+  }
   const { key, ladder } = resolveLadder(targetObject, detection.action, service, detection.objects);
   const { candidates, suppressed } = candidatesFor(ladder, detection, targetObject, sources);
+  // A narrow ladder may contain only facts already supplied (e.g. an off-track
+  // door with address and timing known). Safe photo/measurement phrases that
+  // were measured for the same building object can still supply useful asks.
+  // Do not extrapolate appliance dimensions or invent unmeasured wording.
+  if (
+    candidates.length < 2 &&
+    targetObject &&
+    [
+      "garage_door",
+      "door",
+      "window",
+      "drywall",
+      "fence",
+      "deck",
+      "roof",
+      "gutter",
+      "floor",
+      "paint",
+      "concrete",
+    ].includes(targetObject)
+  ) {
+    const extras: LadderEntry[] = (["PHOTO", "SIZE"] as AskIntent[])
+      .filter(
+        (intent) =>
+          !candidates.some((c) => c.entry.intent === intent) &&
+          CS_ASK_CATALOGUE.wording[`${intent}|${targetObject}`],
+      )
+      .map((intent) => ({ intent, askIfMissing: 0.001 }));
+    const fallback = candidatesFor(
+      { n: ladder.n, entries: extras },
+      detection,
+      targetObject,
+      sources,
+    );
+    candidates.push(...fallback.candidates);
+    suppressed.push(...fallback.suppressed);
+  }
   const ranked = [...candidates].sort((a, b) => b.entry.askIfMissing - a.entry.askIfMissing);
   const take = (candidate: Candidate): SelectedAsk => ({
     intent: candidate.entry.intent,
@@ -194,6 +276,26 @@ export function selectAsks(
         suppressed: [...new Set(suppressed)],
       };
     }
+  }
+  // Prefer two useful remaining facts for first contact even if this exact
+  // safe pair was rare in the export. Never force an answered fact or two
+  // overlapping scope/problem questions merely to fill the second slot.
+  for (const first of ranked) {
+    if (first.entry.intent === "ADDRESS") continue;
+    const second = ranked.find(
+      (candidate) =>
+        candidate.entry.intent !== first.entry.intent &&
+        !(
+          [first.entry.intent, candidate.entry.intent].includes("SCOPE") &&
+          [first.entry.intent, candidate.entry.intent].includes("PROBLEM")
+        ),
+    );
+    if (second)
+      return {
+        asks: [take(first), take(second)],
+        ladderKey: key,
+        suppressed: [...new Set(suppressed)],
+      };
   }
   let solo: { score: number; candidate: Candidate } | null = null;
   for (const candidate of ranked) {

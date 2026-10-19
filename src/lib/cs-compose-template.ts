@@ -17,7 +17,11 @@
  */
 import { detect, normalizeSource } from "../../supabase/functions/_shared/cs-detect";
 import { selectAsks, wordingFor } from "../../supabase/functions/_shared/cs-ask-policy";
-import { joinAsks } from "../../supabase/functions/_shared/cs-composer";
+import {
+  joinAsks,
+  noFurtherServiceRequested,
+  NO_SERVICE_ACKNOWLEDGMENT,
+} from "../../supabase/functions/_shared/cs-composer";
 import { CS_ASK_CATALOGUE } from "../../supabase/functions/_shared/cs-ask-catalogue.generated";
 
 export const CS_COMPOSE_TEMPLATE_KEY = "cs_compose_template";
@@ -62,6 +66,8 @@ export type SuggestionLead = {
   context?: string | null;
   pass_it_to?: string | null;
   post_text?: string | null;
+  main_area?: string | null;
+  sub_area?: string | null;
   cs_notes?: unknown;
   requirement_1?: string | null;
   requirement_2?: string | null;
@@ -79,8 +85,8 @@ function leadSources(lead: SuggestionLead): string[] {
         )
         .filter(Boolean)
     : [];
-  return [lead.post_text, lead.context, ...notes].filter((value): value is string =>
-    Boolean(value?.trim()),
+  return [lead.post_text, lead.context, lead.main_area, lead.sub_area, ...notes].filter(
+    (value): value is string => Boolean(value?.trim()),
   );
 }
 
@@ -167,6 +173,7 @@ export function serviceContextForLead(lead: SuggestionLead) {
  */
 export function requirementForLead(lead: SuggestionLead) {
   const sources = leadSources(lead);
+  if (noFurtherServiceRequested(sources)) return "";
   if (sources.length) {
     const detection = detect(sources);
     const selection = selectAsks(
@@ -175,7 +182,9 @@ export function requirementForLead(lead: SuggestionLead) {
       detection.objects[0] ?? null,
       normalizeSource(sources.join("\n")),
     );
-    if (selection.asks.length) return joinAsks(selection.asks.map((ask) => ask.fragment));
+    // No padding from stale stored requirements or a scope/address fallback
+    // after the catalogue has deliberately suppressed already-known answers.
+    return joinAsks(selection.asks.map((ask) => ask.fragment));
   }
   const stored = [lead.requirement_1, lead.requirement_2]
     .map((value) => (value ?? "").replace(/\s+/g, " ").trim())
@@ -192,11 +201,23 @@ export function requirementForLead(lead: SuggestionLead) {
 const UNFILLED_PLACEHOLDER = /\s*\([^)]*\)/g;
 
 export function renderCsComposeSuggestion(template: string, lead: SuggestionLead) {
+  if (noFurtherServiceRequested(leadSources(lead)))
+    return `Hi ${firstName(lead.customer_name)}, this is Alex. ${NO_SERVICE_ACKNOWLEDGMENT}`;
+  const requirements = requirementForLead(lead);
+  if (!requirements && /\(Requirement\)/i.test(template)) {
+    const withoutQuestion = template.replace(
+      /\s*Could you kindly \(Requirement\), so I can check the schedule for a visit\?/i,
+      "",
+    );
+    // Do not guess how to repair an unknown custom template's empty clause.
+    if (/\(Requirement\)/i.test(withoutQuestion)) return "";
+    template = withoutQuestion;
+  }
   return (
     template
       .replace(/\(Person first name\)/gi, firstName(lead.customer_name))
       .replace(/\(Service Context\)/gi, serviceContextForLead(lead))
-      .replace(/\(Requirement\)/gi, requirementForLead(lead))
+      .replace(/\(Requirement\)/gi, requirements)
       .replace(/\(Sender\)/gi, "Alex")
       .replace(UNFILLED_PLACEHOLDER, "")
       .replace(/\s{2,}/g, " ")

@@ -6,8 +6,8 @@
       "service": "Appliance Repair",
       "postText": "My Whirlpool refrigerator bottom freezer drawer is not closing properly and frost is building up. Can anyone fix it? What are the charges?"
     },
-    "forbiddenKeys": ["brand", "problem"],
-    "minQuestions": 1
+    "forbiddenKeys": ["BRAND/MODEL", "PROBLEM"],
+    "minQuestions": 2
   },
   {
     "name": "known-address-in-saved-notes",
@@ -20,9 +20,15 @@
         "Customer shared complete address: 123 Example Street, Denver, CO 80201. Available tomorrow morning."
       ]
     },
-    "forbiddenKeys": ["address", "availability"],
-    "forbiddenPhrases": ["what issue", "what problem", "what is wrong", "issue are you facing"],
-    "minQuestions": 0
+    "forbiddenKeys": ["ADDRESS", "AVAILABILITY"],
+    "forbiddenPhrases": [
+      "what issue",
+      "what problem",
+      "what is wrong",
+      "issue are you facing",
+      "replacement spring"
+    ],
+    "minQuestions": 2
   },
   {
     "name": "csv-drywall-photo-and-time-given",
@@ -31,8 +37,8 @@
       "service": "Drywall Repair",
       "postText": "I need a small drywall repair this afternoon after 3pm. Picture below. Please message me with a quote."
     },
-    "forbiddenKeys": ["photos", "availability"],
-    "minQuestions": 1
+    "forbiddenKeys": ["PHOTO", "AVAILABILITY"],
+    "minQuestions": 2
   },
   {
     "name": "csv-same-property-hot-tub",
@@ -41,8 +47,8 @@
       "service": "Moving Help",
       "postText": "I need to move a newly delivered hot tub about 50 feet to my backyard patio. It is upright and packaged on a pallet."
     },
-    "forbiddenKeys": ["pickup_address", "dropoff_address"],
-    "minQuestions": 1
+    "forbiddenPhrases": ["drop off", "drop-off", "dropoff"],
+    "minQuestions": 2
   },
   {
     "name": "csv-loading-van-not-delivery",
@@ -51,8 +57,8 @@
       "service": "Moving Help",
       "postText": "Just need a bed and a small sofa loaded into my moving van. No transport or unloading needed."
     },
-    "forbiddenKeys": ["dropoff_address"],
-    "minQuestions": 1
+    "forbiddenPhrases": ["drop off", "drop-off", "dropoff"],
+    "minQuestions": 2
   },
   {
     "name": "csv-room-dimensions-known",
@@ -61,8 +67,8 @@
       "service": "Painting",
       "postText": "Looking for someone to paint an 11x12 bare room. The quote I got seemed high."
     },
-    "forbiddenKeys": ["dimensions"],
-    "minQuestions": 1
+    "forbiddenKeys": ["SIZE"],
+    "minQuestions": 2
   },
   {
     "name": "csv-lights-owned-and-stories-known",
@@ -71,8 +77,9 @@
       "service": "Holiday Light Installation",
       "postText": "I already have the lights. Need icicle lights hung along the front roofline of my two-story home. Looking to do this tomorrow."
     },
-    "forbiddenKeys": ["ownership", "property_stories", "availability"],
-    "minQuestions": 1
+    "forbiddenKeys": ["OWNERSHIP", "STORIES", "AVAILABILITY"],
+    "forbiddenPhrases": ["area that needs repair"],
+    "minQuestions": 2
   },
   {
     "name": "live-multiple-appliances-not-truncated-summary",
@@ -82,9 +89,9 @@
       "context": "Customer needs LG refrigerator repair",
       "postText": "Looking for repair for my LG refrigerator and a ZLINE stove. Neither is working."
     },
-    "forbiddenKeys": ["brand"],
+    "forbiddenKeys": ["BRAND/MODEL"],
     "mustMention": ["refrigerator", "stove"],
-    "minQuestions": 1
+    "minQuestions": 2
   },
   {
     "name": "live-urgent-basement-with-size",
@@ -93,8 +100,8 @@
       "service": "Basement Painting",
       "postText": "Need a 2800 sq ft basement painted ASAP. Must start within the next day or two."
     },
-    "forbiddenKeys": ["availability", "dimensions"],
-    "minQuestions": 1
+    "forbiddenKeys": ["AVAILABILITY", "SIZE"],
+    "minQuestions": 2
   },
   {
     "name": "live-maintenance-is-not-a-breakdown",
@@ -103,12 +110,12 @@
       "service": "Appliance Maintenance",
       "postText": "Need routine washer and dryer maintenance. Both work normally; no faults."
     },
-    "forbiddenKeys": ["problem"],
+    "forbiddenKeys": ["PROBLEM"],
     "mustMentionAny": [
       ["washer", "both appliances"],
       ["dryer", "both appliances"]
     ],
-    "minQuestions": 1
+    "minQuestions": 2
   },
   {
     "name": "direct-price-and-callback-no-made-up-quote",
@@ -117,8 +124,8 @@
       "service": "Lighting Installation",
       "postText": "How much do you charge to install Govee lights? Please call me. I already have the lights."
     },
-    "forbiddenKeys": ["ownership"],
-    "minQuestions": 1
+    "forbiddenKeys": ["OWNERSHIP"],
+    "minQuestions": 2
   },
   {
     "name": "completed-job-no-forced-questions",
@@ -128,7 +135,7 @@
       "postText": "Thanks, the repair is already done. I do not need any more help.",
       "notes": ["Customer confirmed work complete; no further service required."]
     },
-    "forbiddenKeys": ["address", "availability", "photos"],
+    "forbiddenKeys": ["ADDRESS", "AVAILABILITY", "PHOTO"],
     "maxQuestions": 0
   }
 ]

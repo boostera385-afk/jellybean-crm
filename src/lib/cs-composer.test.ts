@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { ASK_INTENTS } from "../../supabase/functions/_shared/cs-ask-catalogue-types";
 import {
   CS_COMPOSER_MODEL,
   CS_COMPOSER_VERSION,
@@ -13,11 +15,41 @@ import {
   sourceParts,
   type ComposePlan,
   type ComposerInput,
+  type ComposerEvalCase,
 } from "../../supabase/functions/_shared/cs-composer";
 
 const lead = (input: Partial<ComposerInput>): ComposerInput => ({
   customerName: "Casey Test",
   ...input,
+});
+
+describe("first-contact sensible-question regressions", () => {
+  const cases = JSON.parse(
+    readFileSync("scripts/fixtures/cs-composer-cases.json", "utf8"),
+  ) as ComposerEvalCase[];
+  it("keeps regression intent identifiers aligned with the live catalogue", () => {
+    for (const test of cases)
+      for (const intent of test.forbiddenKeys ?? []) expect(ASK_INTENTS).toContain(intent);
+  });
+  it.each(cases)("$name keeps the approved format and supplied facts", async (test) => {
+    const fetcher = vi.fn().mockResolvedValue(targeting("a home service"));
+    const result = await composeAnswerAware(test.input!, { apiKey: "test-key", fetcher });
+    const keys = result.plan.questions.map((q) => q.key);
+    // Targeting prose is mocked here; real model scope coverage is checked by
+    // the separate deployed evaluation. This test exercises actual selection.
+    const message = renderComposePlan(test.input!, result.plan, "Alex");
+    const score = scoreComposeReply(
+      { ...test, mustMention: [], mustMentionAny: [] },
+      message,
+      keys,
+    );
+    expect(score).toMatchObject({ pass: true, forbidden: [], forbiddenPhrases: [] });
+    if (keys.length)
+      expect(message).toMatch(
+        /^Hi Casey, this is Alex\. I saw that you are looking for .+\. Could you kindly .+, so I can check the schedule for a visit\?$/,
+      );
+    if (test.maxQuestions === 0) expect(fetcher).not.toHaveBeenCalled();
+  });
 });
 const plan = (overrides: Partial<ComposePlan> = {}): ComposePlan => ({
   serviceContext: "a refrigerator repair service",

@@ -299,7 +299,7 @@ using Supabase's sealed `OPENAI_API_KEY` secret.
 `cs-ask-catalogue.generated.ts`, measured by `scripts/build-ask-catalogue.py`
 over 23,167 delivered messages. The model no longer chooses, orders or words a
 question. It returns two things only: which item a multi-item post is about,
-and the noun phrase that completes "I saw that you are looking for ___."
+and the noun phrase that completes "I saw that you are looking for \_\_\_."
 Everything else is deterministic, so grammar, repetition and question choice
 cannot regress with model quality.
 
@@ -310,25 +310,39 @@ messages are a rigid three-part template (97.6% close with "so I can check the
 schedule for a visit"), their asks are short fragments, and question choice is
 strongly sub-category dependent. v2 contradicted all three.
 
-| Layer                                                | Source                             |
-| ---------------------------------------------------- | ---------------------------------- |
-| Which asks are candidates                            | ladder per `object\|action`         |
-| Ask order and legal pairs                            | per-sub-category joint pair counts |
-| Exact wording                                        | `intent \| object` lexicon          |
-| Brand / problem / size / quantity suppression        | measured 2-18x suppression         |
+| Layer                                                 | Source                             |
+| ----------------------------------------------------- | ---------------------------------- |
+| Which asks are candidates                             | ladder per `object\|action`        |
+| Ask order and legal pairs                             | per-sub-category joint pair counts |
+| Exact wording                                         | `intent \| object` lexicon         |
+| Brand / problem / size / quantity suppression         | measured 2-18x suppression         |
 | Availability / ownership / photo / storey suppression | **code** — data showed ~1.0x       |
-| Ask count                                            | **code** — data showed no decrease |
-| Which item a multi-item post is about                | the model                          |
+| Ask count                                             | **code** — data showed no decrease |
+| Which item a multi-item post is about                 | the model                          |
 
 The last three rows are deliberate overrides. The export does NOT suppress
 availability (8.6% asked when given vs 8.5% when not), ownership (9.5% vs
-9.3%), supplied photos (82.9% vs 55.9% — it asks *more*) or storeys, and it
+9.3%), supplied photos (82.9% vs 55.9% — it asks _more_) or storeys, and it
 does not ask fewer questions when the customer said more (76.1% two asks at
 zero known facts, 84.7% at two). Those habits are overridden in
 `cs-detect.ts`, whose `HARD_GUARDS` set is asserted by test so the override
 stays deliberate. A supplied fact is never re-asked, whatever the data did.
 `ADDRESS` is likewise never emitted as slot 1, though 0.5% of delivered
 messages led with it.
+
+`2026-10-19.catalogue-v3.1` preserves the approved first-contact wording and
+the one-call Nano catalogue design. It asks two distinct missing details when a
+safe pair is available, including a ranked safe pair if the exact combination
+was uncommon in the export; it never restores answered questions to reach two.
+An explicit job action/object suppresses the generic "what exactly needs doing"
+ask; routine maintenance does not imply a fault. Action-specific historical
+phrases such as "windows to be cleaned" cannot leak into a replacement job.
+An installation cannot inherit a repair-photo phrase, and an off-track door
+cannot inherit a replacement-spring question without that component in the source.
+Manual one-click suggestions read saved main/sub-area fields as well as CS
+notes, and do not fall back to stale requirements after suppression. A completed
+job gets a short acknowledgment, not a new pair of qualification questions.
+Existing auto-rephrase and sending toggles are not changed by this renderer fix.
 
 Classification is **batched** — `.in()` lookups chunked by 10, posts under 20
 characters skipped, duplicates excluded, at most 50 rows per request, results

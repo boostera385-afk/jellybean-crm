@@ -4,7 +4,7 @@ import type { AskIntent } from "./cs-ask-catalogue-types.ts";
 import { detect, normalizeSource, type Detection } from "./cs-detect.ts";
 import { fragmentsAreSafe, selectAsks, type SelectedAsk } from "./cs-ask-policy.ts";
 
-export const CS_COMPOSER_VERSION = "2026-10-17.catalogue-v3";
+export const CS_COMPOSER_VERSION = "2026-10-19.catalogue-v3.1";
 export const CS_COMPOSER_MODEL = "gpt-5.4-nano-2026-03-17";
 
 export type ComposerInput = {
@@ -112,6 +112,16 @@ export function sourceParts(input: ComposerInput): string[] {
   ].filter((value): value is string => Boolean(value?.trim()));
 }
 
+export const NO_SERVICE_ACKNOWLEDGMENT =
+  "Thanks for letting me know that no further service is needed.";
+export function noFurtherServiceRequested(parts: string[]): boolean {
+  return parts.some((part) =>
+    /\bno further (?:service|help|assistance) (?:is )?(?:needed|required)\b|\bi (?:do not|don't|no longer) need (?:any )?(?:more |further )?(?:help|service|assistance)\b/i.test(
+      normalizeSource(part),
+    ),
+  );
+}
+
 const LEADING_VERB = /^(share|let me know|send me|send|tell me|tell|confirm|provide)\b/i;
 
 /**
@@ -137,6 +147,8 @@ export function joinAsks(fragments: string[]): string {
 export function renderComposePlan(input: ComposerInput, plan: ComposePlan, sender: string): string {
   const first = input.customerName.trim().split(/\s+/)[0];
   const safeName = first && /^[\p{L}\p{M}'’.-]+$/u.test(first) ? first : "there";
+  if (noFurtherServiceRequested(sourceParts(input)))
+    return `Hi ${safeName}, this is ${sender}. ${NO_SERVICE_ACKNOWLEDGMENT}`;
   const opening = `Hi ${safeName}, this is ${sender}. I saw that you are looking for ${plan.serviceContext}.`;
   if (!plan.questions.length) return opening;
   const asks = joinAsks(plan.questions.map((question) => question.text));
@@ -243,6 +255,19 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
   if (!input.postText?.trim() && !input.context?.trim())
     throw new Error("No customer context available");
   const parts = sourceParts(input);
+  if (noFurtherServiceRequested(parts))
+    return {
+      plan: {
+        serviceContext: "the completed work",
+        targetObject: null,
+        ladderKey: "resolved",
+        questions: [],
+      } as ComposePlan,
+      warnings: ["no_further_service"],
+      model: options.model ?? CS_COMPOSER_MODEL,
+      version: CS_COMPOSER_VERSION,
+      catalogueRows: CS_ASK_CATALOGUE.meta.rows,
+    };
   const sources = normalizeSource(parts.join("\n"));
   const detection = detect(parts);
   const bounded = { ...options, signal: options.signal ?? AbortSignal.timeout(110_000) };

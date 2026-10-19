@@ -335,12 +335,15 @@ describe("the selected pair is always one the team actually sends", () => {
     expect(ask("handyman", "help").asks.length).toBeLessThanOrEqual(2);
   });
 
-  it("drops to one ask rather than padding with filler when facts are known", () => {
+  it("uses two real missing details without resurrecting known stories or address", () => {
     const selection = ask(
       "Gutter Cleaning",
       "Clean the gutters on my two story house at 123 Example Street",
     );
-    expect(selection.asks.length).toBeLessThanOrEqual(1);
+    expect(selection.asks.map((item) => item.intent)).toEqual(
+      expect.arrayContaining(["PHOTO", "SIZE"]),
+    );
+    expect(selection.asks).toHaveLength(2);
     expect(selection.suppressed).toContain("STORIES");
     expect(selection.suppressed).toContain("ADDRESS");
   });

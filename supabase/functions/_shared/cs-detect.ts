@@ -124,7 +124,11 @@ export function isAnswered(
   targetObject: string | null,
   sources: string,
 ): boolean {
-  if (intent === "SCOPE") return false;
+  // The catalogue's SCOPE wording is "what exactly needs to be done". Once
+  // both the job action and its object are explicit, that broad ask is answered.
+  if (intent === "SCOPE") return detection.action !== null && detection.objects.length > 0;
+  // Routine maintenance is not evidence of a fault to describe.
+  if (intent === "PROBLEM" && detection.action === "maintain") return true;
   if (intent === "BRAND/MODEL") return brandKnownFor(targetObject, sources);
   return detection.facts[intent] === true;
 }
