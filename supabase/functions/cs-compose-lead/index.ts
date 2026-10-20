@@ -154,7 +154,7 @@ export async function handleCompose(req: Request): Promise<Response> {
   const { data: lead, error: leadError } = await (isService ? admin : userDb)
     .from("qualified_leads")
     .select(
-      "id, customer_name, post_text, context, service, main_area, sub_area, cs_notes, images, requirement_1, requirement_2, marketing_notes",
+      "id, customer_name, post_text, context, service, main_area, sub_area, cs_notes, images, requirement_1, requirement_2, marketing_notes, reference",
     )
     .eq("id", leadId)
     .maybeSingle();
@@ -188,6 +188,8 @@ export async function handleCompose(req: Request): Promise<Response> {
       imageCount: Array.isArray(lead.images) ? lead.images.length : 0,
       suggestedRequirements: [lead.requirement_1, lead.requirement_2].filter(Boolean),
       previousDraft: lead.marketing_notes,
+      // Only used to pick the opening; never read as a customer answer.
+      reference: lead.reference,
     };
     // Refuse oversize input instead of silently truncating away already-known
     // facts and then asking the customer for the facts we just discarded.

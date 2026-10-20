@@ -351,10 +351,25 @@ well enough attested, `contradictsAction` rejects an object-level phrase that
 names a different job and the next candidate takes the slot. Object detection
 is likewise job-aware: `furniture_assembly` precedes `furniture_move` (395
 assembly rows were being sent the moving ask, though only 6.6% of them ever
-mentioned a pickup route) and `roof` precedes `pipe_leak` (96 roof-leak rows
-were getting the plumbing ladder instead of storeys and address).
+mentioned a pickup route), `roof` precedes `pipe_leak` (96 roof-leak rows were
+getting the plumbing ladder instead of storeys and address), and `screen`
+precedes `deck` but follows `door` and `window`, so a patio screen is no longer
+described as "the deck" while screen doors and window screens keep their own
+wording. A brand with no identified object is simply known: scoping a brand to
+its object exists only to stop one appliance's brand marking another's, so
+"fix my GE front load wash machine" is no longer asked for its brand.
 
-Every one of the 565 phrases the catalogue can emit appears verbatim in the
+A lead whose Reference records a conversation gets the team's referral
+opening instead of an introduction: "Hi <name>, we had a conversation on
+Facebook regarding <job>." That form is well attested - 1,234 Facebook and 163
+Nextdoor messages - and it drops the sender (only 11 of 1,397 carry "this is
+<name>") and the indefinite article after "regarding". A bare source marker
+such as "ND" or "mail" records where a lead came from, not that anyone spoke,
+and keeps the standard opening. Only the opening changes; the asks and closing
+are identical either way. `referralPlatform` is shared by the Edge Function and
+the one-click chip so the two cannot diverge.
+
+Every one of the phrases the catalogue can emit appears verbatim in the
 delivered messages; a test asserts this over the whole catalogue. The single
 exception anywhere in the system is the chip's last-resort service context
 ("the service you need"), reached on 0.41% of the export where there is no

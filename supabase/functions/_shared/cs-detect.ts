@@ -129,6 +129,14 @@ export function isAnswered(
   if (intent === "SCOPE") return detection.action !== null && detection.objects.length > 0;
   // Routine maintenance is not evidence of a fault to describe.
   if (intent === "PROBLEM" && detection.action === "maintain") return true;
-  if (intent === "BRAND/MODEL") return brandKnownFor(targetObject, sources);
+  if (intent === "BRAND/MODEL") {
+    // Scoping a brand to its object exists to stop an LG fridge marking an
+    // adjacent stove's brand known. With no object identified there is no
+    // second appliance to confuse it with, so a brand the customer stated is
+    // simply known - otherwise "fix my GE front load wash machine", whose
+    // phrasing matches no object pattern, was still asked for its brand.
+    if (!targetObject) return detection.facts[intent] === true;
+    return brandKnownFor(targetObject, sources);
+  }
   return detection.facts[intent] === true;
 }

@@ -357,6 +357,45 @@ describe("a phrase is never borrowed from a different kind of job", () => {
   });
 });
 
+describe("the stated brand and the named object are read correctly", () => {
+  it("does not re-ask the brand when no object pattern matched the phrasing", () => {
+    // "GE Front load wash Machine" matched no object, so the brand could not
+    // be scoped to one and was asked for again. With no object there is no
+    // second appliance to confuse it with.
+    const selection = ask(
+      "Appliance Repair",
+      "I am looking for somebody to fix my GE Front load wash Machine",
+    );
+    expect(intents(selection)).not.toContain("BRAND/MODEL");
+    expect(selection.suppressed).toContain("BRAND/MODEL");
+  });
+
+  it("reads 'wash machine' as a washing machine", () => {
+    expect(detect(["fix my front load wash machine"]).objects).toContain("washer");
+  });
+
+  it("still asks the brand when the customer never gave one", () => {
+    expect(
+      intents(ask("Appliance Repair", "I need someone who can fix my refrigerator")),
+    ).toContain("BRAND/MODEL");
+  });
+
+  it("does not call a patio screen repair a deck", () => {
+    // deck's \bpatios?\b was claiming these, so the team's own "the screen
+    // enclosure" / "the patio screening" wording became "the deck".
+    const selection = ask("Patio screens repair", "Patio screens repair");
+    expect(selection.ladderKey).toMatch(/^screen/);
+    expect(selection.asks.map((entry) => entry.fragment).join(" ")).not.toMatch(/deck/i);
+  });
+
+  it("leaves screen doors and window screens with their own wording", () => {
+    // A screen door is still a door, and window screens are still windows:
+    // the screen object sits after both so it only claims what they leave.
+    expect(detect(["my screen door is torn"]).objects[0]).toBe("door");
+    expect(detect(["need my window screens cleaned"]).objects[0]).toBe("window");
+  });
+});
+
 describe("the selected pair is always one the team actually sends", () => {
   const cases: [string, string][] = [
     ["Appliance Repair", "My fridge stopped working"],
