@@ -44,6 +44,10 @@ export type AskCatalogue = {
   /** object key -> [singular, plural] as the team writes it to customers.
    *  These fill the `{object}` / `{objects}` slots in a wording phrase. */
   objectLabels: Record<string, [string, string]>;
+  /** object key -> every plain noun its pattern recognises, in declaration
+   *  order. Used to keep the customer's own word: a pattern covers deck,
+   *  patio and porch, but only one of them is the label. */
+  objectNouns: Record<string, string[]>;
   /** Action patterns, applied only after object spans are masked out. */
   actionPatterns: [string, string][];
   factPatterns: Record<string, string>;

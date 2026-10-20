@@ -65,10 +65,19 @@ export function brandKnownFor(object: string | null, sources: string): boolean {
   // Up to three words may sit between the brand and the object ("LG French
   // door refrigerator"), but never a conjunction, which would mean the brand
   // belongs to the other appliance in the list.
-  return new RegExp(
-    `(?:${brands})\\s+(?:(?!and\\b|or\\b)[a-z0-9-]+\\s+){0,3}(?:${pattern})`,
-    "i",
-  ).test(sources);
+  const gap = "(?:(?!and\\b|or\\b)[a-z0-9-]+\\s+){0,3}";
+  // The object-first direction is built from the plain nouns rather than the
+  // pattern, because the pattern's own word boundaries reject the plural:
+  // \bfridge\b cannot match "fixes fridges lg model".
+  const nouns = (CS_ASK_CATALOGUE.objectNouns[object] ?? [])
+    .map((noun) => noun.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/s$/, ""))
+    .join("|");
+  // Either order ties the brand to that appliance. A conjunction still breaks
+  // the link, since it means a second appliance has started.
+  return (
+    new RegExp(`(?:${brands})\\s+${gap}(?:${pattern})`, "i").test(sources) ||
+    (Boolean(nouns) && new RegExp(`\\b(?:${nouns})s?\\s+${gap}(?:${brands})\\b`, "i").test(sources))
+  );
 }
 
 export function detect(sources: string[]): Detection {
@@ -136,6 +145,11 @@ export function isAnswered(
     // simply known - otherwise "fix my GE front load wash machine", whose
     // phrasing matches no object pattern, was still asked for its brand.
     if (!targetObject) return detection.facts[intent] === true;
+    // Adjacency is only needed to tell two appliances apart. Posts rarely put
+    // the brand next to the thing - "look at a dryer. Making a noise.
+    // Whirlpool." - so when the post is about ONE object, a brand anywhere in
+    // it belongs to that object.
+    if (detection.objects.length <= 1) return detection.facts[intent] === true;
     return brandKnownFor(targetObject, sources);
   }
   return detection.facts[intent] === true;

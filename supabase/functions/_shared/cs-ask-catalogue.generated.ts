@@ -155,27 +155,27 @@ export const CS_ASK_CATALOGUE = {
   "ac_unit|clean": {
    "entries": [
     {
-     "askIfMissing": 0.8367,
+     "askIfMissing": 0.8333,
      "intent": "ADDRESS"
     },
     {
-     "askIfMissing": 0.6042,
+     "askIfMissing": 0.6038,
      "intent": "SIZE"
     },
     {
-     "askIfMissing": 0.1489,
+     "askIfMissing": 0.1346,
      "intent": "BRAND/MODEL"
     },
     {
-     "askIfMissing": 0.1429,
+     "askIfMissing": 0.1296,
      "intent": "PHOTO"
     },
     {
-     "askIfMissing": 0.1064,
+     "askIfMissing": 0.1154,
      "intent": "AVAILABILITY"
     }
    ],
-   "n": 49
+   "n": 54
   },
   "ac_unit|install": {
    "entries": [
@@ -207,53 +207,49 @@ export const CS_ASK_CATALOGUE = {
   "ac_unit|maintain": {
    "entries": [
     {
-     "askIfMissing": 0.635,
+     "askIfMissing": 0.6332,
      "intent": "ADDRESS"
     },
     {
-     "askIfMissing": 0.4826,
+     "askIfMissing": 0.485,
      "intent": "SIZE"
     },
     {
-     "askIfMissing": 0.2099,
+     "askIfMissing": 0.2111,
      "intent": "PROBLEM"
     },
     {
-     "askIfMissing": 0.135,
+     "askIfMissing": 0.1357,
      "intent": "BRAND/MODEL"
     },
     {
-     "askIfMissing": 0.0846,
+     "askIfMissing": 0.085,
      "intent": "SCOPE"
-    },
-    {
-     "askIfMissing": 0.0838,
-     "intent": "AVAILABILITY"
     }
    ],
-   "n": 201
+   "n": 200
   },
   "ac_unit|repair": {
    "entries": [
     {
-     "askIfMissing": 0.5524,
+     "askIfMissing": 0.5537,
      "intent": "ADDRESS"
     },
     {
-     "askIfKnown": 0.0963,
+     "askIfKnown": 0.0896,
      "askIfMissing": 0.4545,
      "intent": "PROBLEM"
     },
     {
-     "askIfMissing": 0.3935,
+     "askIfMissing": 0.3944,
      "intent": "SIZE"
     },
     {
-     "askIfMissing": 0.181,
+     "askIfMissing": 0.1814,
      "intent": "BRAND/MODEL"
     }
    ],
-   "n": 432
+   "n": 431
   },
   "ac_unit|replace": {
    "entries": [
@@ -1020,23 +1016,23 @@ export const CS_ASK_CATALOGUE = {
   "dryer_vent|clean": {
    "entries": [
     {
-     "askIfMissing": 0.7447,
+     "askIfMissing": 0.74,
      "intent": "ADDRESS"
     },
     {
-     "askIfMissing": 0.3237,
-     "intent": "SIZE"
-    },
-    {
-     "askIfMissing": 0.3121,
+     "askIfMissing": 0.3267,
      "intent": "PHOTO"
     },
     {
-     "askIfMissing": 0.2908,
+     "askIfMissing": 0.3176,
+     "intent": "SIZE"
+    },
+    {
+     "askIfMissing": 0.28,
      "intent": "QUANTITY"
     }
    ],
-   "n": 141
+   "n": 150
   },
   "dryer_vent|install": {
    "entries": [
@@ -1063,24 +1059,24 @@ export const CS_ASK_CATALOGUE = {
    "entries": [
     {
      "askIfKnown": 0.0143,
-     "askIfMissing": 0.7899,
+     "askIfMissing": 0.7883,
      "intent": "BRAND/MODEL"
     },
     {
-     "askIfMissing": 0.6683,
+     "askIfMissing": 0.6715,
      "intent": "ADDRESS"
     },
     {
      "askIfKnown": 0.0652,
-     "askIfMissing": 0.4506,
+     "askIfMissing": 0.4472,
      "intent": "PROBLEM"
     },
     {
-     "askIfMissing": 0.2092,
+     "askIfMissing": 0.2103,
      "intent": "AVAILABILITY"
     }
    ],
-   "n": 208
+   "n": 207
   },
   "drywall": {
    "entries": [
@@ -1618,15 +1614,15 @@ export const CS_ASK_CATALOGUE = {
   "furniture_move": {
    "entries": [
     {
-     "askIfMissing": 0.9588,
+     "askIfMissing": 0.9589,
      "intent": "PHOTO"
     },
     {
-     "askIfMissing": 0.8089,
+     "askIfMissing": 0.8091,
      "intent": "ADDRESS"
     }
    ],
-   "n": 753
+   "n": 754
   },
   "furniture_move|clean": {
    "entries": [
@@ -1906,15 +1902,16 @@ export const CS_ASK_CATALOGUE = {
   "gutter|clean": {
    "entries": [
     {
-     "askIfMissing": 0.8017,
+     "askIfKnown": 0.04,
+     "askIfMissing": 0.7895,
      "intent": "STORIES"
     },
     {
-     "askIfMissing": 0.4507,
+     "askIfMissing": 0.4551,
      "intent": "ADDRESS"
     }
    ],
-   "n": 144
+   "n": 158
   },
   "gutter|install": {
    "entries": [
@@ -2089,15 +2086,15 @@ export const CS_ASK_CATALOGUE = {
   "junk": {
    "entries": [
     {
-     "askIfMissing": 0.962,
+     "askIfMissing": 0.9732,
      "intent": "PHOTO"
     },
     {
-     "askIfMissing": 0.9265,
+     "askIfMissing": 0.9367,
      "intent": "ADDRESS"
     }
    ],
-   "n": 424
+   "n": 413
   },
   "junk|maintain": {
    "entries": [
@@ -2247,24 +2244,24 @@ export const CS_ASK_CATALOGUE = {
   "none": {
    "entries": [
     {
-     "askIfMissing": 0.6567,
+     "askIfMissing": 0.6562,
      "intent": "ADDRESS"
     },
     {
-     "askIfMissing": 0.4167,
+     "askIfMissing": 0.417,
      "intent": "PHOTO"
     },
     {
-     "askIfMissing": 0.3273,
+     "askIfMissing": 0.327,
      "intent": "SCOPE"
     },
     {
-     "askIfKnown": 0.0737,
-     "askIfMissing": 0.1461,
+     "askIfKnown": 0.0729,
+     "askIfMissing": 0.1463,
      "intent": "SIZE"
     }
    ],
-   "n": 3798
+   "n": 3807
   },
   "outlet_switch": {
    "entries": [
@@ -2700,7 +2697,7 @@ export const CS_ASK_CATALOGUE = {
   "pipe_leak|repair": {
    "entries": [
     {
-     "askIfMissing": 0.8779,
+     "askIfMissing": 0.8767,
      "intent": "ADDRESS"
     },
     {
@@ -2709,15 +2706,15 @@ export const CS_ASK_CATALOGUE = {
      "intent": "AVAILABILITY"
     },
     {
-     "askIfMissing": 0.3311,
+     "askIfMissing": 0.3344,
      "intent": "PHOTO"
     },
     {
-     "askIfMissing": 0.1452,
+     "askIfMissing": 0.14,
      "intent": "SCOPE"
     }
    ],
-   "n": 303
+   "n": 300
   },
   "pipe_leak|replace": {
    "entries": [
@@ -3131,23 +3128,23 @@ export const CS_ASK_CATALOGUE = {
   "roof|clean": {
    "entries": [
     {
-     "askIfMissing": 0.5385,
+     "askIfMissing": 0.5185,
      "intent": "STORIES"
     },
     {
-     "askIfMissing": 0.3793,
+     "askIfMissing": 0.3667,
      "intent": "ADDRESS"
     },
     {
-     "askIfMissing": 0.3448,
+     "askIfMissing": 0.3667,
      "intent": "SIZE"
     },
     {
-     "askIfMissing": 0.1724,
+     "askIfMissing": 0.2,
      "intent": "PHOTO"
     }
    ],
-   "n": 29
+   "n": 30
   },
   "roof|install": {
    "entries": [
@@ -3294,19 +3291,19 @@ export const CS_ASK_CATALOGUE = {
   "shed": {
    "entries": [
     {
-     "askIfMissing": 0.8776,
+     "askIfMissing": 0.86,
      "intent": "PHOTO"
     },
     {
-     "askIfMissing": 0.4286,
+     "askIfMissing": 0.44,
      "intent": "ADDRESS"
     },
     {
-     "askIfMissing": 0.3714,
+     "askIfMissing": 0.3611,
      "intent": "SIZE"
     }
    ],
-   "n": 49
+   "n": 50
   },
   "shower_tub": {
    "entries": [
@@ -3427,19 +3424,27 @@ export const CS_ASK_CATALOGUE = {
   "sink_drain|clean": {
    "entries": [
     {
-     "askIfMissing": 0.8929,
+     "askIfMissing": 0.8485,
      "intent": "ADDRESS"
     },
     {
-     "askIfMissing": 0.52,
+     "askIfMissing": 0.5,
      "intent": "AVAILABILITY"
     },
     {
-     "askIfMissing": 0.1071,
+     "askIfMissing": 0.0909,
+     "intent": "PHOTO"
+    },
+    {
+     "askIfMissing": 0.0909,
+     "intent": "SIZE"
+    },
+    {
+     "askIfMissing": 0.0909,
      "intent": "STORIES"
     }
    ],
-   "n": 28
+   "n": 33
   },
   "sink_drain|install": {
    "entries": [
@@ -3469,36 +3474,36 @@ export const CS_ASK_CATALOGUE = {
   "sink_drain|maintain": {
    "entries": [
     {
-     "askIfMissing": 0.9259,
+     "askIfMissing": 0.9231,
      "intent": "ADDRESS"
     },
     {
-     "askIfMissing": 0.6364,
+     "askIfMissing": 0.6667,
      "intent": "AVAILABILITY"
     },
     {
-     "askIfMissing": 0.1786,
+     "askIfMissing": 0.1852,
      "intent": "PHOTO"
     }
    ],
-   "n": 28
+   "n": 27
   },
   "sink_drain|repair": {
    "entries": [
     {
-     "askIfMissing": 0.8468,
+     "askIfMissing": 0.8455,
      "intent": "ADDRESS"
     },
     {
-     "askIfMissing": 0.4421,
+     "askIfMissing": 0.4362,
      "intent": "AVAILABILITY"
     },
     {
-     "askIfMissing": 0.3874,
+     "askIfMissing": 0.3909,
      "intent": "PHOTO"
     }
    ],
-   "n": 111
+   "n": 110
   },
   "sink_drain|replace": {
    "entries": [
@@ -6162,6 +6167,250 @@ export const CS_ASK_CATALOGUE = {
    "windows"
   ]
  },
+ "objectNouns": {
+  "ac_unit": [
+   "air condition",
+   "hvac",
+   "condenser"
+  ],
+  "blinds": [
+   "blinds",
+   "curtains",
+   "shades"
+  ],
+  "cabinet": [
+   "cabinet",
+   "countertop",
+   "vanity"
+  ],
+  "carpet": [
+   "carpets",
+   "rugs",
+   "upholstery"
+  ],
+  "ceiling_fan": [
+   "ceiling fan",
+   "exhaust fan"
+  ],
+  "chimney": [
+   "chimney",
+   "fireplace"
+  ],
+  "christmas_lights": [
+   "christmas light",
+   "holiday light"
+  ],
+  "concrete": [
+   "concrete",
+   "driveway",
+   "sidewalk",
+   "slab"
+  ],
+  "deck": [
+   "decks",
+   "patios",
+   "porch"
+  ],
+  "dishwasher": [
+   "dishwasher"
+  ],
+  "door": [
+   "doors",
+   "gates"
+  ],
+  "dryer": [
+   "dryer"
+  ],
+  "dryer_vent": [
+   "dryer vent",
+   "air duct",
+   "ducts"
+  ],
+  "drywall": [
+   "drywall",
+   "sheetrock",
+   "plaster"
+  ],
+  "electrical_panel": [
+   "electrical panel",
+   "breakers",
+   "wiring"
+  ],
+  "faucet": [
+   "faucet",
+   "spigot"
+  ],
+  "fence": [
+   "fences",
+   "fencing"
+  ],
+  "floor": [
+   "floor",
+   "tiles",
+   "laminate",
+   "hardwood",
+   "vinyl plank"
+  ],
+  "furnace_heater": [
+   "furnace",
+   "heat pump",
+   "boiler",
+   "heater"
+  ],
+  "furniture_assembly": [
+   "assembl",
+   "put together",
+   "ikea"
+  ],
+  "furniture_move": [
+   "sofa",
+   "couch",
+   "mattress",
+   "piano",
+   "furniture"
+  ],
+  "garage_door": [
+   "garage door",
+   "garage opener"
+  ],
+  "garbage_disposal": [
+   "garbage disposal"
+  ],
+  "gutter": [
+   "gutters",
+   "downspout"
+  ],
+  "hot_tub": [
+   "hot tub",
+   "jacuzzi",
+   "spa"
+  ],
+  "insulation": [
+   "insulation",
+   "attic"
+  ],
+  "junk": [
+   "junk",
+   "debris",
+   "trash",
+   "haul"
+  ],
+  "light_fixture": [
+   "lights",
+   "lighting",
+   "chandelier",
+   "recessed",
+   "led"
+  ],
+  "mailbox": [
+   "mailbox"
+  ],
+  "microwave": [
+   "microwave"
+  ],
+  "outlet_switch": [
+   "outlets",
+   "switch",
+   "receptacle"
+  ],
+  "oven_stove": [
+   "oven",
+   "stove",
+   "range",
+   "cooktop"
+  ],
+  "paint": [
+   "paint"
+  ],
+  "pest": [
+   "pests",
+   "roach",
+   "termite",
+   "bed bug",
+   "rodent",
+   "mice",
+   "rats",
+   "ants",
+   "wasp",
+   "hornet"
+  ],
+  "pipe_leak": [
+   "pipes",
+   "plumbing",
+   "leak"
+  ],
+  "pool": [
+   "pool"
+  ],
+  "pressure_wash": [
+   "pressure wash",
+   "power wash",
+   "soft wash"
+  ],
+  "refrigerator": [
+   "refrigerator",
+   "fridge",
+   "freezer",
+   "ice maker"
+  ],
+  "remodel": [
+   "remodel",
+   "renovat"
+  ],
+  "roof": [
+   "roof"
+  ],
+  "screen": [
+   "screens",
+   "screening"
+  ],
+  "shed": [
+   "shed",
+   "playset",
+   "swing set",
+   "trampoline"
+  ],
+  "shower_tub": [
+   "shower",
+   "bathtub",
+   "tubs"
+  ],
+  "sink_drain": [
+   "sink",
+   "drains",
+   "clog"
+  ],
+  "sprinkler": [
+   "sprinkler",
+   "irrigation"
+  ],
+  "toilet": [
+   "toilet",
+   "commode"
+  ],
+  "tree": [
+   "trees",
+   "stump",
+   "branch",
+   "shrubs"
+  ],
+  "tv_mount": [
+   "television"
+  ],
+  "wallpaper": [
+   "wallpaper"
+  ],
+  "washer": [
+   "washer"
+  ],
+  "water_heater": [
+   "water heater",
+   "tankless"
+  ],
+  "window": [
+   "windows"
+  ]
+ },
  "objectPatterns": [
   [
    "garage_door",
@@ -6333,7 +6582,7 @@ export const CS_ASK_CATALOGUE = {
   ],
   [
    "junk",
-   "\\bjunk\\b|\\bdebris\\b|\\btrash\\b|\\bhaul\\w*|cleanout|clean.?out"
+   "\\bjunk\\b|\\bdebris\\b|\\btrash\\b|\\bhaul\\w*|(?:estate|house|home|garage|attic|basement|apartment|yard)\\s*clean.?out"
   ],
   [
    "furniture_assembly",
@@ -6806,13 +7055,18 @@ export const CS_ASK_CATALOGUE = {
   ],
   "ac_unit|clean": [
    {
-    "share": 0.5556,
+    "share": 0.5714,
     "slot1": "SIZE",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.1111,
+    "share": 0.102,
     "slot1": "PHOTO",
+    "slot2": "ADDRESS"
+   },
+   {
+    "share": 0.102,
+    "slot1": "AVAILABILITY",
     "slot2": "ADDRESS"
    }
   ],
@@ -6870,27 +7124,27 @@ export const CS_ASK_CATALOGUE = {
   ],
   "ac_unit|maintain": [
    {
-    "share": 0.5556,
+    "share": 0.5597,
     "slot1": "SIZE",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.1185,
+    "share": 0.1194,
     "slot1": "SCOPE",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.1111,
+    "share": 0.1045,
     "slot1": "AVAILABILITY",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.0444,
+    "share": 0.0448,
     "slot1": "PROBLEM",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.037,
+    "share": 0.0373,
     "slot1": "SIZE",
     "slot2": "BRAND/MODEL"
    }
@@ -7811,27 +8065,27 @@ export const CS_ASK_CATALOGUE = {
   ],
   "dryer_vent|clean": [
    {
-    "share": 0.2821,
+    "share": 0.28,
     "slot1": "SIZE",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.2821,
+    "share": 0.272,
     "slot1": "QUANTITY",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.1966,
+    "share": 0.2,
     "slot1": "PHOTO",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.0513,
+    "share": 0.048,
     "slot1": "AVAILABILITY",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.0427,
+    "share": 0.04,
     "slot1": "QUANTITY",
     "slot2": "PHOTO"
    }
@@ -7850,27 +8104,27 @@ export const CS_ASK_CATALOGUE = {
   ],
   "dryer|repair": [
    {
-    "share": 0.3787,
+    "share": 0.381,
     "slot1": "BRAND/MODEL",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.2189,
+    "share": 0.2202,
     "slot1": "AVAILABILITY",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.1538,
+    "share": 0.1488,
     "slot1": "PROBLEM",
     "slot2": "BRAND/MODEL"
    },
    {
-    "share": 0.1361,
+    "share": 0.1369,
     "slot1": "PROBLEM",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.0355,
+    "share": 0.0357,
     "slot1": "BRAND/MODEL",
     "slot2": "PROBLEM"
    }
@@ -8413,12 +8667,12 @@ export const CS_ASK_CATALOGUE = {
   ],
   "furniture_move": [
    {
-    "share": 0.9253,
+    "share": 0.9254,
     "slot1": "PHOTO",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.0461,
+    "share": 0.046,
     "slot1": "SIZE",
     "slot2": "PHOTO"
    }
@@ -8653,12 +8907,12 @@ export const CS_ASK_CATALOGUE = {
   ],
   "gutter|clean": [
    {
-    "share": 0.6222,
+    "share": 0.6078,
     "slot1": "STORIES",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.1111,
+    "share": 0.1569,
     "slot1": "AVAILABILITY",
     "slot2": "ADDRESS"
    }
@@ -8796,19 +9050,14 @@ export const CS_ASK_CATALOGUE = {
   ],
   "junk": [
    {
-    "share": 0.9404,
+    "share": 0.952,
     "slot1": "PHOTO",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.0174,
+    "share": 0.0177,
     "slot1": "PHOTO",
     "slot2": "AVAILABILITY"
-   },
-   {
-    "share": 0.0124,
-    "slot1": "SIZE",
-    "slot2": "PHOTO"
    }
   ],
   "junk|maintain": [
@@ -8939,23 +9188,23 @@ export const CS_ASK_CATALOGUE = {
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.0893,
+    "share": 0.0895,
     "slot1": "SIZE",
     "slot2": "PHOTO"
    },
    {
-    "share": 0.083,
+    "share": 0.0828,
     "slot1": "PHOTO",
     "slot2": "OWNERSHIP"
    },
    {
-    "share": 0.0481,
-    "slot1": "SIZE",
+    "share": 0.0484,
+    "slot1": "AVAILABILITY",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.0481,
-    "slot1": "AVAILABILITY",
+    "share": 0.048,
+    "slot1": "SIZE",
     "slot2": "ADDRESS"
    },
    {
@@ -8964,12 +9213,12 @@ export const CS_ASK_CATALOGUE = {
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.022,
+    "share": 0.0219,
     "slot1": "PHOTO",
     "slot2": "SIZE"
    },
    {
-    "share": 0.0091,
+    "share": 0.009,
     "slot1": "PROBLEM",
     "slot2": "BRAND/MODEL"
    },
@@ -9486,37 +9735,37 @@ export const CS_ASK_CATALOGUE = {
   ],
   "pipe_leak|repair": [
    {
-    "share": 0.3592,
+    "share": 0.3595,
     "slot1": "AVAILABILITY",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.2816,
+    "share": 0.2851,
     "slot1": "PHOTO",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.1796,
+    "share": 0.1736,
     "slot1": "SCOPE",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.0367,
+    "share": 0.0372,
     "slot1": "SIZE",
     "slot2": "PHOTO"
    },
    {
-    "share": 0.0327,
+    "share": 0.0331,
     "slot1": "PROBLEM",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.0286,
+    "share": 0.0289,
     "slot1": "PHOTO",
     "slot2": "AVAILABILITY"
    },
    {
-    "share": 0.0204,
+    "share": 0.0207,
     "slot1": "SIZE",
     "slot2": "ADDRESS"
    }
@@ -10066,12 +10315,12 @@ export const CS_ASK_CATALOGUE = {
   ],
   "shed": [
    {
-    "share": 0.4688,
+    "share": 0.4545,
     "slot1": "PHOTO",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.3125,
+    "share": 0.303,
     "slot1": "SIZE",
     "slot2": "PHOTO"
    }
@@ -10228,7 +10477,7 @@ export const CS_ASK_CATALOGUE = {
   ],
   "sink_drain|clean": [
    {
-    "share": 0.7619,
+    "share": 0.75,
     "slot1": "AVAILABILITY",
     "slot2": "ADDRESS"
    }
@@ -10264,12 +10513,12 @@ export const CS_ASK_CATALOGUE = {
   ],
   "sink_drain|repair": [
    {
-    "share": 0.5116,
+    "share": 0.5059,
     "slot1": "AVAILABILITY",
     "slot2": "ADDRESS"
    },
    {
-    "share": 0.3256,
+    "share": 0.3294,
     "slot1": "PHOTO",
     "slot2": "ADDRESS"
    }
@@ -12537,7 +12786,7 @@ export const CS_ASK_CATALOGUE = {
  },
  "wording": {
   "ADDRESS|ac_unit": {
-   "n": 573,
+   "n": 576,
    "phrase": "share your complete address"
   },
   "ADDRESS|blinds": {
@@ -12577,11 +12826,11 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|dryer": {
-   "n": 156,
+   "n": 157,
    "phrase": "share your complete address"
   },
   "ADDRESS|dryer_vent": {
-   "n": 73,
+   "n": 80,
    "phrase": "share your complete address"
   },
   "ADDRESS|drywall": {
@@ -12613,7 +12862,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|furniture_move": {
-   "n": 443,
+   "n": 444,
    "phrase": "share the complete pickup and drop off addresses"
   },
   "ADDRESS|garage_door": {
@@ -12625,7 +12874,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|gutter": {
-   "n": 129,
+   "n": 138,
    "phrase": "share your complete address"
   },
   "ADDRESS|hot_tub": {
@@ -12637,7 +12886,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|junk": {
-   "n": 269,
+   "n": 265,
    "phrase": "share your complete address"
   },
   "ADDRESS|light_fixture": {
@@ -12657,7 +12906,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|oven_stove": {
-   "n": 80,
+   "n": 81,
    "phrase": "share your complete address"
   },
   "ADDRESS|paint": {
@@ -12669,7 +12918,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|pipe_leak": {
-   "n": 321,
+   "n": 326,
    "phrase": "share your complete address"
   },
   "ADDRESS|pool": {
@@ -12697,7 +12946,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|shed": {
-   "n": 17,
+   "n": 18,
    "phrase": "share your complete address"
   },
   "ADDRESS|shower_tub": {
@@ -12705,7 +12954,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|sink_drain": {
-   "n": 113,
+   "n": 117,
    "phrase": "share your complete address"
   },
   "ADDRESS|sprinkler": {
@@ -12741,7 +12990,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "AVAILABILITY|ac_unit": {
-   "n": 52,
+   "n": 53,
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|chimney": {
@@ -12769,7 +13018,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|dryer_vent": {
-   "n": 7,
+   "n": 9,
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|electrical_panel": {
@@ -12793,7 +13042,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|gutter": {
-   "n": 9,
+   "n": 13,
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|hot_tub": {
@@ -12805,7 +13054,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|junk": {
-   "n": 4,
+   "n": 3,
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|light_fixture": {
@@ -12833,7 +13082,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|pipe_leak": {
-   "n": 111,
+   "n": 113,
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|pool": {
@@ -12853,7 +13102,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|sink_drain": {
-   "n": 62,
+   "n": 65,
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|sprinkler": {
@@ -13029,7 +13278,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "send me a picture of the gas {object}"
   },
   "PHOTO|dryer_vent": {
-   "n": 7,
+   "n": 8,
    "phrase": "share a picture of the dryer vent"
   },
   "PHOTO|drywall": {
@@ -13061,7 +13310,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share pictures of the {objects} that need to be assembled"
   },
   "PHOTO|furniture_move": {
-   "n": 265,
+   "n": 266,
    "phrase": "share pictures of the {objects} that need to be moved"
   },
   "PHOTO|garage_door": {
@@ -13085,7 +13334,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share a picture of the {object}"
   },
   "PHOTO|junk": {
-   "n": 60,
+   "n": 59,
    "phrase": "share a picture of the {objects} items"
   },
   "PHOTO|light_fixture": {
@@ -13289,7 +13538,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know what exactly needs to be done"
   },
   "SCOPE|gutter": {
-   "n": 5,
+   "n": 6,
    "phrase": "share what exactly needs to be done"
   },
   "SCOPE|light_fixture": {
@@ -13305,7 +13554,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know what exactly needs to be painted"
   },
   "SCOPE|pipe_leak": {
-   "n": 74,
+   "n": 75,
    "phrase": "let me know what exactly needs to be done"
   },
   "SCOPE|pool": {
@@ -13385,8 +13634,8 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know the size of the {object}"
   },
   "SIZE|dryer_vent": {
-   "n": 7,
-   "phrase": "let me know the length of the dryer vent"
+   "n": 8,
+   "phrase": "share the size of the dryer vent"
   },
   "SIZE|drywall": {
    "n": 11,
@@ -13413,7 +13662,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know the size of the {object}"
   },
   "SIZE|gutter": {
-   "n": 4,
+   "n": 5,
    "phrase": "share the size of the house"
   },
   "SIZE|insulation": {
@@ -13481,7 +13730,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know if your house is single or double story"
   },
   "STORIES|gutter": {
-   "n": 57,
+   "n": 58,
    "phrase": "let me know if your house is single or double story"
   },
   "STORIES|paint": {
@@ -13495,7 +13744,7 @@ export const CS_ASK_CATALOGUE = {
  },
  "wordingByAction": {
   "ADDRESS|ac_unit|clean": {
-   "n": 29,
+   "n": 32,
    "phrase": "share your complete address"
   },
   "ADDRESS|ac_unit|install": {
@@ -13595,10 +13844,14 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|dryer_vent|clean": {
-   "n": 61,
+   "n": 68,
    "phrase": "share your complete address"
   },
   "ADDRESS|dryer_vent|install": {
+   "n": 5,
+   "phrase": "share your complete address"
+  },
+  "ADDRESS|dryer|clean": {
    "n": 5,
    "phrase": "share your complete address"
   },
@@ -13699,7 +13952,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|furniture_move|install": {
-   "n": 7,
+   "n": 8,
    "phrase": "share the complete pickup and drop off addresses"
   },
   "ADDRESS|furniture_move|maintain": {
@@ -13739,11 +13992,11 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|gutter|clean": {
-   "n": 59,
+   "n": 67,
    "phrase": "share your complete address"
   },
   "ADDRESS|gutter|install": {
-   "n": 16,
+   "n": 17,
    "phrase": "share your complete address"
   },
   "ADDRESS|gutter|repair": {
@@ -13772,6 +14025,10 @@ export const CS_ASK_CATALOGUE = {
   },
   "ADDRESS|insulation|install": {
    "n": 7,
+   "phrase": "share your complete address"
+  },
+  "ADDRESS|junk|clean": {
+   "n": 5,
    "phrase": "share your complete address"
   },
   "ADDRESS|junk|maintain": {
@@ -13814,6 +14071,10 @@ export const CS_ASK_CATALOGUE = {
    "n": 5,
    "phrase": "share your complete address"
   },
+  "ADDRESS|oven_stove|install": {
+   "n": 5,
+   "phrase": "share your complete address"
+  },
   "ADDRESS|oven_stove|repair": {
    "n": 50,
    "phrase": "share your complete address"
@@ -13847,7 +14108,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|pipe_leak|install": {
-   "n": 12,
+   "n": 13,
    "phrase": "share your complete address"
   },
   "ADDRESS|pipe_leak|maintain": {
@@ -13859,7 +14120,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|pipe_leak|replace": {
-   "n": 33,
+   "n": 34,
    "phrase": "share your complete address"
   },
   "ADDRESS|pool|clean": {
@@ -13935,7 +14196,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share your complete address"
   },
   "ADDRESS|sink_drain|clean": {
-   "n": 7,
+   "n": 10,
    "phrase": "share your complete address"
   },
   "ADDRESS|sink_drain|install": {
@@ -14054,6 +14315,10 @@ export const CS_ASK_CATALOGUE = {
    "n": 8,
    "phrase": "let me know your availability"
   },
+  "AVAILABILITY|dryer_vent|clean": {
+   "n": 5,
+   "phrase": "let me know your availability"
+  },
   "AVAILABILITY|dryer|repair": {
    "n": 31,
    "phrase": "let me know your availability"
@@ -14083,7 +14348,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|gutter|clean": {
-   "n": 5,
+   "n": 9,
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|hot_tub|maintain": {
@@ -14143,7 +14408,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|sink_drain|clean": {
-   "n": 6,
+   "n": 8,
    "phrase": "let me know your availability"
   },
   "AVAILABILITY|sink_drain|repair": {
@@ -14359,7 +14624,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "share a picture of the {object}"
   },
   "PHOTO|dryer_vent|clean": {
-   "n": 6,
+   "n": 7,
    "phrase": "share a picture of the dryer vent"
   },
   "PHOTO|drywall|repair": {
@@ -14393,6 +14658,10 @@ export const CS_ASK_CATALOGUE = {
   "PHOTO|furniture_assembly|maintain": {
    "n": 14,
    "phrase": "share pictures of the {objects} that need to be assembled"
+  },
+  "PHOTO|furniture_move|install": {
+   "n": 5,
+   "phrase": "share pictures of the {objects} that need to be moved"
   },
   "PHOTO|furniture_move|maintain": {
    "n": 73,
@@ -14559,7 +14828,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know what issue you are facing with the {object}"
   },
   "QUANTITY|dryer_vent|clean": {
-   "n": 17,
+   "n": 18,
    "phrase": "let me know how many {objects} need to be cleaned"
   },
   "QUANTITY|window|clean": {
@@ -14651,8 +14920,8 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know the size of the {object}"
   },
   "SIZE|dryer_vent|clean": {
-   "n": 7,
-   "phrase": "let me know the length of the dryer vent"
+   "n": 8,
+   "phrase": "share the size of the dryer vent"
   },
   "SIZE|drywall|repair": {
    "n": 7,
@@ -14735,7 +15004,7 @@ export const CS_ASK_CATALOGUE = {
    "phrase": "let me know if your house is single or double story"
   },
   "STORIES|gutter|clean": {
-   "n": 26,
+   "n": 27,
    "phrase": "let me know if your house is single or double story"
   },
   "STORIES|gutter|install": {

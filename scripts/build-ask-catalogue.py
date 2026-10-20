@@ -110,7 +110,16 @@ OBJECTS: list[tuple[str, str, str, str]] = [
         "pest",
         "pests",
     ),
-    ("junk", r"\bjunk\b|\bdebris\b|\btrash\b|\bhaul\w*|cleanout|clean.?out", "junk", "junk"),
+    (
+        "junk",
+        # "clean out" is only a clearance when it is a place being cleared: on a
+        # plumbing lead it is the drain fitting, and those posts were being asked
+        # for "a picture of the junk items".
+        r"\bjunk\b|\bdebris\b|\btrash\b|\bhaul\w*"
+        r"|(?:estate|house|home|garage|attic|basement|apartment|yard)\s*clean.?out",
+        "junk",
+        "junk",
+    ),
     ("furniture_assembly", r"assembl\w*|put together|\bikea\b", "item", "items"),
     (
         "furniture_move",
@@ -127,6 +136,37 @@ OBJECTS: list[tuple[str, str, str, str]] = [
     ("remodel", r"remodel\w*|renovat\w*", "area", "areas"),
 ]
 OBJECT_LABELS = {key: (singular, plural) for key, _, singular, plural in OBJECTS}
+
+
+def pattern_nouns(pattern: str) -> list[str]:
+    """The plain nouns an object's pattern recognises, in declaration order.
+
+    A pattern covers several words for one thing - deck/patio/porch,
+    concrete/driveway/sidewalk/slab - but only one of them is the label. When
+    the customer used a different one, the message should use theirs rather
+    than renaming their porch a deck, so the runtime needs the full list.
+    """
+    nouns = []
+    # An alternative containing a group is never a plain noun: it is either a
+    # qualified phrase ("estate cleanout") or an inflected stem
+    # (\bmov(?:e|ing|ers)\b, which would otherwise yield "mov"). Mark the
+    # groups before splitting, since "|" inside one would cut it in half.
+    marked = re.sub(r"\(\?:[^)]*\)", "~", pattern)
+    for alternative in marked.split("|"):
+        if "~" in alternative:
+            continue
+        # Splitting on "|" cuts through any inner group, so an alternative
+        # carrying group syntax is a fragment, not a noun: "(?:estate" from
+        # junk's cleanout clause once rendered "the estates items".
+        if re.search(r"[(){}\[\]]|\\s", alternative):
+            continue
+        word = re.sub(r"\\b|\\w\*|\?|\+|\*", "", alternative).strip()
+        if word and re.fullmatch(r"[a-z][a-z ]*", word) and len(word) > 2:
+            nouns.append(word)
+    return nouns
+
+
+OBJECT_PATTERN_NOUNS = {key: pattern_nouns(pattern) for key, pattern, _, _ in OBJECTS}
 
 # Actions are detected only AFTER object spans are masked out, so "washer"
 # can no longer supply the "wash" in `clean` and "plumbing service" can no
@@ -583,6 +623,7 @@ def main() -> int:
         },
         "objectPatterns": [[name, pat] for name, pat, _s, _p in OBJECTS],
         "objectLabels": {k: list(v) for k, v in OBJECT_LABELS.items()},
+        "objectNouns": OBJECT_PATTERN_NOUNS,
         "actionPatterns": [[name, pat] for name, pat in ACTIONS],
         "factPatterns": FACTS,
         "photoNegation": PHOTO_NEGATION,
