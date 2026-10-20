@@ -20,6 +20,7 @@ import { selectAsks, wordingFor } from "../../supabase/functions/_shared/cs-ask-
 import {
   joinAsks,
   noFurtherServiceRequested,
+  referralPlatform,
   NO_SERVICE_ACKNOWLEDGMENT,
 } from "../../supabase/functions/_shared/cs-composer";
 import { CS_ASK_CATALOGUE } from "../../supabase/functions/_shared/cs-ask-catalogue.generated";
@@ -60,6 +61,9 @@ export function firstName(fullName: string | null | undefined) {
   return fullName?.trim().split(/\s+/)[0] || "there";
 }
 
+/** After "regarding" the team drops the indefinite article. */
+const dropArticle = (phrase: string) => phrase.replace(/^(?:an?)\s+/i, "");
+
 export type SuggestionLead = {
   customer_name?: string | null;
   service?: string | null;
@@ -71,6 +75,7 @@ export type SuggestionLead = {
   cs_notes?: unknown;
   requirement_1?: string | null;
   requirement_2?: string | null;
+  reference?: string | null;
 };
 
 /** The sources the detectors may read. Outgoing drafts and the suggested
@@ -219,10 +224,23 @@ export function renderCsComposeSuggestion(template: string, lead: SuggestionLead
     if (/\(Requirement\)/i.test(withoutQuestion)) return "";
     template = withoutQuestion;
   }
+  // A lead whose Reference records a conversation is not introduced again, so
+  // the greeting and intro clause are swapped for the team's referral opening
+  // before the placeholders are filled. The asks and the closing are untouched.
+  const platform = referralPlatform(lead.reference);
+  if (platform) {
+    template = template.replace(
+      /^(?:Hi|Hello)\s*\(Person first name\)\s*,.*?(?=Could you kindly|$)/i,
+      `Hi (Person first name), we had a conversation on ${platform} regarding (Service Context). `,
+    );
+  }
   return (
     template
       .replace(/\(Person first name\)/gi, firstName(lead.customer_name))
-      .replace(/\(Service Context\)/gi, serviceContextForLead(lead))
+      .replace(
+        /\(Service Context\)/gi,
+        platform ? dropArticle(serviceContextForLead(lead)) : serviceContextForLead(lead),
+      )
       .replace(/\(Requirement\)/gi, requirements)
       .replace(/\(Sender\)/gi, "Alex")
       .replace(UNFILLED_PLACEHOLDER, "")

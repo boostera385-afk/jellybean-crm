@@ -9,6 +9,7 @@ import {
   composeAnswerAware,
   joinAsks,
   parseTargeting,
+  referralPlatform,
   renderComposePlan,
   safeComposerError,
   scoreComposeReply,
@@ -159,6 +160,63 @@ describe("validating what the model returns", () => {
     ).toThrow();
     expect(() => parseTargeting({ serviceContext: 123, targetObject: "none" }, [])).toThrow();
     expect(() => parseTargeting(null, [])).toThrow();
+  });
+});
+
+describe("a lead we already spoke to is not introduced again", () => {
+  it.each([
+    ["Had a conversation on FB", "Facebook"],
+    ["Had a conversation on Nextdoor", "Nextdoor"],
+    ["had a conversation on facebook", "Facebook"],
+    ["Customer had a conversation on Next Door about the roof", "Nextdoor"],
+  ])("%s -> %s", (reference, expected) => {
+    expect(referralPlatform(reference)).toBe(expected);
+  });
+
+  it.each([
+    ["ND", "a bare source marker, not a conversation"],
+    ["mail", "a source marker"],
+    ["", "empty"],
+    [null, "absent"],
+    ["Found on facebook marketplace", "names a platform but no conversation"],
+  ])("%s stays on the standard opening (%s)", (reference, _why) => {
+    expect(referralPlatform(reference)).toBeNull();
+  });
+
+  it("uses the referral opening, drops the sender and the article", () => {
+    // 1,397 delivered referral messages: only 11 carry "this is <name>", and
+    // "regarding" beats "that you are looking for" 1,072 to 76.
+    const message = renderComposePlan(
+      lead({ reference: "Had a conversation on FB" }),
+      plan({
+        serviceContext: "a refrigerator repair service",
+        questions: [{ key: "ADDRESS", object: null, text: "share your complete address" }],
+      }),
+      "Gordon",
+    );
+    expect(message).toBe(
+      "Hi Casey, we had a conversation on Facebook regarding refrigerator repair service. " +
+        "Could you kindly share your complete address, so I can check the schedule for a visit?",
+    );
+    expect(message).not.toMatch(/this is Gordon/);
+    expect(message).not.toMatch(/looking for/);
+  });
+
+  it("keeps the standard opening when the reference is only a source marker", () => {
+    const message = renderComposePlan(
+      lead({ reference: "ND" }),
+      plan({ questions: [{ key: "ADDRESS", object: null, text: "share your complete address" }] }),
+      "Gordon",
+    );
+    expect(message).toContain("Hi Casey, this is Gordon. I saw that you are looking for");
+    expect(message).not.toMatch(/conversation on/);
+  });
+
+  it("asks the same questions either way - only the opening changes", () => {
+    const questions = [{ key: "PHOTO" as const, object: null, text: "share some pictures" }];
+    const asks = (reference: string) =>
+      renderComposePlan(lead({ reference }), plan({ questions }), "Gordon").split("Could you")[1];
+    expect(asks("Had a conversation on FB")).toBe(asks("ND"));
   });
 });
 

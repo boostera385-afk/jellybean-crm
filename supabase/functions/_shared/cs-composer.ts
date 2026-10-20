@@ -18,6 +18,9 @@ export type ComposerInput = {
   imageCount?: number;
   suggestedRequirements?: string[];
   previousDraft?: string | null;
+  /** The lead's Reference field. When it records a conversation on a platform
+   *  the opening changes; see referralPlatform. */
+  reference?: string | null;
 };
 
 export type ComposePlan = {
@@ -144,12 +147,39 @@ export function joinAsks(fragments: string[]): string {
   return [first, ...tail].join(" and ");
 }
 
+/**
+ * The platform a lead's Reference says we already spoke on, if any.
+ *
+ * The Reference field is free text in some roles and a fixed choice in others
+ * ("Had a conversation on FB", "Had a conversation on Nextdoor"). Only an
+ * actual conversation changes the opening: a bare source marker such as "ND"
+ * or "mail" records where the lead came from, not that anyone spoke, and keeps
+ * the standard introduction.
+ */
+export function referralPlatform(reference: string | null | undefined): string | null {
+  const text = (reference ?? "").toLowerCase();
+  if (!/\bconversation\b/.test(text)) return null;
+  if (/\bnextdoor\b|\bnext door\b/.test(text)) return "Nextdoor";
+  if (/\bfb\b|\bfacebook\b/.test(text)) return "Facebook";
+  return null;
+}
+
+/** After "regarding" the team drops the indefinite article: "regarding carpet
+ *  cleaning service", not "regarding a carpet cleaning service". */
+const dropArticle = (phrase: string) => phrase.replace(/^(?:an?)\s+/i, "");
+
 export function renderComposePlan(input: ComposerInput, plan: ComposePlan, sender: string): string {
   const first = input.customerName.trim().split(/\s+/)[0];
   const safeName = first && /^[\p{L}\p{M}'’.-]+$/u.test(first) ? first : "there";
+  const platform = referralPlatform(input.reference);
   if (noFurtherServiceRequested(sourceParts(input)))
     return `Hi ${safeName}, this is ${sender}. ${NO_SERVICE_ACKNOWLEDGMENT}`;
-  const opening = `Hi ${safeName}, this is ${sender}. I saw that you are looking for ${plan.serviceContext}.`;
+  // A lead we already spoke to is not introduced again: of 1,397 delivered
+  // referral messages only 11 carry "this is <name>", and "regarding" outnumbers
+  // "that you are looking for" by 1,072 to 76.
+  const opening = platform
+    ? `Hi ${safeName}, we had a conversation on ${platform} regarding ${dropArticle(plan.serviceContext)}.`
+    : `Hi ${safeName}, this is ${sender}. I saw that you are looking for ${plan.serviceContext}.`;
   if (!plan.questions.length) return opening;
   const asks = joinAsks(plan.questions.map((question) => question.text));
   return `${opening} Could you kindly ${asks}, so I can check the schedule for a visit?`;

@@ -65,6 +65,43 @@ describe("the suggestion never ships a placeholder or a pasted sentence", () => 
   });
 });
 
+describe("the one-click chip follows the same referral rule", () => {
+  it("swaps in the referral opening for a Facebook conversation", () => {
+    expect(
+      renderCsComposeSuggestion(
+        SCHEDULE,
+        lead({
+          service: "Gutter Cleaning",
+          post_text: "Looking for someone to clean gutters",
+          reference: "Had a conversation on FB",
+        }),
+      ),
+    ).toBe(
+      "Hi Casey, we had a conversation on Facebook regarding gutter cleaning service. " +
+        "Could you kindly let me know if your house is single or double story " +
+        "and share your complete address, so I can check the schedule for a visit?",
+    );
+  });
+
+  it("uses Nextdoor when that is where the conversation happened", () => {
+    expect(
+      renderCsComposeSuggestion(
+        SCHEDULE,
+        lead({ service: "plumber", reference: "Had a conversation on Nextdoor" }),
+      ),
+    ).toContain("Hi Casey, we had a conversation on Nextdoor regarding plumber.");
+  });
+
+  it("leaves a bare source marker on the standard opening", () => {
+    const message = renderCsComposeSuggestion(
+      SCHEDULE,
+      lead({ service: "plumber", reference: "ND" }),
+    );
+    expect(message).toContain("this is Alex. I saw that you are looking for a plumber.");
+    expect(message).not.toMatch(/conversation on/);
+  });
+});
+
 describe("the service context reads correctly after 'looking for'", () => {
   it.each([
     ["Garage Door Repair", "a garage door repair service"],
