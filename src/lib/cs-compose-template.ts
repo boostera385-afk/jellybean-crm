@@ -139,13 +139,22 @@ function fromContext(lead: SuggestionLead): string {
   const raw = (lead.context || lead.post_text || "").replace(/\s+/g, " ").trim();
   if (!raw) return "";
   const phrase = raw
-    .replace(/^(?:customer\s+)?(?:is\s+)?(?:looking for|seeking|needs?|wants?|requires?)\s+/i, "")
+    .replace(/^(?:hi|hello|hey)\b[^.!?]*?[,.]\s*/i, "")
+    .replace(
+      /^(?:customer\s+|i\s*(?:'m|am)\s+|we\s*(?:'re|are)\s+|i\s+|we\s+)?(?:is\s+|just\s+)?(?:looking (?:for|to)|searching for|seeking|in need of|need(?:s|ed)?|want(?:s|ed)?|requires?|trying to find)\s+/i,
+      "",
+    )
     .split(/[.!?;]|,\s+(?:and|but|so)\b/)[0]
     .trim()
     .replace(/^(?:a|an|the)\s+/i, "");
   // At least two words: a bare noun like "help" gives "a help", which is the
   // kind of broken phrase this whole function exists to stop.
   if (!/\s/.test(phrase) || phrase.length < 8 || phrase.length > 90) return "";
+  // Raw post text carries brackets, questions and addresses. Anything that is
+  // not a clean phrase is dropped rather than pasted after "looking for".
+  if (/[()[\]{}<>@]|\d{3,}|\?/.test(phrase)) return "";
+  if (/^(?:do|does|did|can|could|would|will|is|are|who|what|where|when|how)\b/i.test(phrase))
+    return "";
   return `${article(phrase)} ${phrase.toLowerCase()}`;
 }
 

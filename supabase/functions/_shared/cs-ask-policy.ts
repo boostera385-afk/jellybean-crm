@@ -127,11 +127,36 @@ export function contradictsAction(phrase: string, action: string | null): boolea
   );
 }
 
-function render(phrase: string, object: string | null): string | null {
-  const [singular, plural] = CS_ASK_CATALOGUE.objectLabels[object ?? ""] ?? ["", ""];
+const singular = (noun: string) => (/[^s]s$/.test(noun) ? noun.slice(0, -1) : noun);
+const plural = (noun: string) => (noun.endsWith("s") ? noun : `${noun}s`);
+
+/**
+ * The noun to put in the slot: the customer's word where it differs from ours.
+ *
+ * One pattern covers several words for the same thing - deck/patio/porch,
+ * concrete/driveway/sidewalk/slab - and only one of them is the catalogue
+ * label. Substituting only when the label itself is ABSENT from the post keeps
+ * every attested phrase intact and changes solely the cases that were wrong:
+ * a porch called "the deck", a concrete slab called "the driveway", a French
+ * drain called "the sink".
+ */
+export function labelFor(object: string | null, sources: string, wantPlural: boolean): string {
+  const [sing, plur] = CS_ASK_CATALOGUE.objectLabels[object ?? ""] ?? ["", ""];
+  const fallback = wantPlural ? plur : sing;
+  if (!object || !sources) return fallback;
+  const head = sing.split(" ").pop() ?? "";
+  if (!head || new RegExp(`\\b${head}`, "i").test(sources)) return fallback;
+  const used = (CS_ASK_CATALOGUE.objectNouns[object] ?? []).find((noun) =>
+    new RegExp(`\\b${singular(noun)}`, "i").test(sources),
+  );
+  if (!used) return fallback;
+  return wantPlural ? plural(singular(used)) : singular(used);
+}
+
+function render(phrase: string, object: string | null, sources: string): string | null {
   const filled = phrase
-    .replace(/\{objects\}/g, plural)
-    .replace(/\{object\}/g, singular)
+    .replace(/\{objects\}/g, labelFor(object, sources, true))
+    .replace(/\{object\}/g, labelFor(object, sources, false))
     .replace(/\s+/g, " ")
     .trim();
   // An unfilled slot would reach a customer as "{object}". Drop the ask rather
@@ -152,6 +177,7 @@ export function resolveWording(
   intent: AskIntent,
   object: string | null,
   action: string | null,
+  sources = "",
 ): { phrase: string; object: string | null } | null {
   const scoped = object && action ? `${intent}|${object}|${action}` : "";
   const objectForms = [
@@ -160,13 +186,13 @@ export function resolveWording(
   ];
   for (const entry of objectForms) {
     if (!entry) continue;
-    const phrase = render(entry.phrase, object);
+    const phrase = render(entry.phrase, object, sources);
     if (phrase && !contradictsAction(phrase, action)) return { phrase, object };
   }
   if (OBJECT_BOUND_INTENTS.has(intent)) return null;
   const generic = CS_ASK_CATALOGUE.genericWording[intent];
   if (!generic) return null;
-  const phrase = render(generic.phrase, null);
+  const phrase = render(generic.phrase, null, sources);
   return phrase && !contradictsAction(phrase, action) ? { phrase, object: null } : null;
 }
 
@@ -175,8 +201,9 @@ export function wordingFor(
   intent: AskIntent,
   object: string | null,
   action: string | null = null,
+  sources = "",
 ): string | null {
-  return resolveWording(intent, object, action)?.phrase ?? null;
+  return resolveWording(intent, object, action, sources)?.phrase ?? null;
 }
 
 type Candidate = { entry: LadderEntry; fragment: string; object: string | null };
@@ -199,13 +226,13 @@ function candidatesFor(
       suppressed.push(entry.intent);
       continue;
     }
-    const resolved = resolveWording(entry.intent, targetObject, detection.action);
+    const resolved = resolveWording(entry.intent, targetObject, detection.action, sources);
     if (!resolved) continue;
     let { phrase: fragment, object } = resolved;
     // Moving inside one property is not a route: fall back to the plain
     // address ask rather than requesting a drop-off the job does not have.
     if (entry.intent === "ADDRESS" && detection.sameSite && /pick.?up/i.test(fragment)) {
-      const plain = resolveWording("ADDRESS", null, detection.action);
+      const plain = resolveWording("ADDRESS", null, detection.action, sources);
       if (!plain) continue;
       fragment = plain.phrase;
       object = null;

@@ -369,6 +369,23 @@ and keeps the standard opening. Only the opening changes; the asks and closing
 are identical either way. `referralPlatform` is shared by the Edge Function and
 the one-click chip so the two cannot diverge.
 
+The slot takes the customer's own noun when it differs from ours. One pattern
+covers several words for one thing - deck/patio/porch,
+concrete/driveway/sidewalk/slab - and only one is the catalogue label, so a
+porch was being called "the deck", a concrete slab "the driveway" and a French
+drain "the sink". `labelFor` substitutes only when the label itself is absent
+from the post, which leaves every attested phrase intact and changed 10.1% of
+messages to 0.02%. The noun list is derived from each pattern by the
+generator, skipping any alternative carrying group syntax, since those are
+qualifiers or inflected stems rather than nouns ("estate cleanout", and
+`\bmov(?:e|ing|ers)\b`, which otherwise yielded "mov").
+
+A full replay of the 27,554-lead export through the live selection code is the
+standing audit. It reports zero re-asks on eight of the nine facts; the ninth,
+brand, sits at 0.07% on multi-appliance posts where the brand is far from the
+appliance it belongs to, which is the adjacency guard correctly preferring to
+ask again over attributing one appliance's brand to another.
+
 Every one of the phrases the catalogue can emit appears verbatim in the
 delivered messages; a test asserts this over the whole catalogue. The single
 exception anywhere in the system is the chip's last-resort service context

@@ -396,6 +396,65 @@ describe("the stated brand and the named object are read correctly", () => {
   });
 });
 
+describe("the message uses the customer's own word for the thing", () => {
+  it.each([
+    ["porch", "Porch Repair", "take out and put in three 10 foot porch boards", /porch/, /deck/],
+    ["concrete slab", "Concrete Repair", "pouring a 10x10 concrete slab", /concrete/, /driveway/],
+    ["french drain", "General Plumbing Repair", "install a French drain", /drain/, /\bsink\b/],
+    ["fridge", "Appliance Repair", "need my fridge looked at", /fridge/, /refrigerator/],
+  ])("calls a %s what the customer called it", (_label, service, post, expected, forbidden) => {
+    const text = ask(service, post)
+      .asks.map((entry) => entry.fragment)
+      .join(" and ");
+    expect(text).toMatch(expected);
+    expect(text).not.toMatch(forbidden);
+  });
+
+  it("keeps the catalogue's own label when the customer used it", () => {
+    // Substitution only fires when our label is absent, so attested wording
+    // is untouched everywhere else.
+    expect(
+      ask("Deck Repair", "my deck boards are rotting")
+        .asks.map((a) => a.fragment)
+        .join(" "),
+    ).toMatch(/deck/);
+  });
+
+  it("never emits a truncated stem or a qualifier as the noun", () => {
+    for (const [object, nouns] of Object.entries(CS_ASK_CATALOGUE.objectNouns)) {
+      for (const noun of nouns) {
+        expect(noun, `${object}: ${noun}`).toMatch(/^[a-z][a-z ]{2,}$/);
+      }
+    }
+    // Regressions that reached a customer before this guard existed.
+    expect(CS_ASK_CATALOGUE.objectNouns.furniture_move).not.toContain("mov");
+    expect(CS_ASK_CATALOGUE.objectNouns.junk).not.toContain("house");
+  });
+
+  it("does not read a plumbing clean-out as a junk clearance", () => {
+    const selection = ask("plumber", "Need plumber for an external clean out going to the house");
+    expect(selection.asks.map((entry) => entry.fragment).join(" ")).not.toMatch(/junk/i);
+  });
+
+  it("still reads an estate cleanout as a clearance", () => {
+    expect(ask("Junk Removal", "Need an estate cleanout, lots of furniture").ladderKey).toMatch(
+      /^junk/,
+    );
+  });
+
+  it("ties a brand to its appliance in either word order", () => {
+    // "fixes fridges lg model" names the object before the brand.
+    expect(
+      brandKnownFor("refrigerator", normalizeSource("someone who fixes fridges lg model")),
+    ).toBe(true);
+    expect(brandKnownFor("refrigerator", normalizeSource("lg french door refrigerator"))).toBe(
+      true,
+    );
+    // A conjunction still means a second appliance has started.
+    expect(brandKnownFor("oven_stove", normalizeSource("lg refrigerator and a stove"))).toBe(false);
+  });
+});
+
 describe("the selected pair is always one the team actually sends", () => {
   const cases: [string, string][] = [
     ["Appliance Repair", "My fridge stopped working"],
