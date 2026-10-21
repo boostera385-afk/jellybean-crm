@@ -104,7 +104,6 @@ const OUTCOME_FILTERS = [
   "wrong_lead",
   "already_got_someone",
   "service_provider_himself",
-  "small_service",
   "converted",
   "cx_interested",
   "cx_not_interested",

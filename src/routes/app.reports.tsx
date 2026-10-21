@@ -94,12 +94,9 @@ export const CS_STATUSES = [
   "undeliver",
   "wrong_number",
   "wrong_lead",
-  "wrong_service",
-  "wrong_person",
   "already_got_someone",
   "already_received_before",
   "service_provider_himself",
-  "small_service",
   "converted",
   "cx_interested",
   "cx_not_interested",
@@ -123,12 +120,9 @@ const CS_LABELS: Record<string, string> = {
   undeliver: "Undeliver",
   wrong_number: "Wrong Number",
   wrong_lead: "Wrong Lead",
-  wrong_service: "Wrong Service",
-  wrong_person: "Wrong Person",
   already_got_someone: "Already Got Someone",
   already_received_before: "Already received before",
   service_provider_himself: "Service Provider Himself",
-  small_service: "Small Service",
   converted: "Delivered",
   cx_interested: "CX interested",
   cx_not_interested: "CX not interested",
@@ -156,12 +150,9 @@ const CS_STATUS_COLORS: Record<string, string> = {
   undeliver: "#f87171",
   wrong_number: "#ef4444",
   wrong_lead: "#f43f5e",
-  wrong_service: "#fb7185",
-  wrong_person: "#fda4af",
   already_got_someone: "#94a3b8",
   already_received_before: "#cbd5e1",
   service_provider_himself: "#a8a29e",
-  small_service: "#94a3b8",
 };
 
 function statusDotTone(status: string) {
@@ -590,7 +581,13 @@ function Inner() {
               value={cs.data?.[k] ?? 0}
               total={csTotal}
               color={CS_STATUS_COLORS[k]}
-              aiValue={ai.data && !ai.isError ? (ai.data.counts[k] ?? 0) : null}
+              aiValue={
+                k === "need_follow_up"
+                  ? undefined
+                  : ai.data && !ai.isError
+                    ? (ai.data.counts[k] ?? 0)
+                    : null
+              }
             />
           ))}
         </Grid>
@@ -1300,9 +1297,7 @@ function UserForwardedRow({
   const qualityIssuesCount =
     (statusCounts["undeliver"] ?? 0) +
     (statusCounts["wrong_number"] ?? 0) +
-    (statusCounts["wrong_lead"] ?? 0) +
-    (statusCounts["wrong_service"] ?? 0) +
-    (statusCounts["wrong_person"] ?? 0);
+    (statusCounts["wrong_lead"] ?? 0);
   const issuesPct = ((qualityIssuesCount / total) * 100).toFixed(1);
 
   const selectedCount = selectedStatus !== "__all__" ? (statusCounts[selectedStatus] ?? 0) : null;

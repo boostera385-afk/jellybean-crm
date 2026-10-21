@@ -86,7 +86,12 @@ import { listCsTeam, bulkAssignImportantLeads, type CsTeamMember } from "@/lib/c
 import { downloadCsv, formatPhone, phoneSearchPattern, phoneDigitsMatch } from "@/lib/crm-lite";
 import type { CsStatus, LeadNote } from "@/lib/crm-types";
 import { NumberNameSelect } from "@/components/number-name-select";
-import { STATUS_LABEL, STATUS_TONE, pinnedImportantFor } from "@/lib/lead-statuses";
+import {
+  STATUS_LABEL,
+  STATUS_TONE,
+  canShowAiSuggestion,
+  pinnedImportantFor,
+} from "@/lib/lead-statuses";
 import { renderCsComposeSuggestion } from "@/lib/cs-compose-template";
 import { rephraseLeadTemplateWithAi, autoRephraseLeadWithAi } from "@/lib/raw-leads-ai.functions";
 import {
@@ -243,12 +248,9 @@ const PIPELINE_STATUSES = [
   "undeliver",
   "wrong_number",
   "wrong_lead",
-  "wrong_service",
-  "wrong_person",
   "already_got_someone",
   "already_received_before",
   "service_provider_himself",
-  "small_service",
   "converted",
   "cx_interested",
   "cx_not_interested",
@@ -766,7 +768,9 @@ function Inner() {
     ],
     enabled: isAdmin,
     queryFn: async (): Promise<Map<string, AiSuggestion>> => {
-      const ids = (list.data ?? []).map((l) => l.id);
+      const ids = (list.data ?? [])
+        .filter((l) => l.cs_status !== "need_follow_up")
+        .map((l) => l.id);
       if (ids.length === 0) return new Map();
       const { data, error } = await supabase
         .from("lead_ai_status")
@@ -2612,7 +2616,7 @@ function LeadCard({
               </button>
             </div>
             <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-              {ai && <AiTagChip ai={ai} />}
+              {ai && canShowAiSuggestion(status, ai.ai_status) && <AiTagChip ai={ai} />}
               <StatusBadge status={status} />
               <button
                 type="button"
@@ -3692,7 +3696,7 @@ function LeadDrawer({
                     busy || (!isAdmin && !isCs && (!assignedTo || auth.user?.id !== assignedTo))
                   }
                 />
-                {ai && (
+                {ai && canShowAiSuggestion(status, ai.ai_status) && (
                   <AiSuggestionPanel
                     ai={ai}
                     active={status}

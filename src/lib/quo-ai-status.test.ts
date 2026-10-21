@@ -214,6 +214,10 @@ describe("evidence-based shadow status", () => {
     { status: "cx_interested", confidence: 2, evidenceIds: ["AC1"] },
     { status: "cx_interested", confidence: 0.95, evidenceIds: ["invented"] },
     { status: "closed_won", confidence: 0.95, evidenceIds: ["AC1"] },
+    { status: "wrong_person", confidence: 0.99, evidenceIds: ["AC1"] },
+    { status: "wrong_service", confidence: 0.99, evidenceIds: ["AC1"] },
+    { status: "small_service", confidence: 0.99, evidenceIds: ["AC1"] },
+    { status: "need_follow_up", confidence: 0.99, evidenceIds: ["AC1"] },
     { status: "converted", confidence: 0.95, evidenceIds: ["AC1"] },
   ])("reviews invalid or unsupported intent %j", (value) => {
     expect(validateIntent(value, [message()], assigned).state).toBe("review");
