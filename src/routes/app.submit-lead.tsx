@@ -69,14 +69,21 @@ import { saveDraft, deleteDraft, countMyDrafts, type LeadDraft } from "@/lib/lea
 import { friendlyError } from "@/lib/error-messages";
 
 export const Route = createFileRoute("/app/submit-lead")({
-  head: () => ({ meta: [
-    { title: "Manual Lead \u00b7 JellyBean" },
-    { name: "description", content: "Submit customer leads to the JellyBean CS pipeline." },
-    { property: "og:title", content: "Manual Lead \u00b7 JellyBean" },
-    { property: "og:description", content: "Submit customer leads to the JellyBean CS pipeline." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }), component: Page });
+  head: () => ({
+    meta: [
+      { title: "Manual Lead \u00b7 JellyBean" },
+      { name: "description", content: "Submit customer leads to the JellyBean CS pipeline." },
+      { property: "og:title", content: "Manual Lead \u00b7 JellyBean" },
+      {
+        property: "og:description",
+        content: "Submit customer leads to the JellyBean CS pipeline.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
+  component: Page,
+});
 
 function Page() {
   const auth = useAuth();

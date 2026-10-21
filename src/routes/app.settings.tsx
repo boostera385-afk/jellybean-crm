@@ -91,14 +91,19 @@ function isSettingsTab(value: unknown): value is SettingsTab {
 }
 
 export const Route = createFileRoute("/app/settings")({
-  head: () => ({ meta: [
-    { title: "Settings \u00b7 JellyBean" },
-    { name: "description", content: "Manage JellyBean preferences, updates, and documentation." },
-    { property: "og:title", content: "Settings \u00b7 JellyBean" },
-    { property: "og:description", content: "Manage JellyBean preferences, updates, and documentation." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Settings \u00b7 JellyBean" },
+      { name: "description", content: "Manage JellyBean preferences, updates, and documentation." },
+      { property: "og:title", content: "Settings \u00b7 JellyBean" },
+      {
+        property: "og:description",
+        content: "Manage JellyBean preferences, updates, and documentation.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: Page,
   validateSearch: (search: Record<string, unknown>) => ({
     tab: isSettingsTab(search.tab) ? search.tab : undefined,

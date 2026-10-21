@@ -19,14 +19,19 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/app/")({
-  head: () => ({ meta: [
-    { title: "Lead Overview \u00b7 JellyBean" },
-    { name: "description", content: "Review lead outcomes and daily operations in JellyBean." },
-    { property: "og:title", content: "Lead Overview \u00b7 JellyBean" },
-    { property: "og:description", content: "Review lead outcomes and daily operations in JellyBean." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Lead Overview \u00b7 JellyBean" },
+      { name: "description", content: "Review lead outcomes and daily operations in JellyBean." },
+      { property: "og:title", content: "Lead Overview \u00b7 JellyBean" },
+      {
+        property: "og:description",
+        content: "Review lead outcomes and daily operations in JellyBean.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: DashboardHome,
 });
 

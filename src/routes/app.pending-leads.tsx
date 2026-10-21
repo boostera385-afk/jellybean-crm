@@ -25,14 +25,19 @@ import { STATUS_LABEL, STATUS_TONE } from "@/lib/lead-statuses";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/pending-leads")({
-  head: () => ({ meta: [
-    { title: "Pending Leads \u00b7 JellyBean" },
-    { name: "description", content: "Review customer leads requiring reminder follow-up." },
-    { property: "og:title", content: "Pending Leads \u00b7 JellyBean" },
-    { property: "og:description", content: "Review customer leads requiring reminder follow-up." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Pending Leads \u00b7 JellyBean" },
+      { name: "description", content: "Review customer leads requiring reminder follow-up." },
+      { property: "og:title", content: "Pending Leads \u00b7 JellyBean" },
+      {
+        property: "og:description",
+        content: "Review customer leads requiring reminder follow-up.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: Page,
   pendingComponent: () => <RouteSkeleton />,
   pendingMs: 200,

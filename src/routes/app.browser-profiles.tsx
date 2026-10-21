@@ -115,7 +115,13 @@ type Profile = {
 
 type SortDirection = "asc" | "desc";
 type ProfileSortKey =
-  "profile_name" | "profile_id" | "group" | "account_area" | "geo" | "added_date" | "last_launched";
+  | "profile_name"
+  | "profile_id"
+  | "group"
+  | "account_area"
+  | "geo"
+  | "added_date"
+  | "last_launched";
 type ProfileSort = { key: ProfileSortKey; direction: SortDirection };
 
 function compareText(a: string, b: string) {

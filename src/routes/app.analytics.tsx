@@ -45,14 +45,22 @@ import { isCsUser } from "@/lib/cs-filter";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/analytics")({
-  head: () => ({ meta: [
-    { title: "Analytics \u00b7 JellyBean" },
-    { name: "description", content: "Review JellyBean pipeline throughput and team performance." },
-    { property: "og:title", content: "Analytics \u00b7 JellyBean" },
-    { property: "og:description", content: "Review JellyBean pipeline throughput and team performance." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Analytics \u00b7 JellyBean" },
+      {
+        name: "description",
+        content: "Review JellyBean pipeline throughput and team performance.",
+      },
+      { property: "og:title", content: "Analytics \u00b7 JellyBean" },
+      {
+        property: "og:description",
+        content: "Review JellyBean pipeline throughput and team performance.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: Page,
   pendingComponent: () => <RouteSkeleton />,
   pendingMs: 200,

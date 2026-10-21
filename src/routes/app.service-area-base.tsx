@@ -35,14 +35,19 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/app/service-area-base")({
-  head: () => ({ meta: [
-    { title: "Service Area Bases \u00b7 JellyBean" },
-    { name: "description", content: "Manage the service coverage rules for lead routing." },
-    { property: "og:title", content: "Service Area Bases \u00b7 JellyBean" },
-    { property: "og:description", content: "Manage the service coverage rules for lead routing." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Service Area Bases \u00b7 JellyBean" },
+      { name: "description", content: "Manage the service coverage rules for lead routing." },
+      { property: "og:title", content: "Service Area Bases \u00b7 JellyBean" },
+      {
+        property: "og:description",
+        content: "Manage the service coverage rules for lead routing.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: Page,
   pendingComponent: () => <RouteSkeleton />,
   pendingMs: 200,
