@@ -45,6 +45,12 @@ describe("overlay layering", () => {
     expect(ambient).toBeGreaterThan(30);
   });
 
+  it("places visitor notifications on the left, away from lead save actions", () => {
+    const source = stripComments(read("components/crisp-visitor-alerts.tsx"));
+    expect(source).toContain("fixed bottom-4 left-4 z-40");
+    expect(source).not.toContain("bottom-4 right-4");
+  });
+
   it("keeps the dialog layer consistent across dialog, sheet and alert-dialog", () => {
     expect(sheet).toBe(dialog);
     expect(alertDialog).toBe(dialog);

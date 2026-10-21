@@ -1562,6 +1562,14 @@ export type Database = {
       }
     }
     Functions: {
+      report_quo_ai_progress: {
+        Args: { p_from?: string; p_to?: string }
+        Returns: Json
+      }
+      report_lead_ai_status: {
+        Args: { p_from?: string; p_to?: string }
+        Returns: Json
+      }
       acknowledge_lead_reminders: {
         Args: { _lead_id: string }
         Returns: number

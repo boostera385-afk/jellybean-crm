@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { RouteSkeleton } from "@/components/route-skeleton";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -9,6 +9,7 @@ import {
   Download,
   ExternalLink,
   Loader2,
+  RefreshCw,
   Search,
   SlidersHorizontal,
   User,
@@ -23,6 +24,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { downloadCsv } from "@/lib/crm-lite";
 import { isCsUser } from "@/lib/cs-filter";
 import { cn } from "@/lib/utils";
+import { parseAiStatusReport } from "@/lib/ai-status-report";
+import { toast } from "sonner";
+import { STATUS_LABEL } from "@/lib/lead-statuses";
 
 type DatePreset = "all" | "today" | "yesterday" | "7d" | "30d" | "custom";
 
@@ -69,14 +73,16 @@ function computeRange(preset: DatePreset, from: string, to: string) {
 }
 
 export const Route = createFileRoute("/app/reports")({
-  head: () => ({ meta: [
-    { title: "Reports \u00b7 JellyBean" },
-    { name: "description", content: "Review lead delivery outcomes and team reports." },
-    { property: "og:title", content: "Reports \u00b7 JellyBean" },
-    { property: "og:description", content: "Review lead delivery outcomes and team reports." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Reports \u00b7 JellyBean" },
+      { name: "description", content: "Review lead delivery outcomes and team reports." },
+      { property: "og:title", content: "Reports \u00b7 JellyBean" },
+      { property: "og:description", content: "Review lead delivery outcomes and team reports." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: Page,
   pendingComponent: () => <RouteSkeleton />,
   pendingMs: 200,
@@ -99,6 +105,7 @@ export const CS_STATUSES = [
   "cx_not_interested",
   "cx_didnt_replied",
   "need_follow_up",
+  "out_of_base",
 ] as const;
 
 export type CsStatus = (typeof CS_STATUSES)[number];
@@ -127,6 +134,7 @@ const CS_LABELS: Record<string, string> = {
   cx_not_interested: "CX not interested",
   cx_didnt_replied: "CX didn't replied",
   need_follow_up: "Need Follow Up",
+  out_of_base: "Out of Base",
 };
 
 const RAW_COLORS: Record<string, string> = {
@@ -144,6 +152,7 @@ const CS_STATUS_COLORS: Record<string, string> = {
   new: "#38bdf8",
   converted: "#4ade80",
   need_follow_up: "#60a5fa",
+  out_of_base: "#fb923c",
   undeliver: "#f87171",
   wrong_number: "#ef4444",
   wrong_lead: "#f43f5e",
@@ -207,12 +216,114 @@ function Page() {
 
 function Inner() {
   const auth = useAuth();
+  const queryClient = useQueryClient();
   const isAdmin = auth.primaryRole === "admin";
   const today = toIsoDay(new Date());
   const [preset, setPreset] = useState<DatePreset>("all");
   const [fromDate, setFromDate] = useState<string>(today);
   const [toDate, setToDate] = useState<string>(today);
   const range = useMemo(() => computeRange(preset, fromDate, toDate), [preset, fromDate, toDate]);
+
+  const ai = useQuery({
+    queryKey: ["report-ai-status", range.from, range.to],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("report_lead_ai_status", {
+        p_from: range.from ?? undefined,
+        p_to: range.to ?? undefined,
+      });
+      if (error) throw error;
+      return parseAiStatusReport(data);
+    },
+    staleTime: 30_000,
+    retry: false,
+  });
+  const aiConfiguration = useQuery({
+    queryKey: ["ai-status-configuration"],
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke("quo-ai-status", {
+        body: { action: "configuration" },
+      });
+      if (error) throw error;
+      return data as {
+        configured: boolean;
+        message?: string;
+        phoneNumberCount?: number;
+        phoneNumberSource?: string;
+      };
+    },
+    staleTime: 60_000,
+    retry: false,
+  });
+  const refreshAi = useMutation({
+    mutationFn: async (scope: { from: string | null; to: string | null }) => {
+      const { data, error } = await supabase.functions.invoke("quo-ai-status", {
+        body: { action: "refresh", ...scope },
+      });
+      if (error || data?.error)
+        throw new Error("AI refresh failed. Check Quo configuration and try again.");
+      return data as { processed: number; message: string; results: Array<{ state: string }> };
+    },
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ["report-ai-status"] });
+      void queryClient.invalidateQueries({ queryKey: ["quo-ai-progress"] });
+      const classified = data.results.filter((r) => r.state === "classified").length;
+      toast.success(
+        data.processed
+          ? `${classified} classified / ${data.processed} checked. Manual statuses unchanged.`
+          : data.message,
+      );
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const progress = useQuery({
+    queryKey: ["quo-ai-progress", range.from, range.to],
+    enabled: Boolean(aiConfiguration.data?.configured),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("report_quo_ai_progress", {
+        p_from: range.from ?? undefined,
+        p_to: range.to ?? undefined,
+      });
+      if (error) throw error;
+      return data as { pending: number; workDone: number; workTotal: number };
+    },
+    refetchInterval: 5_000,
+    retry: false,
+  });
+  useEffect(() => {
+    if (!aiConfiguration.data?.configured || !progress.data?.pending) return;
+    let inFlight = false;
+    let stopped = false;
+    const tick = async () => {
+      if (inFlight || stopped) return;
+      inFlight = true;
+      try {
+        const { data, error } = await supabase.functions.invoke("quo-ai-status", {
+          body: { action: "work" },
+        });
+        if (!stopped && !error) {
+          if (data?.processed)
+            void queryClient.invalidateQueries({ queryKey: ["report-ai-status"] });
+          void queryClient.invalidateQueries({ queryKey: ["quo-ai-progress"] });
+        }
+      } catch {
+        // Cron resumes persisted work if a browser/network request is interrupted.
+      } finally {
+        inFlight = false;
+      }
+    };
+    void tick();
+    const timer = setInterval(() => {
+      void tick();
+    }, 7_000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [aiConfiguration.data?.configured, progress.data?.pending, queryClient]);
+  useEffect(() => {
+    if (progress.data?.pending === 0)
+      void queryClient.invalidateQueries({ queryKey: ["report-ai-status"] });
+  }, [progress.data?.pending, queryClient]);
 
   const raw = useQuery({
     queryKey: ["report-raw", range.from, range.to],
@@ -313,6 +424,13 @@ function Inner() {
           CS_LABELS[label] ?? label.replace(/_/g, " "),
           value,
         ]),
+        ...(ai.data && !ai.isError
+          ? Object.entries(ai.data.counts).map(([label, value]) => [
+              "AI status (beta)",
+              CS_LABELS[label] ?? label,
+              value,
+            ])
+          : []),
       ],
     );
   }
@@ -398,6 +516,72 @@ function Inner() {
         title="CS pipeline by status"
         subtitle={`Qualified leads across customer service stages (${csTotal.toLocaleString()} total)`}
       >
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3">
+          <div className="min-w-0 text-xs">
+            <p className="font-semibold text-sky-700 dark:text-sky-300">
+              AI status · Beta · Comparison only
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              Large totals are manual. AI counts use complete Quo SMS history; calls and attachment
+              contents are not analyzed.
+            </p>
+            <p className="mt-1 text-muted-foreground" role="status">
+              {ai.isError
+                ? "AI reporting is unavailable. Manual totals are unaffected."
+                : ai.isPending
+                  ? "Loading AI coverage…"
+                  : `${ai.data.classified.toLocaleString()} / ${ai.data.total.toLocaleString()} classified · ${ai.data.disagreements.toLocaleString()} differ from manual · ${ai.data.review.toLocaleString()} need review · ${ai.data.stale.toLocaleString()} outdated`}
+            </p>
+            {ai.data?.lastAnalyzedAt && (
+              <p className="mt-1 text-muted-foreground">
+                Last checked: {new Date(ai.data.lastAnalyzedAt).toLocaleString()}
+              </p>
+            )}
+            {(!aiConfiguration.data?.configured || aiConfiguration.isError) &&
+              !aiConfiguration.isPending && (
+                <p className="mt-1 font-medium text-amber-700 dark:text-amber-400">
+                  {aiConfiguration.data?.message ??
+                    "Quo setup required or service unavailable. No AI outcomes have been assumed."}
+                </p>
+              )}
+            {aiConfiguration.data?.configured && (
+              <p className="mt-1 text-muted-foreground">
+                Quo connected · {aiConfiguration.data.phoneNumberCount} inboxes ·{" "}
+                {aiConfiguration.data.phoneNumberSource === "discovered"
+                  ? "IDs discovered automatically"
+                  : "Inbox allowlist active"}
+              </p>
+            )}
+            {Boolean(progress.data?.pending) && (
+              <p className="mt-1 font-medium text-sky-700 dark:text-sky-300" role="status">
+                {progress.data!.pending} leads syncing · {progress.data!.workDone}/
+                {progress.data!.workTotal} inbox checks for pending leads. Sync resumes
+                automatically; partial history is never counted.
+              </p>
+            )}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={
+              refreshAi.isPending ||
+              Boolean(progress.data?.pending) ||
+              !aiConfiguration.data?.configured ||
+              ai.isError
+            }
+            onClick={() => {
+              void ai.refetch();
+              void cs.refetch();
+              refreshAi.mutate({ ...range });
+            }}
+            title="Check up to 5 eligible leads in the selected range; 15-minute per-lead cooldown and beta daily limit apply"
+          >
+            <RefreshCw
+              className={cn("mr-1.5 h-3.5 w-3.5", refreshAi.isPending && "animate-spin")}
+            />
+            {refreshAi.isPending ? "Checking Quo…" : "Refresh AI · next 5 leads"}
+          </Button>
+        </div>
         <Grid>
           {CS_STATUSES.map((k) => (
             <StatCard
@@ -406,9 +590,55 @@ function Inner() {
               value={cs.data?.[k] ?? 0}
               total={csTotal}
               color={CS_STATUS_COLORS[k]}
+              aiValue={ai.data && !ai.isError ? (ai.data.counts[k] ?? 0) : null}
             />
           ))}
         </Grid>
+        {ai.data?.samples && ai.data.samples.length > 0 && !ai.isError && (
+          <div className="mt-4 overflow-x-auto rounded-xl border">
+            <table className="crm-data-table w-full text-xs">
+              <caption className="p-3 text-left text-xs text-muted-foreground">
+                Latest disagreements / reviews (up to 10). A disagreement is not proof that AI is
+                correct.
+              </caption>
+              <thead>
+                <tr>
+                  <th className="p-2 text-left">Lead</th>
+                  <th className="p-2 text-left">Manual</th>
+                  <th className="p-2 text-left">AI status</th>
+                  <th className="p-2 text-left">Confidence / reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ai.data.samples.map((sample) => (
+                  <tr key={sample.leadId} className="border-t">
+                    <td className="p-2">
+                      <Link
+                        to="/app/cs-leads"
+                        search={{ leadId: sample.leadId }}
+                        className="text-primary underline"
+                      >
+                        {sample.customerName || "Open lead"}
+                      </Link>
+                    </td>
+                    <td className="p-2">
+                      {STATUS_LABEL[sample.manualStatus] ?? sample.manualStatus}
+                    </td>
+                    <td className="p-2">
+                      {sample.aiStatus
+                        ? (STATUS_LABEL[sample.aiStatus] ?? sample.aiStatus)
+                        : "Needs review"}
+                    </td>
+                    <td className="p-2">
+                      {sample.confidence === null ? "—" : `${Math.round(sample.confidence * 100)}%`}{" "}
+                      · {sample.reasonCode.replace(/_/g, " ")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Section>
 
       {/* ─── Leads Forwarded Per User ─── */}
@@ -548,11 +778,13 @@ function StatCard({
   value,
   total,
   color,
+  aiValue,
 }: {
   label: string;
   value: number;
   total?: number;
   color?: string;
+  aiValue?: number | null;
 }) {
   const pct = total && total > 0 ? ((value / total) * 100).toFixed(1) : null;
   return (
@@ -583,6 +815,20 @@ function StatCard({
               }}
             />
           </div>
+        </div>
+      )}
+      {aiValue !== undefined && (
+        <div
+          className="mt-3 flex items-center justify-end gap-1.5 text-xs text-sky-700 dark:text-sky-300"
+          title="Latest valid AI classification count in the same assigned-date range; separate from manual totals"
+        >
+          <span className="rounded-full border border-sky-500/60 px-1 py-0.5 text-[9px] font-bold">
+            AI
+          </span>
+          <span className="text-[10px]">AI status</span>
+          <strong className="tabular-nums">
+            {aiValue === null ? "—" : aiValue.toLocaleString()}
+          </strong>
         </div>
       )}
     </div>
@@ -1147,7 +1393,7 @@ function UserForwardedRow({
               {processedCount > 0 && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                   Delivered:{" "}
+                  Delivered:{" "}
                   <strong className="tabular-nums">{processedCount.toLocaleString()}</strong>
                 </span>
               )}

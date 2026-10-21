@@ -64,7 +64,6 @@ import {
   ChevronsRight,
   Paperclip,
   ExternalLink,
-  Warehouse,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -99,22 +98,6 @@ import { SERVICE_CATEGORIES } from "@/data/service-options";
 
 import { cn } from "@/lib/utils";
 import { confirmDiscardUnsaved } from "@/components/confirm-dialog-store";
-
-// Garage Door filter: match specific phrases (case-insensitive) across
-// service/pass_it_to and lead text fields. Avoids bare "garage" which
-// would incorrectly include garage remodeling/cleaning/flooring leads.
-const GARAGE_DOOR_PATTERNS = ["%garage door%", "%garage opener%", "%overhead door%"];
-const GARAGE_DOOR_FIELDS = [
-  "service",
-  "pass_it_to",
-  "context",
-  "post_text",
-  "requirement_1",
-  "requirement_2",
-];
-const GARAGE_DOOR_OR_CLAUSE = GARAGE_DOOR_FIELDS.flatMap((f) =>
-  GARAGE_DOOR_PATTERNS.map((p) => `${f}.ilike.${p}`),
-).join(",");
 
 type ContactMethod = "texted" | "called";
 type NotCalledFilter = "__off__" | "__all__" | CsStatus;
@@ -487,7 +470,7 @@ function Inner() {
 
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [areaFilter, setAreaFilter] = useState("all");
-  const [garageDoorOnly, setGarageDoorOnly] = useState(false);
+  const [importantOnly, setImportantOnly] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [activeDatePreset, setActiveDatePreset] = useState<CsPipelineRelativePreset | null>(null);
   const [page, setPage] = useState(1);
@@ -704,21 +687,12 @@ function Inner() {
   // ── Reset page to 1 whenever any server-side filter changes ──────────────
   useEffect(() => {
     setPage(1);
-  }, [
-    dbDateFrom,
-    dbDateTo,
-    dbOwner,
-    dbStatus,
-    areaFilter,
-    dbSearch,
-    garageDoorOnly,
-    notCalledOnly,
-  ]);
+  }, [dbDateFrom, dbDateTo, dbOwner, dbStatus, areaFilter, dbSearch, importantOnly, notCalledOnly]);
 
   const list = useQuery({
     queryKey: [
       "cs_leads",
-      { page, dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, garageDoorOnly, notCalledOnly },
+      { page, dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, importantOnly, notCalledOnly },
     ],
     queryFn: async () => {
       const from = (page - 1) * PAGE_SIZE;
@@ -761,9 +735,7 @@ function Inner() {
         );
       }
 
-      if (garageDoorOnly) {
-        q = q.or(GARAGE_DOOR_OR_CLAUSE);
-      }
+      if (importantOnly) q = q.eq("is_important", true);
 
       const { data, error } = await q;
       if (error) throw error;
@@ -826,16 +798,16 @@ function Inner() {
   // query entirely for the two most common views:
   //   • no filters at all      → reuse the cached `cs_leads_status_counts` RPC
   //   • only a status selected → reuse the same cached RPC's per-status counts
-  // A real count query only runs when a date/owner/search/garage filter is on.
+  // A real count query only runs when a narrow filter is on.
   const needsCountQuery = Boolean(
-    dbDateFrom || dbDateTo || dbOwner || dbSearch || garageDoorOnly || notCalledOnly,
+    dbDateFrom || dbDateTo || dbOwner || dbSearch || importantOnly || notCalledOnly,
   );
 
   const totalCount = useQuery({
     queryKey: [
       "cs_leads",
       "cs_leads_count",
-      { dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, garageDoorOnly, notCalledOnly },
+      { dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, importantOnly, notCalledOnly },
     ],
     enabled: needsCountQuery,
     queryFn: async () => {
@@ -868,9 +840,7 @@ function Inner() {
         );
       }
 
-      if (garageDoorOnly) {
-        q = q.or(GARAGE_DOOR_OR_CLAUSE);
-      }
+      if (importantOnly) q = q.eq("is_important", true);
 
       const { count, error } = await q;
       if (error) throw error;
@@ -905,65 +875,12 @@ function Inner() {
     placeholderData: keepPreviousData,
   });
 
-  // Exact database count of Garage Door leads matching current filters.
-  // This is an 18-way ILIKE scan, so it only runs while the Garage Door filter
-  // is actually switched on (it powers pagination there); the toolbar badge
-  // shows no number when the filter is off.
-  const garageDoorCount = useQuery({
-    queryKey: [
-      "cs_leads",
-      "cs_garage_door_count",
-      { dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, areaFilter, notCalledOnly },
-    ],
-    enabled: garageDoorOnly,
-    queryFn: async () => {
-      let q = supabase.from("qualified_leads").select("id", { count: "exact", head: true });
-
-      if (dbDateFrom) q = q.gte("assigned_at", dbDateFrom);
-      if (dbDateTo) q = q.lt("assigned_at", dbDateTo);
-
-      if (dbOwner === "__unassigned__") {
-        q = q.is("assigned_to", null);
-      } else if (dbOwner !== null) {
-        q = q.eq("assigned_to", dbOwner);
-      }
-
-      if (dbStatus) q = q.eq("cs_status", dbStatus);
-
-      if (notCalledOnly) q = q.is("called_at", null);
-
-      if (dbSearch) {
-        const s = `%${dbSearch}%`;
-        // Phone columns use a separator-agnostic pattern so a digits-only query
-        // matches formatted stored numbers (and vice versa). Falls back to the
-        // literal pattern for non-numeric queries.
-        const phone = phoneSearchPattern(dbSearch) ?? s;
-        q = q.or(
-          `customer_name.ilike.${s},customer_number.ilike.${phone},customer_number_2.ilike.${phone},number_name.ilike.${s},main_area.ilike.${s},sub_area.ilike.${s},pass_it_to.ilike.${s},requirement_1.ilike.${s},requirement_2.ilike.${s}`,
-        );
-      }
-
-      q = q.or(GARAGE_DOOR_OR_CLAUSE);
-
-      const { count, error } = await q;
-      if (error) throw error;
-      return count ?? 0;
-    },
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-    placeholderData: keepPreviousData,
-  });
-
   // Total used for pagination. When no narrow filter is active we reuse the
   // cached status-count RPC instead of firing another count query.
   const cachedStatusTotal = dbStatus
     ? (allTimeStatusCounts.data?.statuses?.[dbStatus] ?? 0)
     : (allTimeStatusCounts.data?.all ?? 0);
-  const effectiveTotalCount = garageDoorOnly
-    ? (garageDoorCount.data ?? 0)
-    : needsCountQuery
-      ? (totalCount.data ?? 0)
-      : cachedStatusTotal;
+  const effectiveTotalCount = needsCountQuery ? (totalCount.data ?? 0) : cachedStatusTotal;
 
   const totalPages = Math.max(1, Math.ceil(effectiveTotalCount / PAGE_SIZE));
 
@@ -1374,20 +1291,24 @@ function Inner() {
           <Button
             type="button"
             size="sm"
-            variant={garageDoorOnly ? "default" : "outline"}
+            variant={importantOnly ? "default" : "outline"}
             className="h-9 text-[12px]"
-            onClick={() => setGarageDoorOnly((v) => !v)}
+            aria-pressed={importantOnly}
+            onClick={() => {
+              if (!importantOnly) setActiveStatus("__all__");
+              setImportantOnly((v) => !v);
+            }}
             title={
-              garageDoorOnly
-                ? "Showing garage door leads only — click to clear"
-                : "Show only garage door leads"
+              importantOnly
+                ? "Showing important leads across all services — click to clear"
+                : "Show important leads for follow-up"
             }
           >
-            <Warehouse className="h-3.5 w-3.5 mr-1.5" />
-            Garage Door
-            {garageDoorOnly && (
+            <Pin className="h-3.5 w-3.5 mr-1.5" />
+            IMP LEADS
+            {importantOnly && (
               <span className="ml-1.5 tabular-nums opacity-90">
-                ({garageDoorCount.isLoading ? "—" : (garageDoorCount.data ?? 0)})
+                ({totalCount.isFetching ? "—" : (totalCount.data ?? 0)})
               </span>
             )}
           </Button>
