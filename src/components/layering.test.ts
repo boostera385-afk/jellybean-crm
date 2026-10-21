@@ -45,10 +45,26 @@ describe("overlay layering", () => {
     expect(ambient).toBeGreaterThan(30);
   });
 
-  it("places visitor notifications on the left, away from lead save actions", () => {
+  it("keeps visitor notifications in their original bottom-right position", () => {
     const source = stripComments(read("components/crisp-visitor-alerts.tsx"));
-    expect(source).toContain("fixed bottom-4 left-4 z-40");
-    expect(source).not.toContain("bottom-4 right-4");
+    expect(source).toContain("fixed bottom-4 right-4 z-40");
+    expect(source).toContain("flex-col items-end");
+    expect(source).not.toContain("bottom-4 left-4");
+  });
+
+  it("keeps the custom lead dialog and its Save/Close footer above live cards", () => {
+    const source = stripComments(read("routes/app.cs-leads.tsx"));
+    const overlay = source.match(/return createPortal\(\s*<div\s*className="([^"]+)"/);
+    expect(overlay).not.toBeNull();
+    expect(overlay![1]).toContain("fixed inset-0");
+    const layer = overlay![1].match(/\bz-(\d+)\b/);
+    expect(layer).not.toBeNull();
+    expect(Number(layer![1])).toBeGreaterThan(ambient);
+    // The complete lead editor is portalled above the cards, not just its header.
+    const portal = source.slice(source.indexOf("return createPortal("));
+    const footer = portal.indexOf("}Save");
+    expect(footer).toBeGreaterThan(0);
+    expect(portal.indexOf("document.body")).toBeGreaterThan(footer);
   });
 
   it("keeps the dialog layer consistent across dialog, sheet and alert-dialog", () => {

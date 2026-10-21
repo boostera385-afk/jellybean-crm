@@ -54,7 +54,7 @@ function visitorLocation(visitor: CrispVisitor): string {
  *
  * Unlike the message notifier, these are not a dismissable queue: there is one
  * card per visitor who is currently live on a connected Crisp website, pinned
- * to the bottom-left below dialog surfaces, leaving save actions clear. A card stays on
+ * to the bottom-right below dialog surfaces, leaving save actions clear. A card stays on
  * screen for exactly as long as that visitor is live — a realtime change on
  * crisp_visitors (with a slow poll fallback) refreshes the list, so when the
  * visitor leaves their card disappears on its own. The only action is "Send
@@ -202,7 +202,7 @@ export function CrispVisitorAlerts() {
 
   return (
     <div
-      className={`pointer-events-none fixed bottom-4 left-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-start ${onCrispTab ? "lg:hidden" : ""}`}
+      className={`pointer-events-none fixed bottom-4 right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end ${onCrispTab ? "lg:hidden" : ""}`}
     >
       <div className="pointer-events-auto flex w-80 max-w-full flex-col gap-2 max-h-[50vh] overflow-y-auto overscroll-contain pr-0.5">
         {liveVisitors.map((visitor) => {
