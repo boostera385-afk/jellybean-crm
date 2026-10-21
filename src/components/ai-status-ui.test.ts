@@ -23,4 +23,29 @@ describe("urgent CS/Crisp UI contracts", () => {
     expect(source).toContain('aiValue === null ? "—"');
     expect(source.replace(/\s+/g, " ")).toContain("A disagreement is not proof that AI is correct");
   });
+  it("shows AI tag suggestions to admins only and applies them through Save", () => {
+    const route = readFileSync("src/routes/app.cs-leads.tsx", "utf8");
+    // Data fetch is skipped for non-admins, not merely hidden in CSS.
+    expect(route).toContain("lead_ai_status");
+    expect(route).toContain("enabled: isAdmin");
+    // Card chip stays visually distinct from manual status tags.
+    expect(route).toContain("border-dashed border-violet-400/70");
+    // Drawer panel explains itself and never writes statuses directly.
+    expect(route).toContain("AI tag suggestion");
+    expect(route).toContain("Comparison only — not saved");
+    expect(route).toContain("Use this tag");
+    expect(route).toContain("AI suggestion selected — press Save to apply");
+    expect(route).toContain("AI never changes saved statuses automatically.");
+    // Applying a suggestion only pre-fills the drawer status; it must not
+    // call .update({ cs_status ... }) from the AI panel code path.
+    expect(route).not.toContain("onUse={() =>");
+    const migration = readFileSync(
+      "supabase/migrations/20261021104500_admin_only_lead_ai_status.sql",
+      "utf8",
+    );
+    expect(migration).toContain('DROP POLICY IF EXISTS "AI results follow lead access"');
+    expect(migration).toContain('CREATE POLICY "AI suggestions for reporting administrators"');
+    expect(migration).toContain("current_user_has_role_text('admin')");
+    expect(migration).toContain("FOR SELECT");
+  });
 });

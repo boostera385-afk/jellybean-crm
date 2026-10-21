@@ -746,6 +746,39 @@ function Inner() {
     refetchOnWindowFocus: false,
   });
 
+  // Admin-only AI tag suggestions for the leads on this page. The
+  // lead_ai_status table is RLS-restricted to reporting administrators, so the
+  // query is also skipped entirely for other roles.
+  const aiSuggestions = useQuery({
+    queryKey: [
+      "cs_leads_ai_suggestions",
+      {
+        page,
+        dbDateFrom,
+        dbDateTo,
+        dbOwner,
+        dbStatus,
+        dbSearch,
+        importantOnly,
+        notCalledOnly,
+        ids: list.data?.map((l) => l.id).join(",") ?? "",
+      },
+    ],
+    enabled: isAdmin,
+    queryFn: async (): Promise<Map<string, AiSuggestion>> => {
+      const ids = (list.data ?? []).map((l) => l.id);
+      if (ids.length === 0) return new Map();
+      const { data, error } = await supabase
+        .from("lead_ai_status")
+        .select("lead_id,state,ai_status,confidence,reason_code,message_count,analyzed_at,model")
+        .in("lead_id", ids);
+      if (error) throw error;
+      return new Map(((data ?? []) as unknown as AiSuggestion[]).map((row) => [row.lead_id, row]));
+    },
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+
   // ── Deep-link: open a specific lead via ?leadId=... (used by reminder notifier) ──
   const { leadId: deepLinkLeadId } = Route.useSearch();
   const navigate = useNavigate();
@@ -1932,6 +1965,7 @@ function Inner() {
                   onToggleSelect={() => toggleSelect(l.id)}
                   showSelect={isCs || isAdmin}
                   profilesById={profilesById}
+                  ai={isAdmin ? aiSuggestions.data?.get(l.id) : undefined}
                 />
               ))}
             </div>
@@ -2006,6 +2040,7 @@ function Inner() {
             qc.invalidateQueries({ queryKey: ["cs_leads"] });
           }}
           profilesById={profilesById}
+          ai={isAdmin ? aiSuggestions.data?.get(opened.id) : undefined}
         />
       )}
 
@@ -2201,6 +2236,7 @@ function LeadCard({
   onToggleSelect,
   showSelect = false,
   profilesById,
+  ai,
 }: {
   lead: Lead;
   team: CsTeamMember[];
@@ -2211,6 +2247,7 @@ function LeadCard({
   onToggleSelect?: () => void;
   showSelect?: boolean;
   profilesById?: Map<string, { full_name: string | null; email: string }>;
+  ai?: AiSuggestion | null;
 }) {
   const qc = useQueryClient();
   const auth = useAuth();
@@ -2574,7 +2611,8 @@ function LeadCard({
                 <Copy className="h-3 w-3" />
               </button>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+              {ai && <AiTagChip ai={ai} />}
               <StatusBadge status={status} />
               <button
                 type="button"
@@ -2970,6 +3008,143 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/** One saved AI/Quo comparison result for a lead (admin-only data via RLS). */
+export type AiSuggestion = {
+  lead_id: string;
+  state: string;
+  ai_status: string | null;
+  confidence: number | null;
+  reason_code: string;
+  message_count: number | null;
+  analyzed_at: string | null;
+  model: string | null;
+};
+
+const AI_REASON_LABEL: Record<string, string> = {
+  customer_intent: "Customer intent read from the Quo chat",
+  delivery_confirmed: "Confirmed by Quo delivery receipt",
+  delivery_failed: "Quo reports the message failed delivery",
+  media_requires_review: "An image reply needs human review",
+  phone_shared_between_leads: "Phone number is shared with other leads",
+  invalid_or_excess_customer_numbers: "Customer numbers are invalid or too many",
+  history_too_large: "Chat history too large to analyze",
+};
+
+const AI_TRANSPORT_REASONS = new Set(["delivery_confirmed", "delivery_failed"]);
+
+function aiReasonLabel(ai: AiSuggestion): string {
+  return AI_REASON_LABEL[ai.reason_code] ?? ai.reason_code.replace(/_/g, " ");
+}
+
+function aiSuggestionTitle(ai: AiSuggestion): string {
+  const parts = [aiReasonLabel(ai)];
+  if (ai.confidence != null) parts.push(`${Math.round(ai.confidence * 100)}% confidence`);
+  if (ai.message_count != null) parts.push(`${ai.message_count} Quo messages`);
+  return `Admin only · Comparison only, not saved · ${parts.join(" · ")}`;
+}
+
+/** Compact admin-only chip for lead cards: a dashed outline separates the AI
+ * guess from manual pipeline tags so agents never confuse the two. */
+function AiTagChip({ ai }: { ai: AiSuggestion }) {
+  const suggested = ai.state === "classified" ? ai.ai_status : null;
+  const prefix = AI_TRANSPORT_REASONS.has(ai.reason_code) ? "Quo" : "AI";
+  const label = suggested ? (STATUS_LABEL[suggested] ?? suggested) : "Needs review";
+  const pct = suggested && ai.confidence != null ? ` ${Math.round(ai.confidence * 100)}%` : "";
+  return (
+    <span
+      title={aiSuggestionTitle(ai)}
+      className="hidden sm:inline-flex items-center gap-1 rounded-full border border-dashed border-violet-400/70 bg-violet-500/5 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:text-violet-300 whitespace-nowrap"
+    >
+      <Sparkles className="h-2.5 w-2.5" />
+      {prefix}: {label}
+      {pct}
+    </span>
+  );
+}
+
+/** Drawer card with the suggestion details and the one-click "Use this tag"
+ * action. Applying it only pre-fills the status — Save remains the human
+ * confirmation, so AI never writes pipeline statuses by itself. */
+function AiSuggestionPanel({
+  ai,
+  active,
+  disabled,
+  onUse,
+}: {
+  ai: AiSuggestion;
+  active: string;
+  disabled?: boolean;
+  onUse: (tag: string) => void;
+}) {
+  const isTransport = AI_TRANSPORT_REASONS.has(ai.reason_code);
+  const suggested = ai.state === "classified" ? ai.ai_status : null;
+  const pct = ai.confidence != null ? Math.round(ai.confidence * 100) : null;
+  const matchesSaved = suggested != null && suggested === active;
+  return (
+    <div
+      className="mt-3 rounded-xl border border-dashed border-violet-400/60 bg-violet-500/5 px-3.5 py-3"
+      data-testid="ai-suggestion-panel"
+    >
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-violet-700 dark:text-violet-300">
+          {isTransport ? "Quo delivery read" : "AI tag suggestion"} · Admin only
+        </span>
+        <span className="text-[10px] text-muted-foreground">Comparison only — not saved</span>
+      </div>
+      {suggested == null ? (
+        <p className="mt-1.5 text-[12.5px] text-foreground">
+          Needs human review — {aiReasonLabel(ai)}.
+        </p>
+      ) : (
+        <>
+          <div className="mt-2 flex items-center gap-2.5 flex-wrap">
+            <span
+              className={cn(
+                "crm-pill-text px-3 py-1.5 rounded-full border border-dashed border-violet-400/70 bg-violet-500/10 text-violet-800 dark:text-violet-200 whitespace-nowrap",
+              )}
+            >
+              {STATUS_LABEL[suggested] ?? suggested}
+            </span>
+            {pct != null && (
+              <span className="flex items-center gap-1.5 min-w-[110px]" title="Model confidence">
+                <span className="h-1.5 flex-1 rounded-full bg-violet-500/15 overflow-hidden">
+                  <span
+                    className="block h-full rounded-full bg-violet-500"
+                    style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                  />
+                </span>
+                <span className="text-[10.5px] tabular-nums text-muted-foreground">{pct}%</span>
+              </span>
+            )}
+            {!matchesSaved && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={disabled}
+                className="h-7 px-2.5 text-[11px] border-violet-400/60 text-violet-700 dark:text-violet-300 hover:bg-violet-500/10"
+                onClick={() => onUse(suggested!)}
+              >
+                Use this tag
+              </Button>
+            )}
+          </div>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            {aiReasonLabel(ai)}
+            {ai.message_count != null ? ` · ${ai.message_count} Quo messages` : ""}
+            {ai.analyzed_at ? ` · analyzed ${formatCsPipelineDateTime(ai.analyzed_at)}` : ""}
+            {ai.model ? ` · ${ai.model}` : ""}
+            {matchesSaved ? " · matches the saved status" : ""}
+          </p>
+        </>
+      )}
+      <p className="mt-1 text-[10px] text-muted-foreground">
+        AI never changes saved statuses automatically.
+      </p>
+    </div>
+  );
+}
+
 function statusDotTone(status: string) {
   if (status === "cx_interested") return "bg-success";
   if (status === "cx_not_interested") return "bg-destructive";
@@ -3162,6 +3337,7 @@ function LeadDrawer({
   onClose,
   onSaved,
   profilesById,
+  ai,
 }: {
   lead: Lead;
   team: CsTeamMember[];
@@ -3170,6 +3346,7 @@ function LeadDrawer({
   onClose: () => void;
   onSaved: () => void;
   profilesById?: Map<string, { full_name: string | null; email: string }>;
+  ai?: AiSuggestion | null;
 }) {
   const auth = useAuth();
   const qc = useQueryClient();
@@ -3515,6 +3692,17 @@ function LeadDrawer({
                     busy || (!isAdmin && !isCs && (!assignedTo || auth.user?.id !== assignedTo))
                   }
                 />
+                {ai && (
+                  <AiSuggestionPanel
+                    ai={ai}
+                    active={status}
+                    disabled={busy}
+                    onUse={(tag) => {
+                      requestStatusChange(tag as CsStatus);
+                      toast.success("AI suggestion selected — press Save to apply");
+                    }}
+                  />
+                )}
                 <div className="mt-3">
                   <ContactMethodToggle
                     value={contactMethod}
