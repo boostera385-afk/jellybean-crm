@@ -42,11 +42,13 @@ export async function handleAiStatus(req: Request): Promise<Response> {
   // Exact backend credentials can probe config or resume already-enqueued work.
   // They cannot enqueue new leads or choose an arbitrary actor through HTTP.
   let actorId: string | null = null;
+  const fallbackKey = Deno.env.get("SERVICE_ROLE_KEY") ?? "";
+  const isWorker =
+    isQuoWorker(token, key, body.action) || isQuoWorker(token, fallbackKey, body.action);
   if (
     !isQuoConfigurationProbe(token, key, body.action) &&
-    !isQuoConfigurationProbe(token, Deno.env.get("SERVICE_ROLE_KEY") ?? "", body.action) &&
-    !isQuoWorker(token, key, body.action) &&
-    !isQuoWorker(token, Deno.env.get("SERVICE_ROLE_KEY") ?? "", body.action)
+    !isQuoConfigurationProbe(token, fallbackKey, body.action) &&
+    !isWorker
   ) {
     const { data: auth, error: authError } = await db.auth.getUser(token);
     if (authError || !auth.user) return json({ error: "Invalid or expired session" }, 401);
@@ -59,8 +61,13 @@ export async function handleAiStatus(req: Request): Promise<Response> {
     if (!roles?.length) return json({ error: "AI reporting access required" }, 403);
     actorId = auth.user.id;
   }
-  if (!["configuration", "refresh", "work"].includes(String(body.action)))
+  if (!["configuration", "refresh", "work", "enqueue"].includes(String(body.action)))
     return json({ error: "Invalid action" }, 400);
+  // The unattended sweep picks its own leads, with no date range and nobody to
+  // attribute it to, so it stays the cron's alone. A signed-in administrator
+  // asking for the same thing has "refresh", which records who asked.
+  if (body.action === "enqueue" && !isWorker)
+    return json({ error: "Backend credentials required" }, 403);
   if (!quoKey || !modelKey)
     return json(
       {
@@ -124,6 +131,20 @@ export async function handleAiStatus(req: Request): Promise<Response> {
           ? inboxes.ids
           : undefined,
     });
+  if (body.action === "enqueue") {
+    // Demand-driven: enqueue_quo_ai_due queues only leads with a reason to be
+    // looked at -- an event, never classified, an unconfirmed delivery, an
+    // edited lead -- and leaves the last fifth of the daily budget for a
+    // person pressing Refresh. A lead nothing happened to is not queued, which
+    // is the whole saving over re-scanning the catalogue in rotation.
+    const { data: queued, error: sweepError } = await db.rpc("enqueue_quo_ai_due", {
+      p_inbox_ids: inboxes.ids,
+      p_limit: 5,
+    });
+    if (sweepError || typeof queued !== "number")
+      return json({ error: "Could not reserve analysis batch" }, 503);
+    return json({ mode: "shadow", queued, inboxes: inboxes.ids.length });
+  }
   if (!actorId) return json({ error: "User identity required for refresh" }, 403);
   const { data: queued, error: claimError } = await db.rpc("enqueue_quo_ai_batch", {
     p_actor_id: actorId,

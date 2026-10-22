@@ -44,8 +44,14 @@ describe("automatic Quo inbox discovery", () => {
     expect(isQuoConfigurationProbe("forged", "backend-secret", "configuration")).toBe(false);
     expect(isQuoConfigurationProbe("", "", "configuration")).toBe(false);
     expect(isQuoWorker("backend-secret", "backend-secret", "work")).toBe(true);
+    // The unattended sweep is the cron's alone: it picks its own leads, with no
+    // date range and nobody to attribute it to.
+    expect(isQuoWorker("backend-secret", "backend-secret", "enqueue")).toBe(true);
+    // "refresh" carries a person's chosen range and must stay theirs.
     expect(isQuoWorker("backend-secret", "backend-secret", "refresh")).toBe(false);
     expect(isQuoWorker("forged", "backend-secret", "work")).toBe(false);
+    expect(isQuoWorker("forged", "backend-secret", "enqueue")).toBe(false);
+    expect(isQuoWorker("backend-secret", "backend-secret", undefined)).toBe(false);
   });
   it("discovers IDs with only an API key and keeps credentials server-side", async () => {
     const fetcher = vi.fn().mockResolvedValue(
