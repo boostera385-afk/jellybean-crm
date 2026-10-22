@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_SKEW_SECONDS,
   verifyQuoWebhook,
-} from "../../supabase/functions/_shared/quo-webhook-verify";
+} from "../../supabase/functions/quo-webhook/quo-webhook-verify";
 
 const SECRET = "whsec_c2VjcmV0LWtleS1mb3ItdGVzdGluZy1vbmx5";
 const BODY = JSON.stringify({ type: "message.delivered", data: { object: { id: "ACtest" } } });
