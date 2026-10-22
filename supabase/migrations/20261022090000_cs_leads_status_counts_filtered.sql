@@ -116,3 +116,9 @@ REVOKE ALL ON FUNCTION public.cs_leads_status_counts_filtered(
 GRANT EXECUTE ON FUNCTION public.cs_leads_status_counts_filtered(
   timestamptz, timestamptz, uuid, boolean, boolean, boolean, text, text
 ) TO authenticated;
+
+-- PostgREST resolves RPC calls from a cached view of the schema. A newly
+-- created function it has not reloaded is reported as missing, which the
+-- client cannot tell apart from any other failure, so ask for the reload
+-- explicitly rather than relying on the DDL watch firing.
+NOTIFY pgrst, 'reload schema';
