@@ -764,10 +764,20 @@ function Inner() {
             } as never,
           )
         : await unfiltered();
-      // Until the migration adding the filtered function has been applied, fall
-      // back to the unfiltered counts rather than leaving the chips and the
-      // pagination total empty. That is exactly the old behaviour, no worse.
+      // Falling back keeps the chips and the pagination total populated if the
+      // filtered function is missing, but a silent fallback is indistinguishable
+      // from the bug it replaces: the chips simply go on showing all-time
+      // numbers while the rows below them are filtered. Carry the server's own
+      // reason out of the query so the toolbar can say so instead of lying.
+      let fallbackReason: string | null = null;
       if (error && anyFilterActive) {
+        fallbackReason = error.message || error.code || "filtered count unavailable";
+        console.error(
+          "[cs-leads] cs_leads_status_counts_filtered failed, so the status chips " +
+            "are showing ALL-TIME counts instead of the filtered ones. Reason:",
+          fallbackReason,
+          error,
+        );
         ({ data, error } = await unfiltered());
       }
       if (error) throw error;
@@ -780,6 +790,7 @@ function Inner() {
       return {
         all: Number(payload.all ?? 0),
         statuses: countsByStatus,
+        fallbackReason,
       };
     },
     staleTime: 30_000,
@@ -1540,6 +1551,15 @@ function Inner() {
               <MessageSquarePlus className="h-3.5 w-3.5" />
               Templates
             </button>
+            {statusCounts.data?.fallbackReason && (
+              <p
+                role="status"
+                className="w-full px-2 pb-0.5 pt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+              >
+                These counts are all-time, not for the filters you picked —{" "}
+                {statusCounts.data.fallbackReason}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-surface px-2.5">
