@@ -128,7 +128,20 @@ export function contradictsAction(phrase: string, action: string | null): boolea
 }
 
 const singular = (noun: string) => (/[^s]s$/.test(noun) ? noun.slice(0, -1) : noun);
-const plural = (noun: string) => (noun.endsWith("s") ? noun : `${noun}s`);
+
+/**
+ * Whether the customer wrote this word, as a whole word or its plural.
+ *
+ * Whole words matter: the old prefix match read "painters" as the noun
+ * "paint", and 1,034 drafts asked for "the size of the paint that needs to be
+ * painted". A plural is still allowed, so "porches" matches "porch".
+ */
+function mentions(word: string, sources: string): boolean {
+  const forms = /[^aeiou]y$/i.test(word)
+    ? `(?:${word}|${word.slice(0, -1)}ies)`
+    : `${word}(?:e?s)?`;
+  return new RegExp(`\\b${forms}\\b`, "i").test(sources);
+}
 
 /**
  * The noun to put in the slot: the customer's word where it differs from ours.
@@ -145,12 +158,16 @@ export function labelFor(object: string | null, sources: string, wantPlural: boo
   const fallback = wantPlural ? plur : sing;
   if (!object || !sources) return fallback;
   const head = sing.split(" ").pop() ?? "";
-  if (!head || new RegExp(`\\b${head}`, "i").test(sources)) return fallback;
+  if (!head || mentions(head, sources)) return fallback;
+  // objectNouns holds only words the team itself puts in this slot, so a word
+  // for the JOB ("paint", "pressure wash") can no longer stand in for the thing.
   const used = (CS_ASK_CATALOGUE.objectNouns[object] ?? []).find((noun) =>
-    new RegExp(`\\b${singular(noun)}`, "i").test(sources),
+    mentions(singular(noun), sources),
   );
   if (!used) return fallback;
-  return wantPlural ? plural(singular(used)) : singular(used);
+  if (!wantPlural) return singular(used);
+  // The team's own plural, or ours: never a made-up one ("furnitures").
+  return CS_ASK_CATALOGUE.objectNounPlurals[object]?.[used] ?? fallback;
 }
 
 function render(phrase: string, object: string | null, sources: string): string | null {
@@ -229,6 +246,18 @@ function candidatesFor(
     const resolved = resolveWording(entry.intent, targetObject, detection.action, sources);
     if (!resolved) continue;
     let { phrase: fragment, object } = resolved;
+    // Where to collect from and where to take it depends on the JOB, not on
+    // the item being carried. The team asks a move for both ends whatever the
+    // item - 66% of 458 delivered moves - so a fridge or a hot tub being moved
+    // gets the moving address rather than the fridge's single one. Decided
+    // here, beside the same-property rule below, so that rule still wins.
+    if (entry.intent === "ADDRESS" && detection.action === "move" && !detection.sameSite) {
+      const move =
+        CS_ASK_CATALOGUE.wordingByAction["ADDRESS|furniture_move|move"] ??
+        CS_ASK_CATALOGUE.wording["ADDRESS|furniture_move"];
+      const phrase = move ? render(move.phrase, targetObject, sources) : null;
+      if (phrase) fragment = phrase;
+    }
     // Moving inside one property is not a route: fall back to the plain
     // address ask rather than requesting a drop-off the job does not have.
     if (entry.intent === "ADDRESS" && detection.sameSite && /pick.?up/i.test(fragment)) {
