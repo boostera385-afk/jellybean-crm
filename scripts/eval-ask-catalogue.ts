@@ -116,18 +116,60 @@ type Bucket = {
   n: number;
   agree: number;
   pair: number;
+  attested: number;
   fixed: number;
   diverged: number;
   noAsk: number;
 };
-const blank = (): Bucket => ({ n: 0, agree: 0, pair: 0, fixed: 0, diverged: 0, noAsk: 0 });
+const blank = (): Bucket => ({
+  n: 0,
+  agree: 0,
+  pair: 0,
+  attested: 0,
+  fixed: 0,
+  diverged: 0,
+  noAsk: 0,
+});
+
+/**
+ * "Attested" is the question that matters for "according to our data": not
+ * whether this is the pair THIS agent chose for THIS lead -- the team itself
+ * disagrees about that half the time -- but whether it is a pair the team
+ * actually sends for this kind of job. Three separate uses are required, so a
+ * combination one agent sent once does not count as the team's own.
+ */
+const ATTESTED_MIN_USES = 3;
 const overall = blank();
 const byObject = new Map<string, Bucket>();
 const multiObject = blank();
 const examples: string[] = [];
 
+const allRows = parseCsv(readFileSync(file, "utf8"));
+const actualAsks = (row: Record<string, string>) => {
+  const block = ASK_BLOCK.exec(row["Composed Message"] ?? "");
+  if (!block) return null;
+  const asks = normalizeSource(block[1])
+    .split(ASK_SPLIT)
+    .map((ask) => ask.trim().replace(/[.,]+$/, ""))
+    .filter(Boolean)
+    .map(classify);
+  return asks.length ? asks : null;
+};
+const targetOf = (row: Record<string, string>) => {
+  const parts = [row["Exact Customer Requirement"], row["Context"]].filter(Boolean);
+  return detect(parts).objects[0] ?? null;
+};
+// First pass: which pairs the team sends for each sub-category.
+const teamPairs = new Map<string, Map<string, number>>();
+for (const row of allRows) {
+  const actual = actualAsks(row);
+  if (actual) bump(teamPairs, targetOf(row) ?? "(none)", actual.join("+"));
+}
+const isAttested = (target: string, pair: string) =>
+  (teamPairs.get(target)?.get(pair) ?? 0) >= ATTESTED_MIN_USES;
+
 let scanned = 0;
-for (const row of parseCsv(readFileSync(file, "utf8"))) {
+for (const row of allRows) {
   if (scanned >= limit) break;
   const block = ASK_BLOCK.exec(row["Composed Message"] ?? "");
   if (!block) continue;
@@ -159,6 +201,7 @@ for (const row of parseCsv(readFileSync(file, "utf8"))) {
   }
   const sameLead = chosen[0] === actual[0];
   const samePair = chosen.length === actual.length && chosen.every((key, i) => key === actual[i]);
+  const attested = isAttested(target ?? "(none)", chosen.join("+"));
   // Did the team ask for something the customer had already supplied?
   const teamRepeated = actual.some(
     (key) => key !== "OTHER" && key !== "SCOPE" && detection.facts[key] === true,
@@ -167,6 +210,7 @@ for (const row of parseCsv(readFileSync(file, "utf8"))) {
   for (const entry of tally) {
     if (sameLead) entry.agree++;
     if (samePair) entry.pair++;
+    if (attested) entry.attested++;
     if (teamRepeated && !weRepeated) entry.fixed++;
     if (!sameLead && !(teamRepeated && !weRepeated)) entry.diverged++;
   }
@@ -184,14 +228,14 @@ const line = (label: string, b: Bucket) =>
   `${label.padEnd(18)} ${String(b.n).padStart(6)} ${pct(b.agree, b.n).padStart(7)} ${pct(
     b.pair,
     b.n,
-  ).padStart(7)} ${pct(b.fixed, b.n).padStart(7)} ${pct(b.diverged, b.n).padStart(9)} ${pct(
-    b.noAsk,
+  ).padStart(7)} ${pct(b.attested, b.n).padStart(9)} ${pct(b.fixed, b.n).padStart(7)} ${pct(
+    b.diverged,
     b.n,
-  ).padStart(7)}`;
+  ).padStart(9)} ${pct(b.noAsk, b.n).padStart(7)}`;
 
 console.log(`catalogue: ${CS_ASK_CATALOGUE.meta.rows} rows, replayed ${scanned}\n`);
 console.log(
-  `${"".padEnd(18)} ${"n".padStart(6)} ${"lead".padStart(7)} ${"pair".padStart(7)} ${"fixed".padStart(7)} ${"diverged".padStart(9)} ${"no ask".padStart(7)}`,
+  `${"".padEnd(18)} ${"n".padStart(6)} ${"lead".padStart(7)} ${"pair".padStart(7)} ${"attested".padStart(9)} ${"fixed".padStart(7)} ${"diverged".padStart(9)} ${"no ask".padStart(7)}`,
 );
 console.log(line("OVERALL", overall));
 console.log(
@@ -199,6 +243,8 @@ console.log(
     n: scanned,
     agree: modalTotal(ceiling.leads),
     pair: modalTotal(ceiling.pairs),
+    // Every modal pair is by definition one the team sends.
+    attested: scanned,
     fixed: 0,
     diverged: 0,
     noAsk: 0,
