@@ -90,11 +90,6 @@ import { NumberNameSelect } from "@/components/number-name-select";
 import { STATUS_LABEL, STATUS_TONE, pinnedImportantFor } from "@/lib/lead-statuses";
 import { renderCsComposeSuggestion } from "@/lib/cs-compose-template";
 import { rephraseLeadTemplateWithAi, autoRephraseLeadWithAi } from "@/lib/raw-leads-ai.functions";
-import {
-  DEFAULT_REPHRASE_PROMPT,
-  isCustomRephrasePrompt,
-  CS_COMPOSER_VERSION,
-} from "@/lib/cs-rephrase-prompt";
 import { SERVICE_CATEGORIES } from "@/data/service-options";
 
 import { cn } from "@/lib/utils";
@@ -506,117 +501,7 @@ function Inner() {
   const isAdmin = auth.primaryRole === "admin" || auth.primaryRole === "cs_admin";
   const composeTemplatesList = useCsComposeTemplatesList(auth.user?.id);
 
-  const [bulkRephrasing, setBulkRephrasing] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState(DEFAULT_REPHRASE_PROMPT);
-  const [promptDirty, setPromptDirty] = useState(false);
-  const [savingPrompt, setSavingPrompt] = useState(false);
-
-  const canManagePrompt =
-    auth.primaryRole === "admin" || auth.primaryRole === "cs" || auth.primaryRole === "cs_admin";
-
-  const promptQuery = useQuery({
-    queryKey: ["cs-rephrase-prompt"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("shared_state")
-        .select("value")
-        .eq("key", "cs_rephrase_prompt")
-        .maybeSingle();
-      if (error) return DEFAULT_REPHRASE_PROMPT;
-      const v = data?.value as { text?: string; policyVersion?: string } | null;
-      const stored = v?.policyVersion === CS_COMPOSER_VERSION ? (v.text ?? "") : "";
-      // A stored copy of the old prompt is ignored when composing, so show the
-      // box blank rather than displaying instructions that have no effect.
-      return isCustomRephrasePrompt(stored) ? stored : DEFAULT_REPHRASE_PROMPT;
-    },
-    refetchOnWindowFocus: false,
-  });
-
-  const remotePrompt = promptQuery.data;
-  useEffect(() => {
-    // Blank is a real value (it means "use the trained default"), so this must
-    // not fall back to a truthiness check or clearing the prompt never syncs.
-    if (remotePrompt !== undefined && !promptDirty) {
-      setAiPrompt(remotePrompt);
-    }
-  }, [remotePrompt, promptDirty]);
-
-  const savePrompt = async () => {
-    setSavingPrompt(true);
-    try {
-      const { error } = await supabase.from("shared_state").upsert(
-        {
-          key: "cs_rephrase_prompt",
-          value: { text: aiPrompt, policyVersion: CS_COMPOSER_VERSION } as never,
-          updated_by: auth.user?.id ?? null,
-          updated_at: new Date().toISOString(),
-        } as never,
-        { onConflict: "key" },
-      );
-      if (error) throw error;
-      setPromptDirty(false);
-      toast.success("Style preferences saved for all users");
-      qc.invalidateQueries({ queryKey: ["cs-rephrase-prompt"] });
-    } catch (e) {
-      toast.error(friendlyError(e));
-    } finally {
-      setSavingPrompt(false);
-    }
-  };
-
   const rephraseFn = useServerFn(rephraseLeadTemplateWithAi);
-
-  async function runBulkRephrase() {
-    if (selectedIds.size === 0) return;
-    const selectedLeads = (list.data ?? []).filter((l) => selectedIds.has(l.id));
-    const targets = selectedLeads.filter((lead) => lead.context?.trim() || lead.post_text?.trim());
-
-    if (targets.length === 0) {
-      toast.error("None of the selected leads have customer post text or context.");
-      return;
-    }
-
-    setBulkRephrasing(true);
-    let successCount = 0;
-    try {
-      for (const lead of targets) {
-        try {
-          const result = await rephraseFn({
-            data: {
-              leadId: lead.id,
-            },
-          });
-
-          if (result?.rephrased) {
-            const { error: dbError } = await supabase
-              .from("qualified_leads")
-              .update({ marketing_notes: result.rephrased } as never)
-              .eq("id", lead.id);
-
-            if (dbError) throw dbError;
-            void syncLeadToGoogleSheet("UPDATE", { ...lead, marketing_notes: result.rephrased });
-            successCount++;
-          }
-        } catch (err) {
-          console.error(`Failed to rephrase lead ${lead.id}:`, err);
-        }
-      }
-
-      if (successCount > 0) {
-        toast.success(
-          `Successfully rephrased ${successCount} of ${targets.length} eligible lead(s)`,
-        );
-        qc.invalidateQueries({ queryKey: ["cs_leads"] });
-        setSelectedIds(new Set());
-      } else {
-        toast.error("AI rephrasing failed for all selected leads.");
-      }
-    } catch (e) {
-      toast.error(friendlyError(e));
-    } finally {
-      setBulkRephrasing(false);
-    }
-  }
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -1166,11 +1051,19 @@ function Inner() {
 
         // Auto-rephrase new lead if toggle is enabled and marketing_notes is not yet set
         if (autoRephraseEnabledRef.current && payload.new?.id && !payload.new?.marketing_notes) {
+          const inserted = payload.new as Record<string, unknown>;
           void autoRephraseLeadWithAi({ data: { leadId: payload.new.id } })
             .then((res) => {
-              if (res?.success) {
-                qc.invalidateQueries({ queryKey: ["cs_leads"] });
-              }
+              if (!res?.success) return;
+              qc.invalidateQueries({ queryKey: ["cs_leads"] });
+              // This write happens on the server, so it is the one lead change
+              // with no acting client to mirror it to Google Sheets. Every
+              // other path syncs from its own write; the realtime handler no
+              // longer does it for everyone.
+              void syncLeadToGoogleSheet("UPDATE", {
+                ...(inserted as unknown as Parameters<typeof syncLeadToGoogleSheet>[1]),
+                marketing_notes: res.rephrased ?? null,
+              });
             })
             .catch(() => {});
         }
@@ -1623,101 +1516,6 @@ function Inner() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {canManagePrompt && (
-        <div className="crm-section-panel">
-          <div className="glass-card p-5 space-y-4">
-            <div className="flex items-center gap-2 border-b border-border pb-3 justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <h3 className="text-sm font-semibold">AI Rephrase Assistant</h3>
-              </div>
-              {selectedIds.size > 0 && (
-                <span className="text-xs bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-medium">
-                  {selectedIds.size} lead(s) selected
-                </span>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-              {/* Prompt section */}
-              <div className="lg:col-span-2 space-y-2">
-                <Label className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium block">
-                  Optional style preferences
-                </Label>
-                <Textarea
-                  value={aiPrompt}
-                  onChange={(e) => {
-                    setAiPrompt(e.target.value);
-                    setPromptDirty(true);
-                  }}
-                  rows={5}
-                  maxLength={2000}
-                  className="text-[12.5px] min-h-[120px]"
-                  placeholder="Optional tone or wording preferences. Leave blank for the default conversational style."
-                />
-                <div className="flex justify-between items-center text-[11px] text-muted-foreground">
-                  <span>
-                    AI reads saved post text, CS notes and location data before asking up to two
-                    missing details. Style preferences cannot override these safeguards. Save lead
-                    edits first.
-                  </span>
-                  <Button
-                    size="sm"
-                    variant={promptDirty ? "default" : "outline"}
-                    className="h-7"
-                    onClick={savePrompt}
-                    disabled={!promptDirty || savingPrompt}
-                  >
-                    {savingPrompt && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-                    {promptDirty ? "Save style" : "Saved"}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Bulk Rephrase controls */}
-              <div className="crm-surface-card p-4 flex flex-col justify-between space-y-4">
-                <div className="space-y-3">
-                  <h4 className="text-[12px] font-semibold text-foreground/90 uppercase tracking-wide">
-                    Bulk AI Rephrase
-                  </h4>
-                  <p className="text-xs text-muted-foreground">
-                    Uses each lead's saved context, not a fixed question template. An independent
-                    review checks for repeated or irrelevant questions.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Button
-                    className="w-full h-10"
-                    onClick={runBulkRephrase}
-                    disabled={selectedIds.size === 0 || bulkRephrasing}
-                  >
-                    {bulkRephrasing ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-4 w-4 mr-2" />
-                    )}
-                    Rephrase {selectedIds.size > 0 ? selectedIds.size : ""} Selected
-                  </Button>
-                  {selectedIds.size > 0 && (
-                    <div className="text-[11px] text-muted-foreground text-center">
-                      Eligible:{" "}
-                      {
-                        (list.data ?? []).filter(
-                          (l) =>
-                            selectedIds.has(l.id) && (l.post_text?.trim() || l.context?.trim()),
-                        ).length
-                      }{" "}
-                      of {selectedIds.size} selected (requires post text or context).
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Status tabs */}
       <div className="crm-toolbar-panel">
