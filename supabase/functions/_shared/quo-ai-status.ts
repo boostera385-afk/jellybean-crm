@@ -65,8 +65,14 @@ export function isQuoConfigurationProbe(
   return action === "configuration" && Boolean(serviceKey) && token === serviceKey;
 }
 
+/**
+ * Backend-only actions: draining the queue, and the unattended sweep that
+ * fills it. "refresh" is deliberately absent -- that one carries a person's
+ * chosen date range and must stay attributable to them.
+ */
+const WORKER_ACTIONS = new Set(["work", "enqueue"]);
 export function isQuoWorker(token: string, serviceKey: string, action: unknown): boolean {
-  return action === "work" && Boolean(serviceKey) && token === serviceKey;
+  return WORKER_ACTIONS.has(String(action)) && Boolean(serviceKey) && token === serviceKey;
 }
 
 /** Discover inbox IDs using the server-side key; never expose phone numbers/users. */

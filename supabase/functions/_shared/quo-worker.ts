@@ -55,6 +55,13 @@ export async function processQuoJob(
   const job = claimed as SyncJob;
   let checkpoint: QuoCheckpoint | null = null;
   let result: AiResult | null = null;
+  // The createdAt of the newest message the verdict was actually based on.
+  // transportResult's 24-hour no-reply rule measures from exactly this, so
+  // persisting it lets a cron advance that rule in SQL rather than re-reading
+  // the whole Quo history just to learn that a day has passed. Left null
+  // unless the history completed, because a partial thread's last message is
+  // not the thread's last message.
+  let lastMessageAt: string | null = null;
   try {
     checkpoint = job.checkpoint
       ? await decryptQuoCheckpoint(job.checkpoint, quoKey, job.runId)
@@ -129,6 +136,7 @@ export async function processQuoJob(
         previous: cached,
         signal: deadline,
       });
+      lastMessageAt = checkpoint.messages.at(-1)?.createdAt ?? null;
     }
   } catch (error) {
     const code = safeAiError(error);
@@ -162,7 +170,7 @@ export async function processQuoJob(
   const { data: saved, error } = await db.rpc("finish_quo_ai_job", {
     p_run_id: job.runId,
     p_lease_token: job.leaseToken,
-    p_result: result,
+    p_result: { ...result!, lastMessageAt },
   });
   return {
     processed: 1,

@@ -33,3 +33,9 @@ verify_jwt = true
 # Comparison-only beta: validated user plus reporting role inside handler.
 [functions.quo-ai-status]
 verify_jwt = true
+
+# Quo signs deliveries itself and sends no Supabase JWT, so the gateway cannot
+# authenticate them. The handler verifies the HMAC over the raw body before it
+# trusts anything, and is idempotent on the signed webhook-id.
+[functions.quo-webhook]
+verify_jwt = false
