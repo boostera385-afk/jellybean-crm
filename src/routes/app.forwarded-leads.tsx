@@ -158,7 +158,7 @@ function Inner() {
   }, [debouncedQuery]);
 
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 500;
+  const PAGE_SIZE = 200;
 
   const dbDateFrom = useMemo(() => {
     return dateFrom ? startOfDay(new Date(dateFrom)).toISOString() : null;

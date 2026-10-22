@@ -100,6 +100,8 @@ function AdminDashboard() {
 
   const stats = useQuery({
     queryKey: ["admin-dashboard-stats"],
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const today = startOfDay(new Date()).toISOString();
       const { data, error } = await supabase.rpc("get_admin_dashboard_stats", {

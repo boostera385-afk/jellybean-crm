@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { RouteSkeleton } from "@/components/route-skeleton";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -319,46 +319,41 @@ function Inner() {
   const raw = useQuery({
     queryKey: ["report-raw", range.from, range.to],
     queryFn: async () => {
-      const results = await Promise.all(
-        RAW_STATUSES.map((status) => {
-          let q = supabase.from("raw_lead_cache").select("id", { count: "exact", head: true });
-          if (range.from) q = q.gte("captured_at", range.from);
-          if (range.to) q = q.lt("captured_at", range.to);
-          if (status === "new") q = q.is("category", null);
-          else q = q.eq("category", status);
-          return q;
-        }),
+      const { data, error } = await supabase.rpc(
+        "report_raw_status_counts" as never,
+        {
+          p_from: range.from,
+          p_to: range.to,
+        } as never,
       );
-      const c: Record<string, number> = {};
-      results.forEach((result, index) => {
-        if (result.error) throw result.error;
-        c[RAW_STATUSES[index]] = result.count ?? 0;
-      });
-      return c;
+      if (error) throw error;
+      const counts = (data ?? {}) as Record<string, number | string>;
+      return Object.fromEntries(
+        RAW_STATUSES.map((status) => [status, Number(counts[status] ?? 0)]),
+      ) as Record<string, number>;
     },
+    staleTime: 60_000,
   });
   const cs = useQuery({
     queryKey: ["report-cs", range.from, range.to],
     queryFn: async () => {
-      const c: Record<string, number> = {};
-      const results = await Promise.all(
-        CS_STATUSES.map((status) => {
-          let q = supabase
-            .from("qualified_leads")
-            .select("id", { count: "exact", head: true })
-            .eq("cs_status", status);
-          if (range.from) q = q.gte("assigned_at", range.from);
-          if (range.to) q = q.lt("assigned_at", range.to);
-          return q;
-        }),
+      const { data, error } = await supabase.rpc(
+        "report_cs_status_counts" as never,
+        {
+          p_from: range.from,
+          p_to: range.to,
+        } as never,
       );
-      results.forEach((result, index) => {
-        if (result.error) throw result.error;
-        const count = result.count ?? 0;
-        if (count > 0) c[CS_STATUSES[index]] = count;
-      });
-      return c;
+      if (error) throw error;
+      const counts = (data ?? {}) as Record<string, number | string>;
+      return Object.fromEntries(
+        CS_STATUSES.filter((status) => Number(counts[status] ?? 0) > 0).map((status) => [
+          status,
+          Number(counts[status]),
+        ]),
+      ) as Record<string, number>;
     },
+    staleTime: 60_000,
   });
   const notFoundByUser = useQuery({
     queryKey: ["report-not-found-by-user", range.from, range.to],
@@ -865,72 +860,28 @@ function ForwardedByUserSection({
   const byUserQuery = useQuery({
     queryKey: ["report-forwarded-by-user", range.from, range.to],
     queryFn: async (): Promise<ForwardedUserRow[]> => {
-      // 1. Try report_leads_forwarded_by_user RPC with status_counts
-      try {
-        const { data, error } = await (supabase.rpc as CallableFunction)(
-          "report_leads_forwarded_by_user",
-          {
-            _from: range.from ?? undefined,
-            _to: range.to ?? undefined,
-          },
-        );
-
-        const rows = data as {
-          user_id?: string;
-          user_name?: string;
-          user_email?: string;
-          forwarded_count?: number;
-          status_counts?: Record<string, number>;
-        }[];
-        if (!error && Array.isArray(rows) && rows.length > 0) {
-          return rows
-            .map((r) => ({
-              user_id: r.user_id ?? null,
-              user_name: r.user_name || "(unknown)",
-              user_email: r.user_email ?? null,
-              forwarded_count: Number(r.forwarded_count || 0),
-              status_counts: (r.status_counts && typeof r.status_counts === "object"
-                ? r.status_counts
-                : {}) as Record<string, number>,
-            }))
-            .filter((u) => {
-              if (!u.user_id) return false;
-              const name = u.user_name.trim().toLowerCase();
-              if (
-                !name ||
-                name === "(unknown)" ||
-                name === "unknown" ||
-                name.startsWith("unknown user")
-              )
-                return false;
-              return !isCsUser({ user_id: u.user_id, full_name: u.user_name, email: u.user_email });
-            });
-        }
-      } catch {
-        // Continue to fallback
-      }
-
-      // 2. Fallback to report_leads_forwarded_by_maturing
-      const { data, error } = await supabase.rpc("report_leads_forwarded_by_maturing", {
-        _from: range.from ?? undefined,
-        _to: range.to ?? undefined,
-      });
+      const { data, error } = await (supabase.rpc as CallableFunction)(
+        "report_leads_forwarded_by_user",
+        {
+          _from: range.from ?? undefined,
+          _to: range.to ?? undefined,
+        },
+      );
       if (error) throw error;
-
-      return (
-        (data ?? []) as {
-          maturing_id?: string;
-          maturing_name?: string;
-          maturing_email?: string;
-          forwarded_count?: number;
-        }[]
-      )
+      const rows = (data ?? []) as {
+        user_id?: string;
+        user_name?: string;
+        user_email?: string;
+        forwarded_count?: number;
+        status_counts?: Record<string, number>;
+      }[];
+      return rows
         .map((r) => ({
-          user_id: r.maturing_id ?? null,
-          user_name: r.maturing_name || "(unknown)",
-          user_email: r.maturing_email ?? null,
+          user_id: r.user_id ?? null,
+          user_name: r.user_name || "(unknown)",
+          user_email: r.user_email ?? null,
           forwarded_count: Number(r.forwarded_count || 0),
-          status_counts: {},
+          status_counts: r.status_counts ?? {},
         }))
         .filter((u) => {
           if (!u.user_id) return false;
@@ -1228,7 +1179,6 @@ function ForwardedByUserSection({
                     isExpanded={isExpanded}
                     onToggleExpand={() => toggleExpand(rowId)}
                     selectedStatus={selectedStatus}
-                    range={range}
                     totalForwardedAll={totalForwardedAll}
                   />
                 );
@@ -1246,44 +1196,15 @@ function UserForwardedRow({
   isExpanded,
   onToggleExpand,
   selectedStatus,
-  range,
   totalForwardedAll,
 }: {
   user: ForwardedUserRow;
   isExpanded: boolean;
   onToggleExpand: () => void;
   selectedStatus: CsStatus | "__all__";
-  range: RangeResult;
   totalForwardedAll: number;
 }) {
-  // If status_counts was empty (from legacy fallback), query on-demand when expanded
-  const hasStatusCounts = Object.keys(user.status_counts).length > 0;
-  const onDemandQuery = useQuery({
-    queryKey: ["user-status-counts-fallback", user.user_id, range.from, range.to],
-    enabled: isExpanded && !hasStatusCounts && !!user.user_id,
-    queryFn: async () => {
-      const counts: Record<string, number> = {};
-      await Promise.all(
-        CS_STATUSES.map(async (st) => {
-          let q = supabase
-            .from("qualified_leads")
-            .select("id", { count: "exact", head: true })
-            .or(`created_by.eq.${user.user_id},assigned_by.eq.${user.user_id}`)
-            .eq("cs_status", st);
-          if (range.from) q = q.gte("assigned_at", range.from);
-          if (range.to) q = q.lt("assigned_at", range.to);
-          const { count } = await q;
-          if (count && count > 0) counts[st] = count;
-        }),
-      );
-      return counts;
-    },
-    staleTime: 5 * 60_000,
-  });
-
-  const statusCounts = hasStatusCounts
-    ? user.status_counts
-    : (onDemandQuery.data ?? user.status_counts);
+  const statusCounts = user.status_counts;
 
   const processedCount = statusCounts["converted"] ?? 0;
   const undeliverCount = statusCounts["undeliver"] ?? 0;
@@ -1492,7 +1413,7 @@ function UserForwardedRow({
                     to="/app/forwarded-leads"
                     search={{ forwardedByFilter: user.user_id } as Record<string, unknown>}
                     className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e: MouseEvent) => e.stopPropagation()}
                   >
                     View forwarded leads
                     <ExternalLink className="h-3 w-3" />
@@ -1501,61 +1422,54 @@ function UserForwardedRow({
               </div>
 
               {/* Status Grid */}
-              {onDemandQuery.isLoading ? (
-                <div className="py-6 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                  Loading lead status breakdown…
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
-                  {CS_STATUSES.map((st) => {
-                    const count = statusCounts[st] ?? 0;
-                    const pct = total > 0 ? ((count / total) * 100).toFixed(1) : "0.0";
-                    const isSelected = selectedStatus === st;
-                    return (
-                      <div
-                        key={st}
-                        className={cn(
-                          "p-2.5 rounded-lg border text-left transition-all",
-                          isSelected
-                            ? "border-primary bg-primary/10 shadow-xs ring-1 ring-primary/30"
-                            : "border-border/60 bg-background/50 hover:bg-background hover:border-border",
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-1 mb-1">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span
-                              className={cn("h-2 w-2 rounded-full shrink-0", statusDotTone(st))}
-                            />
-                            <span className="text-[11px] font-medium text-muted-foreground truncate">
-                              {CS_LABELS[st] ?? st}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-baseline justify-between mt-1">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
+                {CS_STATUSES.map((st) => {
+                  const count = statusCounts[st] ?? 0;
+                  const pct = total > 0 ? ((count / total) * 100).toFixed(1) : "0.0";
+                  const isSelected = selectedStatus === st;
+                  return (
+                    <div
+                      key={st}
+                      className={cn(
+                        "p-2.5 rounded-lg border text-left transition-all",
+                        isSelected
+                          ? "border-primary bg-primary/10 shadow-xs ring-1 ring-primary/30"
+                          : "border-border/60 bg-background/50 hover:bg-background hover:border-border",
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <span
-                            className={cn(
-                              "text-base font-bold tabular-nums",
-                              count > 0 ? "text-foreground" : "text-muted-foreground/60",
-                            )}
-                          >
-                            {count.toLocaleString()}
-                          </span>
-                          <span className="text-[10.5px] tabular-nums text-muted-foreground font-medium">
-                            {pct}%
-                          </span>
-                        </div>
-                        <div className="h-1 w-full rounded-full bg-muted/50 overflow-hidden mt-1.5">
-                          <div
-                            className={cn("h-full rounded-full", statusDotTone(st))}
-                            style={{ width: `${pct}%` }}
+                            className={cn("h-2 w-2 rounded-full shrink-0", statusDotTone(st))}
                           />
+                          <span className="text-[11px] font-medium text-muted-foreground truncate">
+                            {CS_LABELS[st] ?? st}
+                          </span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                      <div className="flex items-baseline justify-between mt-1">
+                        <span
+                          className={cn(
+                            "text-base font-bold tabular-nums",
+                            count > 0 ? "text-foreground" : "text-muted-foreground/60",
+                          )}
+                        >
+                          {count.toLocaleString()}
+                        </span>
+                        <span className="text-[10.5px] tabular-nums text-muted-foreground font-medium">
+                          {pct}%
+                        </span>
+                      </div>
+                      <div className="h-1 w-full rounded-full bg-muted/50 overflow-hidden mt-1.5">
+                        <div
+                          className={cn("h-full rounded-full", statusDotTone(st))}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </td>
         </tr>
