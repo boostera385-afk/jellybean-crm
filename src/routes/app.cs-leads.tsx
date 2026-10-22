@@ -94,11 +94,6 @@ import {
 } from "@/lib/lead-statuses";
 import { renderCsComposeSuggestion } from "@/lib/cs-compose-template";
 import { rephraseLeadTemplateWithAi, autoRephraseLeadWithAi } from "@/lib/raw-leads-ai.functions";
-import {
-  DEFAULT_REPHRASE_PROMPT,
-  isCustomRephrasePrompt,
-  CS_COMPOSER_VERSION,
-} from "@/lib/cs-rephrase-prompt";
 import { SERVICE_CATEGORIES } from "@/data/service-options";
 
 import { cn } from "@/lib/utils";
@@ -491,117 +486,7 @@ function Inner() {
   const isAdmin = auth.primaryRole === "admin" || auth.primaryRole === "cs_admin";
   const composeTemplatesList = useCsComposeTemplatesList(auth.user?.id);
 
-  const [bulkRephrasing, setBulkRephrasing] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState(DEFAULT_REPHRASE_PROMPT);
-  const [promptDirty, setPromptDirty] = useState(false);
-  const [savingPrompt, setSavingPrompt] = useState(false);
-
-  const canManagePrompt =
-    auth.primaryRole === "admin" || auth.primaryRole === "cs" || auth.primaryRole === "cs_admin";
-
-  const promptQuery = useQuery({
-    queryKey: ["cs-rephrase-prompt"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("shared_state")
-        .select("value")
-        .eq("key", "cs_rephrase_prompt")
-        .maybeSingle();
-      if (error) return DEFAULT_REPHRASE_PROMPT;
-      const v = data?.value as { text?: string; policyVersion?: string } | null;
-      const stored = v?.policyVersion === CS_COMPOSER_VERSION ? (v.text ?? "") : "";
-      // A stored copy of the old prompt is ignored when composing, so show the
-      // box blank rather than displaying instructions that have no effect.
-      return isCustomRephrasePrompt(stored) ? stored : DEFAULT_REPHRASE_PROMPT;
-    },
-    refetchOnWindowFocus: false,
-  });
-
-  const remotePrompt = promptQuery.data;
-  useEffect(() => {
-    // Blank is a real value (it means "use the trained default"), so this must
-    // not fall back to a truthiness check or clearing the prompt never syncs.
-    if (remotePrompt !== undefined && !promptDirty) {
-      setAiPrompt(remotePrompt);
-    }
-  }, [remotePrompt, promptDirty]);
-
-  const savePrompt = async () => {
-    setSavingPrompt(true);
-    try {
-      const { error } = await supabase.from("shared_state").upsert(
-        {
-          key: "cs_rephrase_prompt",
-          value: { text: aiPrompt, policyVersion: CS_COMPOSER_VERSION } as never,
-          updated_by: auth.user?.id ?? null,
-          updated_at: new Date().toISOString(),
-        } as never,
-        { onConflict: "key" },
-      );
-      if (error) throw error;
-      setPromptDirty(false);
-      toast.success("Style preferences saved for all users");
-      qc.invalidateQueries({ queryKey: ["cs-rephrase-prompt"] });
-    } catch (e) {
-      toast.error(friendlyError(e));
-    } finally {
-      setSavingPrompt(false);
-    }
-  };
-
   const rephraseFn = useServerFn(rephraseLeadTemplateWithAi);
-
-  async function runBulkRephrase() {
-    if (selectedIds.size === 0) return;
-    const selectedLeads = (list.data ?? []).filter((l) => selectedIds.has(l.id));
-    const targets = selectedLeads.filter((lead) => lead.context?.trim() || lead.post_text?.trim());
-
-    if (targets.length === 0) {
-      toast.error("None of the selected leads have customer post text or context.");
-      return;
-    }
-
-    setBulkRephrasing(true);
-    let successCount = 0;
-    try {
-      for (const lead of targets) {
-        try {
-          const result = await rephraseFn({
-            data: {
-              leadId: lead.id,
-            },
-          });
-
-          if (result?.rephrased) {
-            const { error: dbError } = await supabase
-              .from("qualified_leads")
-              .update({ marketing_notes: result.rephrased } as never)
-              .eq("id", lead.id);
-
-            if (dbError) throw dbError;
-            void syncLeadToGoogleSheet("UPDATE", { ...lead, marketing_notes: result.rephrased });
-            successCount++;
-          }
-        } catch (err) {
-          console.error(`Failed to rephrase lead ${lead.id}:`, err);
-        }
-      }
-
-      if (successCount > 0) {
-        toast.success(
-          `Successfully rephrased ${successCount} of ${targets.length} eligible lead(s)`,
-        );
-        qc.invalidateQueries({ queryKey: ["cs_leads"] });
-        setSelectedIds(new Set());
-      } else {
-        toast.error("AI rephrasing failed for all selected leads.");
-      }
-    } catch (e) {
-      toast.error(friendlyError(e));
-    } finally {
-      setBulkRephrasing(false);
-    }
-  }
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -836,65 +721,55 @@ function Inner() {
   //   • no filters at all      → reuse the cached `cs_leads_status_counts` RPC
   //   • only a status selected → reuse the same cached RPC's per-status counts
   // A real count query only runs when a narrow filter is on.
-  const needsCountQuery = Boolean(
+  // Any narrowing of the view. The status chips and the pagination total both
+  // have to respect these; the status itself is not one of them, because the
+  // chips count every status inside the filtered set.
+  const anyFilterActive = Boolean(
     dbDateFrom || dbDateTo || dbOwner || dbSearch || importantOnly || notCalledOnly,
   );
 
-  const totalCount = useQuery({
-    queryKey: [
-      "cs_leads",
-      "cs_leads_count",
-      { dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, importantOnly, notCalledOnly },
-    ],
-    enabled: needsCountQuery,
+  // Status chip counts, and the pagination total they also serve.
+  //
+  // These used to come from the unfiltered cs_leads_status_counts() RPC, so a
+  // narrowed view ("Today", an owner, a search) still showed all-time chip
+  // numbers that disagreed with the rows on screen. When any filter is on we
+  // call the filtered RPC, which applies exactly the same predicates as the
+  // list query above; with no filter we keep the unfiltered RPC, whose result
+  // is cached and shared across the app.
+  //
+  // It also answers the pagination total, so the exact count(*) that used to
+  // run alongside it whenever a filter was active is gone.
+  const statusCounts = useQuery({
+    queryKey: anyFilterActive
+      ? [
+          "cs_leads",
+          "status_counts_filtered",
+          { dbDateFrom, dbDateTo, dbOwner, dbSearch, importantOnly, notCalledOnly },
+        ]
+      : ["cs_leads", "status_counts_all_time"],
     queryFn: async () => {
-      // This only runs when a narrow filter is active (see `needsCountQuery`),
-      // so an exact count is affordable and accurate — indexed on assigned_at /
-      // assigned_to. Unfiltered + status-only totals never reach this query.
-      let q = supabase.from("qualified_leads").select("id", { count: "exact", head: true });
-
-      if (dbDateFrom) q = q.gte("assigned_at", dbDateFrom);
-      if (dbDateTo) q = q.lt("assigned_at", dbDateTo);
-
-      if (dbOwner === "__unassigned__") {
-        q = q.is("assigned_to", null);
-      } else if (dbOwner !== null) {
-        q = q.eq("assigned_to", dbOwner);
+      const unfiltered = async () => await supabase.rpc("cs_leads_status_counts" as never);
+      let { data, error } = anyFilterActive
+        ? await supabase.rpc(
+            "cs_leads_status_counts_filtered" as never,
+            {
+              p_date_from: dbDateFrom,
+              p_date_to: dbDateTo,
+              p_owner: dbOwner && dbOwner !== "__unassigned__" ? dbOwner : null,
+              p_unassigned: dbOwner === "__unassigned__",
+              p_not_called: notCalledOnly,
+              p_important: importantOnly,
+              p_search: dbSearch || null,
+              p_phone: dbSearch ? (phoneSearchPattern(dbSearch) ?? null) : null,
+            } as never,
+          )
+        : await unfiltered();
+      // Until the migration adding the filtered function has been applied, fall
+      // back to the unfiltered counts rather than leaving the chips and the
+      // pagination total empty. That is exactly the old behaviour, no worse.
+      if (error && anyFilterActive) {
+        ({ data, error } = await unfiltered());
       }
-
-      if (dbStatus) q = q.eq("cs_status", dbStatus);
-
-      if (notCalledOnly) q = q.is("called_at", null);
-
-      if (dbSearch) {
-        const s = `%${dbSearch}%`;
-        // Phone columns use a separator-agnostic pattern so a digits-only query
-        // matches formatted stored numbers (and vice versa). Falls back to the
-        // literal pattern for non-numeric queries.
-        const phone = phoneSearchPattern(dbSearch) ?? s;
-        q = q.or(
-          `customer_name.ilike.${s},customer_number.ilike.${phone},customer_number_2.ilike.${phone},number_name.ilike.${s},main_area.ilike.${s},sub_area.ilike.${s},pass_it_to.ilike.${s},requirement_1.ilike.${s},requirement_2.ilike.${s}`,
-        );
-      }
-
-      if (importantOnly) q = q.eq("is_important", true);
-
-      const { count, error } = await q;
-      if (error) throw error;
-      return count ?? 0;
-    },
-    placeholderData: keepPreviousData,
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-  });
-
-  const allTimeStatusCounts = useQuery({
-    queryKey: ["cs_leads", "status_counts_all_time"],
-    queryFn: async () => {
-      // Single-query RPC: returns all totals + per-status counts in one
-      // database scan. Previously this fired 5+ separate count(*) queries
-      // per page load — the #1 DB load in the app.
-      const { data, error } = await supabase.rpc("cs_leads_status_counts" as never);
       if (error) throw error;
       const payload = (data ?? {}) as { all?: number; statuses?: Record<string, number> };
       const countsByStatus: Record<string, number> = {};
@@ -912,12 +787,12 @@ function Inner() {
     placeholderData: keepPreviousData,
   });
 
-  // Total used for pagination. When no narrow filter is active we reuse the
-  // cached status-count RPC instead of firing another count query.
   const cachedStatusTotal = dbStatus
-    ? (allTimeStatusCounts.data?.statuses?.[dbStatus] ?? 0)
-    : (allTimeStatusCounts.data?.all ?? 0);
-  const effectiveTotalCount = needsCountQuery ? (totalCount.data ?? 0) : cachedStatusTotal;
+    ? (statusCounts.data?.statuses?.[dbStatus] ?? 0)
+    : (statusCounts.data?.all ?? 0);
+  // The counts RPC already applies every active filter, so it is the total for
+  // every case.
+  const effectiveTotalCount = cachedStatusTotal;
 
   const totalPages = Math.max(1, Math.ceil(effectiveTotalCount / PAGE_SIZE));
 
@@ -1120,11 +995,19 @@ function Inner() {
 
         // Auto-rephrase new lead if toggle is enabled and marketing_notes is not yet set
         if (autoRephraseEnabledRef.current && payload.new?.id && !payload.new?.marketing_notes) {
+          const inserted = payload.new as Record<string, unknown>;
           void autoRephraseLeadWithAi({ data: { leadId: payload.new.id } })
             .then((res) => {
-              if (res?.success) {
-                qc.invalidateQueries({ queryKey: ["cs_leads"] });
-              }
+              if (!res?.success) return;
+              qc.invalidateQueries({ queryKey: ["cs_leads"] });
+              // This write happens on the server, so it is the one lead change
+              // with no acting client to mirror it to Google Sheets. Every
+              // other path syncs from its own write; the realtime handler no
+              // longer does it for everyone.
+              void syncLeadToGoogleSheet("UPDATE", {
+                ...(inserted as unknown as Parameters<typeof syncLeadToGoogleSheet>[1]),
+                marketing_notes: res.rephrased ?? null,
+              });
             })
             .catch(() => {});
         }
@@ -1210,8 +1093,8 @@ function Inner() {
     });
   }, [areaFilter, list.data, query]);
 
-  const counts = allTimeStatusCounts.data?.statuses ?? {};
-  const allLeadsCount = allTimeStatusCounts.data?.all ?? 0;
+  const counts = statusCounts.data?.statuses ?? {};
+  const allLeadsCount = statusCounts.data?.all ?? 0;
 
   // All leads on the current page after client-side filtering, sorted with
   // pinned-important leads first (DB also orders pinned first, so this is
@@ -1345,7 +1228,7 @@ function Inner() {
             IMP LEADS
             {importantOnly && (
               <span className="ml-1.5 tabular-nums opacity-90">
-                ({totalCount.isFetching ? "—" : (totalCount.data ?? 0)})
+                ({statusCounts.isFetching ? "—" : effectiveTotalCount})
               </span>
             )}
           </Button>
@@ -1581,101 +1464,6 @@ function Inner() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {canManagePrompt && (
-        <div className="crm-section-panel">
-          <div className="glass-card p-5 space-y-4">
-            <div className="flex items-center gap-2 border-b border-border pb-3 justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <h3 className="text-sm font-semibold">AI Rephrase Assistant</h3>
-              </div>
-              {selectedIds.size > 0 && (
-                <span className="text-xs bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-medium">
-                  {selectedIds.size} lead(s) selected
-                </span>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-              {/* Prompt section */}
-              <div className="lg:col-span-2 space-y-2">
-                <Label className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium block">
-                  Optional style preferences
-                </Label>
-                <Textarea
-                  value={aiPrompt}
-                  onChange={(e) => {
-                    setAiPrompt(e.target.value);
-                    setPromptDirty(true);
-                  }}
-                  rows={5}
-                  maxLength={2000}
-                  className="text-[12.5px] min-h-[120px]"
-                  placeholder="Optional tone or wording preferences. Leave blank for the default conversational style."
-                />
-                <div className="flex justify-between items-center text-[11px] text-muted-foreground">
-                  <span>
-                    AI reads saved post text, CS notes and location data before asking up to two
-                    missing details. Style preferences cannot override these safeguards. Save lead
-                    edits first.
-                  </span>
-                  <Button
-                    size="sm"
-                    variant={promptDirty ? "default" : "outline"}
-                    className="h-7"
-                    onClick={savePrompt}
-                    disabled={!promptDirty || savingPrompt}
-                  >
-                    {savingPrompt && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-                    {promptDirty ? "Save style" : "Saved"}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Bulk Rephrase controls */}
-              <div className="crm-surface-card p-4 flex flex-col justify-between space-y-4">
-                <div className="space-y-3">
-                  <h4 className="text-[12px] font-semibold text-foreground/90 uppercase tracking-wide">
-                    Bulk AI Rephrase
-                  </h4>
-                  <p className="text-xs text-muted-foreground">
-                    Uses each lead's saved context, not a fixed question template. An independent
-                    review checks for repeated or irrelevant questions.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Button
-                    className="w-full h-10"
-                    onClick={runBulkRephrase}
-                    disabled={selectedIds.size === 0 || bulkRephrasing}
-                  >
-                    {bulkRephrasing ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-4 w-4 mr-2" />
-                    )}
-                    Rephrase {selectedIds.size > 0 ? selectedIds.size : ""} Selected
-                  </Button>
-                  {selectedIds.size > 0 && (
-                    <div className="text-[11px] text-muted-foreground text-center">
-                      Eligible:{" "}
-                      {
-                        (list.data ?? []).filter(
-                          (l) =>
-                            selectedIds.has(l.id) && (l.post_text?.trim() || l.context?.trim()),
-                        ).length
-                      }{" "}
-                      of {selectedIds.size} selected (requires post text or context).
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Status tabs */}
       <div className="crm-toolbar-panel">
