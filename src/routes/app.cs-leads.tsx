@@ -712,67 +712,52 @@ function Inner() {
   //   • no filters at all      → reuse the cached `cs_leads_status_counts` RPC
   //   • only a status selected → reuse the same cached RPC's per-status counts
   // A real count query only runs when a date/owner/search/garage filter is on.
-  const needsCountQuery = Boolean(
+  // Any narrowing of the view. The status chips and the pagination total both
+  // have to respect these; the status itself is not one of them, because the
+  // chips count every status inside the filtered set.
+  const anyFilterActive = Boolean(
     dbDateFrom || dbDateTo || dbOwner || dbSearch || garageDoorOnly || notCalledOnly,
   );
 
-  const totalCount = useQuery({
-    queryKey: [
-      "cs_leads",
-      "cs_leads_count",
-      { dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, garageDoorOnly, notCalledOnly },
-    ],
-    enabled: needsCountQuery,
+  // Status chip counts, and the pagination total they also serve.
+  //
+  // These used to come from the unfiltered cs_leads_status_counts() RPC, so a
+  // narrowed view ("Today", an owner, a search) still showed all-time chip
+  // numbers that disagreed with the rows on screen. When any filter is on we
+  // call the filtered RPC, which applies exactly the same predicates as the
+  // list query below; with no filter we keep the unfiltered RPC, whose result
+  // is cached and shared across the app.
+  const statusCounts = useQuery({
+    queryKey: anyFilterActive
+      ? [
+          "cs_leads",
+          "status_counts_filtered",
+          { dbDateFrom, dbDateTo, dbOwner, dbSearch, garageDoorOnly, notCalledOnly },
+        ]
+      : ["cs_leads", "status_counts_all_time"],
     queryFn: async () => {
-      // This only runs when a narrow filter is active (see `needsCountQuery`),
-      // so an exact count is affordable and accurate — indexed on assigned_at /
-      // assigned_to. Unfiltered + status-only totals never reach this query.
-      let q = supabase.from("qualified_leads").select("id", { count: "exact", head: true });
-
-      if (dbDateFrom) q = q.gte("assigned_at", dbDateFrom);
-      if (dbDateTo) q = q.lt("assigned_at", dbDateTo);
-
-      if (dbOwner === "__unassigned__") {
-        q = q.is("assigned_to", null);
-      } else if (dbOwner !== null) {
-        q = q.eq("assigned_to", dbOwner);
+      const unfiltered = async () => await supabase.rpc("cs_leads_status_counts" as never);
+      let { data, error } = anyFilterActive
+        ? await supabase.rpc(
+            "cs_leads_status_counts_filtered" as never,
+            {
+              p_date_from: dbDateFrom,
+              p_date_to: dbDateTo,
+              p_owner: dbOwner && dbOwner !== "__unassigned__" ? dbOwner : null,
+              p_unassigned: dbOwner === "__unassigned__",
+              p_not_called: notCalledOnly,
+              p_search: dbSearch || null,
+              p_phone: dbSearch ? (phoneSearchPattern(dbSearch) ?? null) : null,
+              p_garage_patterns: garageDoorOnly ? GARAGE_DOOR_PATTERNS : null,
+            } as never,
+          )
+        : await unfiltered();
+      // Until the migration adding the filtered function has been applied, fall
+      // back to the unfiltered counts rather than leaving the chips and the
+      // pagination total empty. That is exactly the old behaviour, no worse.
+      if (error && anyFilterActive) {
+        ({ data, error } = await unfiltered());
       }
-
-      if (dbStatus) q = q.eq("cs_status", dbStatus);
-
-      if (notCalledOnly) q = q.is("called_at", null);
-
-      if (dbSearch) {
-        const s = `%${dbSearch}%`;
-        // Phone columns use a separator-agnostic pattern so a digits-only query
-        // matches formatted stored numbers (and vice versa). Falls back to the
-        // literal pattern for non-numeric queries.
-        const phone = phoneSearchPattern(dbSearch) ?? s;
-        q = q.or(
-          `customer_name.ilike.${s},customer_number.ilike.${phone},customer_number_2.ilike.${phone},number_name.ilike.${s},main_area.ilike.${s},sub_area.ilike.${s},pass_it_to.ilike.${s},requirement_1.ilike.${s},requirement_2.ilike.${s}`,
-        );
-      }
-
-      if (garageDoorOnly) {
-        q = q.or(GARAGE_DOOR_OR_CLAUSE);
-      }
-
-      const { count, error } = await q;
-      if (error) throw error;
-      return count ?? 0;
-    },
-    placeholderData: keepPreviousData,
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-  });
-
-  const allTimeStatusCounts = useQuery({
-    queryKey: ["cs_leads", "status_counts_all_time"],
-    queryFn: async () => {
-      // Single-query RPC: returns all totals + per-status counts in one
-      // database scan. Previously this fired 5+ separate count(*) queries
-      // per page load — the #1 DB load in the app.
-      const { data, error } = await supabase.rpc("cs_leads_status_counts" as never);
       if (error) throw error;
       const payload = (data ?? {}) as { all?: number; statuses?: Record<string, number> };
       const countsByStatus: Record<string, number> = {};
@@ -790,65 +775,13 @@ function Inner() {
     placeholderData: keepPreviousData,
   });
 
-  // Exact database count of Garage Door leads matching current filters.
-  // This is an 18-way ILIKE scan, so it only runs while the Garage Door filter
-  // is actually switched on (it powers pagination there); the toolbar badge
-  // shows no number when the filter is off.
-  const garageDoorCount = useQuery({
-    queryKey: [
-      "cs_leads",
-      "cs_garage_door_count",
-      { dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, areaFilter, notCalledOnly },
-    ],
-    enabled: garageDoorOnly,
-    queryFn: async () => {
-      let q = supabase.from("qualified_leads").select("id", { count: "exact", head: true });
-
-      if (dbDateFrom) q = q.gte("assigned_at", dbDateFrom);
-      if (dbDateTo) q = q.lt("assigned_at", dbDateTo);
-
-      if (dbOwner === "__unassigned__") {
-        q = q.is("assigned_to", null);
-      } else if (dbOwner !== null) {
-        q = q.eq("assigned_to", dbOwner);
-      }
-
-      if (dbStatus) q = q.eq("cs_status", dbStatus);
-
-      if (notCalledOnly) q = q.is("called_at", null);
-
-      if (dbSearch) {
-        const s = `%${dbSearch}%`;
-        // Phone columns use a separator-agnostic pattern so a digits-only query
-        // matches formatted stored numbers (and vice versa). Falls back to the
-        // literal pattern for non-numeric queries.
-        const phone = phoneSearchPattern(dbSearch) ?? s;
-        q = q.or(
-          `customer_name.ilike.${s},customer_number.ilike.${phone},customer_number_2.ilike.${phone},number_name.ilike.${s},main_area.ilike.${s},sub_area.ilike.${s},pass_it_to.ilike.${s},requirement_1.ilike.${s},requirement_2.ilike.${s}`,
-        );
-      }
-
-      q = q.or(GARAGE_DOOR_OR_CLAUSE);
-
-      const { count, error } = await q;
-      if (error) throw error;
-      return count ?? 0;
-    },
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-    placeholderData: keepPreviousData,
-  });
-
-  // Total used for pagination. When no narrow filter is active we reuse the
-  // cached status-count RPC instead of firing another count query.
   const cachedStatusTotal = dbStatus
-    ? (allTimeStatusCounts.data?.statuses?.[dbStatus] ?? 0)
-    : (allTimeStatusCounts.data?.all ?? 0);
-  const effectiveTotalCount = garageDoorOnly
-    ? (garageDoorCount.data ?? 0)
-    : needsCountQuery
-      ? (totalCount.data ?? 0)
-      : cachedStatusTotal;
+    ? (statusCounts.data?.statuses?.[dbStatus] ?? 0)
+    : (statusCounts.data?.all ?? 0);
+  // The counts RPC already applies every active filter, including the garage
+  // door patterns, so it is the total for every case - two separate exact
+  // count(*) queries used to run alongside it.
+  const effectiveTotalCount = cachedStatusTotal;
 
   const totalPages = Math.max(1, Math.ceil(effectiveTotalCount / PAGE_SIZE));
 
@@ -1149,8 +1082,8 @@ function Inner() {
     });
   }, [areaFilter, list.data, query]);
 
-  const counts = allTimeStatusCounts.data?.statuses ?? {};
-  const allLeadsCount = allTimeStatusCounts.data?.all ?? 0;
+  const counts = statusCounts.data?.statuses ?? {};
+  const allLeadsCount = statusCounts.data?.all ?? 0;
 
   // All leads on the current page after client-side filtering, sorted with
   // pinned-important leads first (DB also orders pinned first, so this is
@@ -1280,7 +1213,7 @@ function Inner() {
             Garage Door
             {garageDoorOnly && (
               <span className="ml-1.5 tabular-nums opacity-90">
-                ({garageDoorCount.isLoading ? "—" : (garageDoorCount.data ?? 0)})
+                ({statusCounts.isLoading ? "—" : effectiveTotalCount})
               </span>
             )}
           </Button>
