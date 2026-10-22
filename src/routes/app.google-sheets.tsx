@@ -537,14 +537,24 @@ function jsonResponse(data, code) {
 };`;
 
 export const Route = createFileRoute("/app/google-sheets")({
-  head: () => ({ meta: [
-    { title: "Google Sheets \u00b7 JellyBean" },
-    { name: "description", content: "Manage the JellyBean lead synchronization with Google Sheets." },
-    { property: "og:title", content: "Google Sheets \u00b7 JellyBean" },
-    { property: "og:description", content: "Manage the JellyBean lead synchronization with Google Sheets." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }), component: Page });
+  head: () => ({
+    meta: [
+      { title: "Google Sheets \u00b7 JellyBean" },
+      {
+        name: "description",
+        content: "Manage the JellyBean lead synchronization with Google Sheets.",
+      },
+      { property: "og:title", content: "Google Sheets \u00b7 JellyBean" },
+      {
+        property: "og:description",
+        content: "Manage the JellyBean lead synchronization with Google Sheets.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
+  component: Page,
+});
 
 function Page() {
   const auth = useAuth();

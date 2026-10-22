@@ -64,7 +64,6 @@ import {
   ChevronsRight,
   Paperclip,
   ExternalLink,
-  Warehouse,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -87,29 +86,18 @@ import { listCsTeam, bulkAssignImportantLeads, type CsTeamMember } from "@/lib/c
 import { downloadCsv, formatPhone, phoneSearchPattern, phoneDigitsMatch } from "@/lib/crm-lite";
 import type { CsStatus, LeadNote } from "@/lib/crm-types";
 import { NumberNameSelect } from "@/components/number-name-select";
-import { STATUS_LABEL, STATUS_TONE, pinnedImportantFor } from "@/lib/lead-statuses";
+import {
+  STATUS_LABEL,
+  STATUS_TONE,
+  canShowAiSuggestion,
+  pinnedImportantFor,
+} from "@/lib/lead-statuses";
 import { renderCsComposeSuggestion } from "@/lib/cs-compose-template";
 import { rephraseLeadTemplateWithAi, autoRephraseLeadWithAi } from "@/lib/raw-leads-ai.functions";
 import { SERVICE_CATEGORIES } from "@/data/service-options";
 
 import { cn } from "@/lib/utils";
 import { confirmDiscardUnsaved } from "@/components/confirm-dialog-store";
-
-// Garage Door filter: match specific phrases (case-insensitive) across
-// service/pass_it_to and lead text fields. Avoids bare "garage" which
-// would incorrectly include garage remodeling/cleaning/flooring leads.
-const GARAGE_DOOR_PATTERNS = ["%garage door%", "%garage opener%", "%overhead door%"];
-const GARAGE_DOOR_FIELDS = [
-  "service",
-  "pass_it_to",
-  "context",
-  "post_text",
-  "requirement_1",
-  "requirement_2",
-];
-const GARAGE_DOOR_OR_CLAUSE = GARAGE_DOOR_FIELDS.flatMap((f) =>
-  GARAGE_DOOR_PATTERNS.map((p) => `${f}.ilike.${p}`),
-).join(",");
 
 type ContactMethod = "texted" | "called";
 type NotCalledFilter = "__off__" | "__all__" | CsStatus;
@@ -255,12 +243,9 @@ const PIPELINE_STATUSES = [
   "undeliver",
   "wrong_number",
   "wrong_lead",
-  "wrong_service",
-  "wrong_person",
   "already_got_someone",
   "already_received_before",
   "service_provider_himself",
-  "small_service",
   "converted",
   "cx_interested",
   "cx_not_interested",
@@ -482,7 +467,7 @@ function Inner() {
 
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [areaFilter, setAreaFilter] = useState("all");
-  const [garageDoorOnly, setGarageDoorOnly] = useState(false);
+  const [importantOnly, setImportantOnly] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [activeDatePreset, setActiveDatePreset] = useState<CsPipelineRelativePreset | null>(null);
   const [page, setPage] = useState(1);
@@ -589,21 +574,12 @@ function Inner() {
   // ── Reset page to 1 whenever any server-side filter changes ──────────────
   useEffect(() => {
     setPage(1);
-  }, [
-    dbDateFrom,
-    dbDateTo,
-    dbOwner,
-    dbStatus,
-    areaFilter,
-    dbSearch,
-    garageDoorOnly,
-    notCalledOnly,
-  ]);
+  }, [dbDateFrom, dbDateTo, dbOwner, dbStatus, areaFilter, dbSearch, importantOnly, notCalledOnly]);
 
   const list = useQuery({
     queryKey: [
       "cs_leads",
-      { page, dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, garageDoorOnly, notCalledOnly },
+      { page, dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, importantOnly, notCalledOnly },
     ],
     queryFn: async () => {
       const from = (page - 1) * PAGE_SIZE;
@@ -646,9 +622,7 @@ function Inner() {
         );
       }
 
-      if (garageDoorOnly) {
-        q = q.or(GARAGE_DOOR_OR_CLAUSE);
-      }
+      if (importantOnly) q = q.eq("is_important", true);
 
       const { data, error } = await q;
       if (error) throw error;
@@ -656,6 +630,41 @@ function Inner() {
     },
     placeholderData: keepPreviousData,
     staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+
+  // Admin-only AI tag suggestions for the leads on this page. The
+  // lead_ai_status table is RLS-restricted to reporting administrators, so the
+  // query is also skipped entirely for other roles.
+  const aiSuggestions = useQuery({
+    queryKey: [
+      "cs_leads_ai_suggestions",
+      {
+        page,
+        dbDateFrom,
+        dbDateTo,
+        dbOwner,
+        dbStatus,
+        dbSearch,
+        importantOnly,
+        notCalledOnly,
+        ids: list.data?.map((l) => l.id).join(",") ?? "",
+      },
+    ],
+    enabled: isAdmin,
+    queryFn: async (): Promise<Map<string, AiSuggestion>> => {
+      const ids = (list.data ?? [])
+        .filter((l) => l.cs_status !== "need_follow_up")
+        .map((l) => l.id);
+      if (ids.length === 0) return new Map();
+      const { data, error } = await supabase
+        .from("lead_ai_status")
+        .select("lead_id,state,ai_status,confidence,reason_code,message_count,analyzed_at,model")
+        .in("lead_id", ids);
+      if (error) throw error;
+      return new Map(((data ?? []) as unknown as AiSuggestion[]).map((row) => [row.lead_id, row]));
+    },
+    staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
 
@@ -711,12 +720,12 @@ function Inner() {
   // query entirely for the two most common views:
   //   • no filters at all      → reuse the cached `cs_leads_status_counts` RPC
   //   • only a status selected → reuse the same cached RPC's per-status counts
-  // A real count query only runs when a date/owner/search/garage filter is on.
+  // A real count query only runs when a narrow filter is on.
   // Any narrowing of the view. The status chips and the pagination total both
   // have to respect these; the status itself is not one of them, because the
   // chips count every status inside the filtered set.
   const anyFilterActive = Boolean(
-    dbDateFrom || dbDateTo || dbOwner || dbSearch || garageDoorOnly || notCalledOnly,
+    dbDateFrom || dbDateTo || dbOwner || dbSearch || importantOnly || notCalledOnly,
   );
 
   // Status chip counts, and the pagination total they also serve.
@@ -725,14 +734,17 @@ function Inner() {
   // narrowed view ("Today", an owner, a search) still showed all-time chip
   // numbers that disagreed with the rows on screen. When any filter is on we
   // call the filtered RPC, which applies exactly the same predicates as the
-  // list query below; with no filter we keep the unfiltered RPC, whose result
+  // list query above; with no filter we keep the unfiltered RPC, whose result
   // is cached and shared across the app.
+  //
+  // It also answers the pagination total, so the exact count(*) that used to
+  // run alongside it whenever a filter was active is gone.
   const statusCounts = useQuery({
     queryKey: anyFilterActive
       ? [
           "cs_leads",
           "status_counts_filtered",
-          { dbDateFrom, dbDateTo, dbOwner, dbSearch, garageDoorOnly, notCalledOnly },
+          { dbDateFrom, dbDateTo, dbOwner, dbSearch, importantOnly, notCalledOnly },
         ]
       : ["cs_leads", "status_counts_all_time"],
     queryFn: async () => {
@@ -746,9 +758,9 @@ function Inner() {
               p_owner: dbOwner && dbOwner !== "__unassigned__" ? dbOwner : null,
               p_unassigned: dbOwner === "__unassigned__",
               p_not_called: notCalledOnly,
+              p_important: importantOnly,
               p_search: dbSearch || null,
               p_phone: dbSearch ? (phoneSearchPattern(dbSearch) ?? null) : null,
-              p_garage_patterns: garageDoorOnly ? GARAGE_DOOR_PATTERNS : null,
             } as never,
           )
         : await unfiltered();
@@ -778,9 +790,8 @@ function Inner() {
   const cachedStatusTotal = dbStatus
     ? (statusCounts.data?.statuses?.[dbStatus] ?? 0)
     : (statusCounts.data?.all ?? 0);
-  // The counts RPC already applies every active filter, including the garage
-  // door patterns, so it is the total for every case - two separate exact
-  // count(*) queries used to run alongside it.
+  // The counts RPC already applies every active filter, so it is the total for
+  // every case.
   const effectiveTotalCount = cachedStatusTotal;
 
   const totalPages = Math.max(1, Math.ceil(effectiveTotalCount / PAGE_SIZE));
@@ -1200,20 +1211,24 @@ function Inner() {
           <Button
             type="button"
             size="sm"
-            variant={garageDoorOnly ? "default" : "outline"}
+            variant={importantOnly ? "default" : "outline"}
             className="h-9 text-[12px]"
-            onClick={() => setGarageDoorOnly((v) => !v)}
+            aria-pressed={importantOnly}
+            onClick={() => {
+              if (!importantOnly) setActiveStatus("__all__");
+              setImportantOnly((v) => !v);
+            }}
             title={
-              garageDoorOnly
-                ? "Showing garage door leads only — click to clear"
-                : "Show only garage door leads"
+              importantOnly
+                ? "Showing important leads across all services — click to clear"
+                : "Show important leads for follow-up"
             }
           >
-            <Warehouse className="h-3.5 w-3.5 mr-1.5" />
-            Garage Door
-            {garageDoorOnly && (
+            <Pin className="h-3.5 w-3.5 mr-1.5" />
+            IMP LEADS
+            {importantOnly && (
               <span className="ml-1.5 tabular-nums opacity-90">
-                ({statusCounts.isLoading ? "—" : effectiveTotalCount})
+                ({statusCounts.isFetching ? "—" : effectiveTotalCount})
               </span>
             )}
           </Button>
@@ -1742,6 +1757,7 @@ function Inner() {
                   onToggleSelect={() => toggleSelect(l.id)}
                   showSelect={isCs || isAdmin}
                   profilesById={profilesById}
+                  ai={isAdmin ? aiSuggestions.data?.get(l.id) : undefined}
                 />
               ))}
             </div>
@@ -1816,6 +1832,7 @@ function Inner() {
             qc.invalidateQueries({ queryKey: ["cs_leads"] });
           }}
           profilesById={profilesById}
+          ai={isAdmin ? aiSuggestions.data?.get(opened.id) : undefined}
         />
       )}
 
@@ -2011,6 +2028,7 @@ function LeadCard({
   onToggleSelect,
   showSelect = false,
   profilesById,
+  ai,
 }: {
   lead: Lead;
   team: CsTeamMember[];
@@ -2021,6 +2039,7 @@ function LeadCard({
   onToggleSelect?: () => void;
   showSelect?: boolean;
   profilesById?: Map<string, { full_name: string | null; email: string }>;
+  ai?: AiSuggestion | null;
 }) {
   const qc = useQueryClient();
   const auth = useAuth();
@@ -2384,7 +2403,8 @@ function LeadCard({
                 <Copy className="h-3 w-3" />
               </button>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+              {ai && canShowAiSuggestion(status, ai.ai_status) && <AiTagChip ai={ai} />}
               <StatusBadge status={status} />
               <button
                 type="button"
@@ -2780,6 +2800,143 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/** One saved AI/Quo comparison result for a lead (admin-only data via RLS). */
+export type AiSuggestion = {
+  lead_id: string;
+  state: string;
+  ai_status: string | null;
+  confidence: number | null;
+  reason_code: string;
+  message_count: number | null;
+  analyzed_at: string | null;
+  model: string | null;
+};
+
+const AI_REASON_LABEL: Record<string, string> = {
+  customer_intent: "Customer intent read from the Quo chat",
+  delivery_confirmed: "Confirmed by Quo delivery receipt",
+  delivery_failed: "Quo reports the message failed delivery",
+  media_requires_review: "An image reply needs human review",
+  phone_shared_between_leads: "Phone number is shared with other leads",
+  invalid_or_excess_customer_numbers: "Customer numbers are invalid or too many",
+  history_too_large: "Chat history too large to analyze",
+};
+
+const AI_TRANSPORT_REASONS = new Set(["delivery_confirmed", "delivery_failed"]);
+
+function aiReasonLabel(ai: AiSuggestion): string {
+  return AI_REASON_LABEL[ai.reason_code] ?? ai.reason_code.replace(/_/g, " ");
+}
+
+function aiSuggestionTitle(ai: AiSuggestion): string {
+  const parts = [aiReasonLabel(ai)];
+  if (ai.confidence != null) parts.push(`${Math.round(ai.confidence * 100)}% confidence`);
+  if (ai.message_count != null) parts.push(`${ai.message_count} Quo messages`);
+  return `Admin only · Comparison only, not saved · ${parts.join(" · ")}`;
+}
+
+/** Compact admin-only chip for lead cards: a dashed outline separates the AI
+ * guess from manual pipeline tags so agents never confuse the two. */
+function AiTagChip({ ai }: { ai: AiSuggestion }) {
+  const suggested = ai.state === "classified" ? ai.ai_status : null;
+  const prefix = AI_TRANSPORT_REASONS.has(ai.reason_code) ? "Quo" : "AI";
+  const label = suggested ? (STATUS_LABEL[suggested] ?? suggested) : "Needs review";
+  const pct = suggested && ai.confidence != null ? ` ${Math.round(ai.confidence * 100)}%` : "";
+  return (
+    <span
+      title={aiSuggestionTitle(ai)}
+      className="hidden sm:inline-flex items-center gap-1 rounded-full border border-dashed border-violet-400/70 bg-violet-500/5 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:text-violet-300 whitespace-nowrap"
+    >
+      <Sparkles className="h-2.5 w-2.5" />
+      {prefix}: {label}
+      {pct}
+    </span>
+  );
+}
+
+/** Drawer card with the suggestion details and the one-click "Use this tag"
+ * action. Applying it only pre-fills the status — Save remains the human
+ * confirmation, so AI never writes pipeline statuses by itself. */
+function AiSuggestionPanel({
+  ai,
+  active,
+  disabled,
+  onUse,
+}: {
+  ai: AiSuggestion;
+  active: string;
+  disabled?: boolean;
+  onUse: (tag: string) => void;
+}) {
+  const isTransport = AI_TRANSPORT_REASONS.has(ai.reason_code);
+  const suggested = ai.state === "classified" ? ai.ai_status : null;
+  const pct = ai.confidence != null ? Math.round(ai.confidence * 100) : null;
+  const matchesSaved = suggested != null && suggested === active;
+  return (
+    <div
+      className="mt-3 rounded-xl border border-dashed border-violet-400/60 bg-violet-500/5 px-3.5 py-3"
+      data-testid="ai-suggestion-panel"
+    >
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-violet-700 dark:text-violet-300">
+          {isTransport ? "Quo delivery read" : "AI tag suggestion"} · Admin only
+        </span>
+        <span className="text-[10px] text-muted-foreground">Comparison only — not saved</span>
+      </div>
+      {suggested == null ? (
+        <p className="mt-1.5 text-[12.5px] text-foreground">
+          Needs human review — {aiReasonLabel(ai)}.
+        </p>
+      ) : (
+        <>
+          <div className="mt-2 flex items-center gap-2.5 flex-wrap">
+            <span
+              className={cn(
+                "crm-pill-text px-3 py-1.5 rounded-full border border-dashed border-violet-400/70 bg-violet-500/10 text-violet-800 dark:text-violet-200 whitespace-nowrap",
+              )}
+            >
+              {STATUS_LABEL[suggested] ?? suggested}
+            </span>
+            {pct != null && (
+              <span className="flex items-center gap-1.5 min-w-[110px]" title="Model confidence">
+                <span className="h-1.5 flex-1 rounded-full bg-violet-500/15 overflow-hidden">
+                  <span
+                    className="block h-full rounded-full bg-violet-500"
+                    style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                  />
+                </span>
+                <span className="text-[10.5px] tabular-nums text-muted-foreground">{pct}%</span>
+              </span>
+            )}
+            {!matchesSaved && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={disabled}
+                className="h-7 px-2.5 text-[11px] border-violet-400/60 text-violet-700 dark:text-violet-300 hover:bg-violet-500/10"
+                onClick={() => onUse(suggested!)}
+              >
+                Use this tag
+              </Button>
+            )}
+          </div>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            {aiReasonLabel(ai)}
+            {ai.message_count != null ? ` · ${ai.message_count} Quo messages` : ""}
+            {ai.analyzed_at ? ` · analyzed ${formatCsPipelineDateTime(ai.analyzed_at)}` : ""}
+            {ai.model ? ` · ${ai.model}` : ""}
+            {matchesSaved ? " · matches the saved status" : ""}
+          </p>
+        </>
+      )}
+      <p className="mt-1 text-[10px] text-muted-foreground">
+        AI never changes saved statuses automatically.
+      </p>
+    </div>
+  );
+}
+
 function statusDotTone(status: string) {
   if (status === "cx_interested") return "bg-success";
   if (status === "cx_not_interested") return "bg-destructive";
@@ -2972,6 +3129,7 @@ function LeadDrawer({
   onClose,
   onSaved,
   profilesById,
+  ai,
 }: {
   lead: Lead;
   team: CsTeamMember[];
@@ -2980,6 +3138,7 @@ function LeadDrawer({
   onClose: () => void;
   onSaved: () => void;
   profilesById?: Map<string, { full_name: string | null; email: string }>;
+  ai?: AiSuggestion | null;
 }) {
   const auth = useAuth();
   const qc = useQueryClient();
@@ -3325,6 +3484,17 @@ function LeadDrawer({
                     busy || (!isAdmin && !isCs && (!assignedTo || auth.user?.id !== assignedTo))
                   }
                 />
+                {ai && canShowAiSuggestion(status, ai.ai_status) && (
+                  <AiSuggestionPanel
+                    ai={ai}
+                    active={status}
+                    disabled={busy}
+                    onUse={(tag) => {
+                      requestStatusChange(tag as CsStatus);
+                      toast.success("AI suggestion selected — press Save to apply");
+                    }}
+                  />
+                )}
                 <div className="mt-3">
                   <ContactMethodToggle
                     value={contactMethod}

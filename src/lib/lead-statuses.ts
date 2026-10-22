@@ -4,12 +4,13 @@ export const STATUS_LABEL: Record<string, string> = {
   undeliver: "Undeliver",
   wrong_number: "Wrong Number",
   wrong_lead: "Wrong Lead",
-  wrong_service: "Wrong Service",
-  wrong_person: "Wrong Person",
+  // Compatibility labels for legacy clients; new writes are normalized by the DB.
+  wrong_service: "Wrong Lead",
+  wrong_person: "Wrong Number",
   already_got_someone: "Already Got Someone",
   already_received_before: "Already received before",
   service_provider_himself: "Service Provider Himself",
-  small_service: "Small Service",
+  small_service: "Wrong Lead",
   converted: "Delivered",
   cx_interested: "CX interested",
   cx_not_interested: "CX not interested",
@@ -41,7 +42,7 @@ export const STATUS_TONE: Record<string, string> = {
   already_got_someone: "bg-[#efefec] text-[#74766B] border-[#d5d6cf] shadow-sm",
   already_received_before: "bg-[#efefec] text-[#74766B] border-[#d5d6cf] shadow-sm",
   service_provider_himself: "bg-[#efefec] text-[#74766B] border-[#d5d6cf] shadow-sm",
-  small_service: "bg-[#efefec] text-[#74766B] border-[#d5d6cf] shadow-sm",
+  small_service: "bg-[#f8e4e5] text-[#C1292E] border-[#e7b1b3] shadow-sm",
   converted: "bg-[#def7e8] text-[#07B053] border-[#a9dfbf] shadow-sm",
   need_follow_up: "bg-[#fff5d5] text-[#8f6a00] border-[#f1d27a] shadow-sm",
   out_of_base: "bg-[#fde8d5] text-[#b4530a] border-[#f4c79a] shadow-sm",
@@ -54,6 +55,16 @@ export const STATUS_TONE: Record<string, string> = {
   closed_won: "bg-[#def7e8] text-[#07B053] border-[#a9dfbf] shadow-sm",
   closed_lost: "bg-[#f8e4e5] text-[#C1292E] border-[#e7b1b3] shadow-sm",
 };
+
+/** Follow-up is manual-only; suppress old suggestions during rolling deploys too. */
+export function canShowAiSuggestion(manualStatus: string, suggestedStatus: string | null): boolean {
+  return (
+    manualStatus !== "need_follow_up" &&
+    !["need_follow_up", "wrong_person", "wrong_service", "small_service"].includes(
+      suggestedStatus ?? "",
+    )
+  );
+}
 
 /**
  * A pinned important lead is a "handle this first" marker for a brand new lead,

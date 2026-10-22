@@ -19,14 +19,19 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/app/")({
-  head: () => ({ meta: [
-    { title: "Lead Overview \u00b7 JellyBean" },
-    { name: "description", content: "Review lead outcomes and daily operations in JellyBean." },
-    { property: "og:title", content: "Lead Overview \u00b7 JellyBean" },
-    { property: "og:description", content: "Review lead outcomes and daily operations in JellyBean." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Lead Overview \u00b7 JellyBean" },
+      { name: "description", content: "Review lead outcomes and daily operations in JellyBean." },
+      { property: "og:title", content: "Lead Overview \u00b7 JellyBean" },
+      {
+        property: "og:description",
+        content: "Review lead outcomes and daily operations in JellyBean.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: DashboardHome,
 });
 
@@ -37,7 +42,6 @@ const CS_STATUSES = [
   "wrong_lead",
   "already_got_someone",
   "service_provider_himself",
-  "small_service",
   "converted",
   "cx_interested",
   "cx_not_interested",
@@ -52,7 +56,6 @@ const CS_LABELS: Record<string, string> = {
   wrong_lead: "Wrong lead",
   already_got_someone: "Already got someone",
   service_provider_himself: "Service provider himself",
-  small_service: "Small service",
   converted: "Delivered",
   cx_interested: "CX interested",
   cx_not_interested: "CX not interested",
@@ -97,6 +100,8 @@ function AdminDashboard() {
 
   const stats = useQuery({
     queryKey: ["admin-dashboard-stats"],
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       const today = startOfDay(new Date()).toISOString();
       const { data, error } = await supabase.rpc("get_admin_dashboard_stats", {

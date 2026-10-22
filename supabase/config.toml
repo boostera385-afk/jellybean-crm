@@ -29,3 +29,7 @@ verify_jwt = false
 # Gateway JWT validation PLUS getUser/roles/RLS inside the handler.
 [functions.cs-compose-lead]
 verify_jwt = true
+
+# Comparison-only beta: validated user plus reporting role inside handler.
+[functions.quo-ai-status]
+verify_jwt = true

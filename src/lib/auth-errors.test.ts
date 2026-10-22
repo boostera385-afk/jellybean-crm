@@ -20,7 +20,7 @@ describe("isAuthExpiredError", () => {
 
   it("does not treat a database or role failure as an expired session", () => {
     expect(isAuthExpiredError(new Error("Could not verify user roles"))).toBe(false);
-    expect(isAuthExpiredError(new Error("relation \"crisp_visitors\" does not exist"))).toBe(false);
+    expect(isAuthExpiredError(new Error('relation "crisp_visitors" does not exist'))).toBe(false);
     expect(isAuthExpiredError(new Error("Crisp request budget or cooldown reached"))).toBe(false);
   });
 

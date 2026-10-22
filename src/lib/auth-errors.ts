@@ -22,8 +22,7 @@ const AUTH_FAILURES = [
 ] as const;
 
 export function isAuthExpiredError(error: unknown): boolean {
-  const message =
-    error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   if (!message) return false;
   return AUTH_FAILURES.some((failure) => message.includes(failure));
 }

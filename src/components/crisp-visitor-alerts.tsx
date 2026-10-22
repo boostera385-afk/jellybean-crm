@@ -54,7 +54,7 @@ function visitorLocation(visitor: CrispVisitor): string {
  *
  * Unlike the message notifier, these are not a dismissable queue: there is one
  * card per visitor who is currently live on a connected Crisp website, pinned
- * to the top of the screen (not the bottom-right corner). A card stays on
+ * to the bottom-right below dialog surfaces, leaving save actions clear. A card stays on
  * screen for exactly as long as that visitor is live — a realtime change on
  * crisp_visitors (with a slow poll fallback) refreshes the list, so when the
  * visitor leaves their card disappears on its own. The only action is "Send

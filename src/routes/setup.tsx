@@ -13,14 +13,16 @@ import jellybeanLogo from "@/assets/jellybean-logo.png";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export const Route = createFileRoute("/setup")({
-  head: () => ({ meta: [
-    { title: "Account Setup \u00b7 JellyBean" },
-    { name: "description", content: "Complete your JellyBean CRM account setup." },
-    { property: "og:title", content: "Account Setup \u00b7 JellyBean" },
-    { property: "og:description", content: "Complete your JellyBean CRM account setup." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Account Setup \u00b7 JellyBean" },
+      { name: "description", content: "Complete your JellyBean CRM account setup." },
+      { property: "og:title", content: "Account Setup \u00b7 JellyBean" },
+      { property: "og:description", content: "Complete your JellyBean CRM account setup." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: SetupPage,
 });
 

@@ -19,14 +19,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { downloadCsv } from "@/lib/crm-lite";
 
 export const Route = createFileRoute("/app/logs")({
-  head: () => ({ meta: [
-    { title: "Activity Logs \u00b7 JellyBean" },
-    { name: "description", content: "Review the JellyBean operations audit trail." },
-    { property: "og:title", content: "Activity Logs \u00b7 JellyBean" },
-    { property: "og:description", content: "Review the JellyBean operations audit trail." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }), component: Page });
+  head: () => ({
+    meta: [
+      { title: "Activity Logs \u00b7 JellyBean" },
+      { name: "description", content: "Review the JellyBean operations audit trail." },
+      { property: "og:title", content: "Activity Logs \u00b7 JellyBean" },
+      { property: "og:description", content: "Review the JellyBean operations audit trail." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
+  component: Page,
+});
 
 function Page() {
   const auth = useAuth();
@@ -47,7 +51,7 @@ function Inner() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 500;
+  const PAGE_SIZE = 200;
 
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
@@ -104,7 +108,13 @@ function Inner() {
   const totalCount = useQuery({
     queryKey: ["activity_logs_count", { dbDateFrom, dbDateTo, dbSearch }],
     queryFn: async () => {
-      let request = supabase.from("activity_logs").select("id", { count: "exact", head: true });
+      // A full exact count grows with the audit table and runs on every
+      // unfiltered visit. Filtered totals still need an exact count.
+      const countMode = dbDateFrom || dbDateTo || dbSearch ? "exact" : "planned";
+      let request = supabase.from("activity_logs").select("id", {
+        count: countMode,
+        head: true,
+      });
 
       if (dbDateFrom) request = request.gte("created_at", dbDateFrom);
       if (dbDateTo) request = request.lte("created_at", dbDateTo);

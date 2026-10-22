@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { RouteSkeleton } from "@/components/route-skeleton";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -9,6 +9,7 @@ import {
   Download,
   ExternalLink,
   Loader2,
+  RefreshCw,
   Search,
   SlidersHorizontal,
   User,
@@ -23,6 +24,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { downloadCsv } from "@/lib/crm-lite";
 import { isCsUser } from "@/lib/cs-filter";
 import { cn } from "@/lib/utils";
+import { parseAiStatusReport } from "@/lib/ai-status-report";
+import { toast } from "sonner";
+import { STATUS_LABEL } from "@/lib/lead-statuses";
 
 type DatePreset = "all" | "today" | "yesterday" | "7d" | "30d" | "custom";
 
@@ -69,14 +73,16 @@ function computeRange(preset: DatePreset, from: string, to: string) {
 }
 
 export const Route = createFileRoute("/app/reports")({
-  head: () => ({ meta: [
-    { title: "Reports \u00b7 JellyBean" },
-    { name: "description", content: "Review lead delivery outcomes and team reports." },
-    { property: "og:title", content: "Reports \u00b7 JellyBean" },
-    { property: "og:description", content: "Review lead delivery outcomes and team reports." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Reports \u00b7 JellyBean" },
+      { name: "description", content: "Review lead delivery outcomes and team reports." },
+      { property: "og:title", content: "Reports \u00b7 JellyBean" },
+      { property: "og:description", content: "Review lead delivery outcomes and team reports." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: Page,
   pendingComponent: () => <RouteSkeleton />,
   pendingMs: 200,
@@ -88,17 +94,15 @@ export const CS_STATUSES = [
   "undeliver",
   "wrong_number",
   "wrong_lead",
-  "wrong_service",
-  "wrong_person",
   "already_got_someone",
   "already_received_before",
   "service_provider_himself",
-  "small_service",
   "converted",
   "cx_interested",
   "cx_not_interested",
   "cx_didnt_replied",
   "need_follow_up",
+  "out_of_base",
 ] as const;
 
 export type CsStatus = (typeof CS_STATUSES)[number];
@@ -116,17 +120,15 @@ const CS_LABELS: Record<string, string> = {
   undeliver: "Undeliver",
   wrong_number: "Wrong Number",
   wrong_lead: "Wrong Lead",
-  wrong_service: "Wrong Service",
-  wrong_person: "Wrong Person",
   already_got_someone: "Already Got Someone",
   already_received_before: "Already received before",
   service_provider_himself: "Service Provider Himself",
-  small_service: "Small Service",
   converted: "Delivered",
   cx_interested: "CX interested",
   cx_not_interested: "CX not interested",
   cx_didnt_replied: "CX didn't replied",
   need_follow_up: "Need Follow Up",
+  out_of_base: "Out of Base",
 };
 
 const RAW_COLORS: Record<string, string> = {
@@ -144,15 +146,13 @@ const CS_STATUS_COLORS: Record<string, string> = {
   new: "#38bdf8",
   converted: "#4ade80",
   need_follow_up: "#60a5fa",
+  out_of_base: "#fb923c",
   undeliver: "#f87171",
   wrong_number: "#ef4444",
   wrong_lead: "#f43f5e",
-  wrong_service: "#fb7185",
-  wrong_person: "#fda4af",
   already_got_someone: "#94a3b8",
   already_received_before: "#cbd5e1",
   service_provider_himself: "#a8a29e",
-  small_service: "#94a3b8",
 };
 
 function statusDotTone(status: string) {
@@ -207,6 +207,7 @@ function Page() {
 
 function Inner() {
   const auth = useAuth();
+  const queryClient = useQueryClient();
   const isAdmin = auth.primaryRole === "admin";
   const today = toIsoDay(new Date());
   const [preset, setPreset] = useState<DatePreset>("all");
@@ -214,49 +215,145 @@ function Inner() {
   const [toDate, setToDate] = useState<string>(today);
   const range = useMemo(() => computeRange(preset, fromDate, toDate), [preset, fromDate, toDate]);
 
+  const ai = useQuery({
+    queryKey: ["report-ai-status", range.from, range.to],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("report_lead_ai_status", {
+        p_from: range.from ?? undefined,
+        p_to: range.to ?? undefined,
+      });
+      if (error) throw error;
+      return parseAiStatusReport(data);
+    },
+    staleTime: 30_000,
+    retry: false,
+  });
+  const aiConfiguration = useQuery({
+    queryKey: ["ai-status-configuration"],
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke("quo-ai-status", {
+        body: { action: "configuration" },
+      });
+      if (error) throw error;
+      return data as {
+        configured: boolean;
+        message?: string;
+        phoneNumberCount?: number;
+        phoneNumberSource?: string;
+      };
+    },
+    staleTime: 60_000,
+    retry: false,
+  });
+  const refreshAi = useMutation({
+    mutationFn: async (scope: { from: string | null; to: string | null }) => {
+      const { data, error } = await supabase.functions.invoke("quo-ai-status", {
+        body: { action: "refresh", ...scope },
+      });
+      if (error || data?.error)
+        throw new Error("AI refresh failed. Check Quo configuration and try again.");
+      return data as { processed: number; message: string; results: Array<{ state: string }> };
+    },
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ["report-ai-status"] });
+      void queryClient.invalidateQueries({ queryKey: ["quo-ai-progress"] });
+      const classified = data.results.filter((r) => r.state === "classified").length;
+      toast.success(
+        data.processed
+          ? `${classified} classified / ${data.processed} checked. Manual statuses unchanged.`
+          : data.message,
+      );
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const progress = useQuery({
+    queryKey: ["quo-ai-progress", range.from, range.to],
+    enabled: Boolean(aiConfiguration.data?.configured),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("report_quo_ai_progress", {
+        p_from: range.from ?? undefined,
+        p_to: range.to ?? undefined,
+      });
+      if (error) throw error;
+      return data as { pending: number; workDone: number; workTotal: number };
+    },
+    refetchInterval: 5_000,
+    retry: false,
+  });
+  useEffect(() => {
+    if (!aiConfiguration.data?.configured || !progress.data?.pending) return;
+    let inFlight = false;
+    let stopped = false;
+    const tick = async () => {
+      if (inFlight || stopped) return;
+      inFlight = true;
+      try {
+        const { data, error } = await supabase.functions.invoke("quo-ai-status", {
+          body: { action: "work" },
+        });
+        if (!stopped && !error) {
+          if (data?.processed)
+            void queryClient.invalidateQueries({ queryKey: ["report-ai-status"] });
+          void queryClient.invalidateQueries({ queryKey: ["quo-ai-progress"] });
+        }
+      } catch {
+        // Cron resumes persisted work if a browser/network request is interrupted.
+      } finally {
+        inFlight = false;
+      }
+    };
+    void tick();
+    const timer = setInterval(() => {
+      void tick();
+    }, 7_000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [aiConfiguration.data?.configured, progress.data?.pending, queryClient]);
+  useEffect(() => {
+    if (progress.data?.pending === 0)
+      void queryClient.invalidateQueries({ queryKey: ["report-ai-status"] });
+  }, [progress.data?.pending, queryClient]);
+
   const raw = useQuery({
     queryKey: ["report-raw", range.from, range.to],
     queryFn: async () => {
-      const results = await Promise.all(
-        RAW_STATUSES.map((status) => {
-          let q = supabase.from("raw_lead_cache").select("id", { count: "exact", head: true });
-          if (range.from) q = q.gte("captured_at", range.from);
-          if (range.to) q = q.lt("captured_at", range.to);
-          if (status === "new") q = q.is("category", null);
-          else q = q.eq("category", status);
-          return q;
-        }),
+      const { data, error } = await supabase.rpc(
+        "report_raw_status_counts" as never,
+        {
+          p_from: range.from,
+          p_to: range.to,
+        } as never,
       );
-      const c: Record<string, number> = {};
-      results.forEach((result, index) => {
-        if (result.error) throw result.error;
-        c[RAW_STATUSES[index]] = result.count ?? 0;
-      });
-      return c;
+      if (error) throw error;
+      const counts = (data ?? {}) as Record<string, number | string>;
+      return Object.fromEntries(
+        RAW_STATUSES.map((status) => [status, Number(counts[status] ?? 0)]),
+      ) as Record<string, number>;
     },
+    staleTime: 60_000,
   });
   const cs = useQuery({
     queryKey: ["report-cs", range.from, range.to],
     queryFn: async () => {
-      const c: Record<string, number> = {};
-      const results = await Promise.all(
-        CS_STATUSES.map((status) => {
-          let q = supabase
-            .from("qualified_leads")
-            .select("id", { count: "exact", head: true })
-            .eq("cs_status", status);
-          if (range.from) q = q.gte("assigned_at", range.from);
-          if (range.to) q = q.lt("assigned_at", range.to);
-          return q;
-        }),
+      const { data, error } = await supabase.rpc(
+        "report_cs_status_counts" as never,
+        {
+          p_from: range.from,
+          p_to: range.to,
+        } as never,
       );
-      results.forEach((result, index) => {
-        if (result.error) throw result.error;
-        const count = result.count ?? 0;
-        if (count > 0) c[CS_STATUSES[index]] = count;
-      });
-      return c;
+      if (error) throw error;
+      const counts = (data ?? {}) as Record<string, number | string>;
+      return Object.fromEntries(
+        CS_STATUSES.filter((status) => Number(counts[status] ?? 0) > 0).map((status) => [
+          status,
+          Number(counts[status]),
+        ]),
+      ) as Record<string, number>;
     },
+    staleTime: 60_000,
   });
   const notFoundByUser = useQuery({
     queryKey: ["report-not-found-by-user", range.from, range.to],
@@ -313,6 +410,13 @@ function Inner() {
           CS_LABELS[label] ?? label.replace(/_/g, " "),
           value,
         ]),
+        ...(ai.data && !ai.isError
+          ? Object.entries(ai.data.counts).map(([label, value]) => [
+              "AI status (beta)",
+              CS_LABELS[label] ?? label,
+              value,
+            ])
+          : []),
       ],
     );
   }
@@ -398,6 +502,72 @@ function Inner() {
         title="CS pipeline by status"
         subtitle={`Qualified leads across customer service stages (${csTotal.toLocaleString()} total)`}
       >
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3">
+          <div className="min-w-0 text-xs">
+            <p className="font-semibold text-sky-700 dark:text-sky-300">
+              AI status · Beta · Comparison only
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              Large totals are manual. AI counts use complete Quo SMS history; calls and attachment
+              contents are not analyzed.
+            </p>
+            <p className="mt-1 text-muted-foreground" role="status">
+              {ai.isError
+                ? "AI reporting is unavailable. Manual totals are unaffected."
+                : ai.isPending
+                  ? "Loading AI coverage…"
+                  : `${ai.data.classified.toLocaleString()} / ${ai.data.total.toLocaleString()} classified · ${ai.data.disagreements.toLocaleString()} differ from manual · ${ai.data.review.toLocaleString()} need review · ${ai.data.stale.toLocaleString()} outdated`}
+            </p>
+            {ai.data?.lastAnalyzedAt && (
+              <p className="mt-1 text-muted-foreground">
+                Last checked: {new Date(ai.data.lastAnalyzedAt).toLocaleString()}
+              </p>
+            )}
+            {(!aiConfiguration.data?.configured || aiConfiguration.isError) &&
+              !aiConfiguration.isPending && (
+                <p className="mt-1 font-medium text-amber-700 dark:text-amber-400">
+                  {aiConfiguration.data?.message ??
+                    "Quo setup required or service unavailable. No AI outcomes have been assumed."}
+                </p>
+              )}
+            {aiConfiguration.data?.configured && (
+              <p className="mt-1 text-muted-foreground">
+                Quo connected · {aiConfiguration.data.phoneNumberCount} inboxes ·{" "}
+                {aiConfiguration.data.phoneNumberSource === "discovered"
+                  ? "IDs discovered automatically"
+                  : "Inbox allowlist active"}
+              </p>
+            )}
+            {Boolean(progress.data?.pending) && (
+              <p className="mt-1 font-medium text-sky-700 dark:text-sky-300" role="status">
+                {progress.data!.pending} leads syncing · {progress.data!.workDone}/
+                {progress.data!.workTotal} inbox checks for pending leads. Sync resumes
+                automatically; partial history is never counted.
+              </p>
+            )}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={
+              refreshAi.isPending ||
+              Boolean(progress.data?.pending) ||
+              !aiConfiguration.data?.configured ||
+              ai.isError
+            }
+            onClick={() => {
+              void ai.refetch();
+              void cs.refetch();
+              refreshAi.mutate({ ...range });
+            }}
+            title="Check up to 5 eligible leads in the selected range; 15-minute per-lead cooldown and beta daily limit apply"
+          >
+            <RefreshCw
+              className={cn("mr-1.5 h-3.5 w-3.5", refreshAi.isPending && "animate-spin")}
+            />
+            {refreshAi.isPending ? "Checking Quo…" : "Refresh AI · next 5 leads"}
+          </Button>
+        </div>
         <Grid>
           {CS_STATUSES.map((k) => (
             <StatCard
@@ -406,9 +576,61 @@ function Inner() {
               value={cs.data?.[k] ?? 0}
               total={csTotal}
               color={CS_STATUS_COLORS[k]}
+              aiValue={
+                k === "need_follow_up"
+                  ? undefined
+                  : ai.data && !ai.isError
+                    ? (ai.data.counts[k] ?? 0)
+                    : null
+              }
             />
           ))}
         </Grid>
+        {ai.data?.samples && ai.data.samples.length > 0 && !ai.isError && (
+          <div className="mt-4 overflow-x-auto rounded-xl border">
+            <table className="crm-data-table w-full text-xs">
+              <caption className="p-3 text-left text-xs text-muted-foreground">
+                Latest disagreements / reviews (up to 10). A disagreement is not proof that AI is
+                correct.
+              </caption>
+              <thead>
+                <tr>
+                  <th className="p-2 text-left">Lead</th>
+                  <th className="p-2 text-left">Manual</th>
+                  <th className="p-2 text-left">AI status</th>
+                  <th className="p-2 text-left">Confidence / reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ai.data.samples.map((sample) => (
+                  <tr key={sample.leadId} className="border-t">
+                    <td className="p-2">
+                      <Link
+                        to="/app/cs-leads"
+                        search={{ leadId: sample.leadId }}
+                        className="text-primary underline"
+                      >
+                        {sample.customerName || "Open lead"}
+                      </Link>
+                    </td>
+                    <td className="p-2">
+                      {STATUS_LABEL[sample.manualStatus] ?? sample.manualStatus}
+                    </td>
+                    <td className="p-2">
+                      {sample.aiStatus
+                        ? (STATUS_LABEL[sample.aiStatus] ?? sample.aiStatus)
+                        : "Needs review"}
+                    </td>
+                    <td className="p-2">
+                      {sample.confidence === null ? "—" : `${Math.round(sample.confidence * 100)}%`}{" "}
+                      · {sample.reasonCode.replace(/_/g, " ")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Section>
 
       {/* ─── Leads Forwarded Per User ─── */}
@@ -548,11 +770,13 @@ function StatCard({
   value,
   total,
   color,
+  aiValue,
 }: {
   label: string;
   value: number;
   total?: number;
   color?: string;
+  aiValue?: number | null;
 }) {
   const pct = total && total > 0 ? ((value / total) * 100).toFixed(1) : null;
   return (
@@ -583,6 +807,20 @@ function StatCard({
               }}
             />
           </div>
+        </div>
+      )}
+      {aiValue !== undefined && (
+        <div
+          className="mt-3 flex items-center justify-end gap-1.5 text-xs text-sky-700 dark:text-sky-300"
+          title="Latest valid AI classification count in the same assigned-date range; separate from manual totals"
+        >
+          <span className="rounded-full border border-sky-500/60 px-1 py-0.5 text-[9px] font-bold">
+            AI
+          </span>
+          <span className="text-[10px]">AI status</span>
+          <strong className="tabular-nums">
+            {aiValue === null ? "—" : aiValue.toLocaleString()}
+          </strong>
         </div>
       )}
     </div>
@@ -622,72 +860,28 @@ function ForwardedByUserSection({
   const byUserQuery = useQuery({
     queryKey: ["report-forwarded-by-user", range.from, range.to],
     queryFn: async (): Promise<ForwardedUserRow[]> => {
-      // 1. Try report_leads_forwarded_by_user RPC with status_counts
-      try {
-        const { data, error } = await (supabase.rpc as CallableFunction)(
-          "report_leads_forwarded_by_user",
-          {
-            _from: range.from ?? undefined,
-            _to: range.to ?? undefined,
-          },
-        );
-
-        const rows = data as {
-          user_id?: string;
-          user_name?: string;
-          user_email?: string;
-          forwarded_count?: number;
-          status_counts?: Record<string, number>;
-        }[];
-        if (!error && Array.isArray(rows) && rows.length > 0) {
-          return rows
-            .map((r) => ({
-              user_id: r.user_id ?? null,
-              user_name: r.user_name || "(unknown)",
-              user_email: r.user_email ?? null,
-              forwarded_count: Number(r.forwarded_count || 0),
-              status_counts: (r.status_counts && typeof r.status_counts === "object"
-                ? r.status_counts
-                : {}) as Record<string, number>,
-            }))
-            .filter((u) => {
-              if (!u.user_id) return false;
-              const name = u.user_name.trim().toLowerCase();
-              if (
-                !name ||
-                name === "(unknown)" ||
-                name === "unknown" ||
-                name.startsWith("unknown user")
-              )
-                return false;
-              return !isCsUser({ user_id: u.user_id, full_name: u.user_name, email: u.user_email });
-            });
-        }
-      } catch {
-        // Continue to fallback
-      }
-
-      // 2. Fallback to report_leads_forwarded_by_maturing
-      const { data, error } = await supabase.rpc("report_leads_forwarded_by_maturing", {
-        _from: range.from ?? undefined,
-        _to: range.to ?? undefined,
-      });
+      const { data, error } = await (supabase.rpc as CallableFunction)(
+        "report_leads_forwarded_by_user",
+        {
+          _from: range.from ?? undefined,
+          _to: range.to ?? undefined,
+        },
+      );
       if (error) throw error;
-
-      return (
-        (data ?? []) as {
-          maturing_id?: string;
-          maturing_name?: string;
-          maturing_email?: string;
-          forwarded_count?: number;
-        }[]
-      )
+      const rows = (data ?? []) as {
+        user_id?: string;
+        user_name?: string;
+        user_email?: string;
+        forwarded_count?: number;
+        status_counts?: Record<string, number>;
+      }[];
+      return rows
         .map((r) => ({
-          user_id: r.maturing_id ?? null,
-          user_name: r.maturing_name || "(unknown)",
-          user_email: r.maturing_email ?? null,
+          user_id: r.user_id ?? null,
+          user_name: r.user_name || "(unknown)",
+          user_email: r.user_email ?? null,
           forwarded_count: Number(r.forwarded_count || 0),
-          status_counts: {},
+          status_counts: r.status_counts ?? {},
         }))
         .filter((u) => {
           if (!u.user_id) return false;
@@ -985,7 +1179,6 @@ function ForwardedByUserSection({
                     isExpanded={isExpanded}
                     onToggleExpand={() => toggleExpand(rowId)}
                     selectedStatus={selectedStatus}
-                    range={range}
                     totalForwardedAll={totalForwardedAll}
                   />
                 );
@@ -1003,44 +1196,15 @@ function UserForwardedRow({
   isExpanded,
   onToggleExpand,
   selectedStatus,
-  range,
   totalForwardedAll,
 }: {
   user: ForwardedUserRow;
   isExpanded: boolean;
   onToggleExpand: () => void;
   selectedStatus: CsStatus | "__all__";
-  range: RangeResult;
   totalForwardedAll: number;
 }) {
-  // If status_counts was empty (from legacy fallback), query on-demand when expanded
-  const hasStatusCounts = Object.keys(user.status_counts).length > 0;
-  const onDemandQuery = useQuery({
-    queryKey: ["user-status-counts-fallback", user.user_id, range.from, range.to],
-    enabled: isExpanded && !hasStatusCounts && !!user.user_id,
-    queryFn: async () => {
-      const counts: Record<string, number> = {};
-      await Promise.all(
-        CS_STATUSES.map(async (st) => {
-          let q = supabase
-            .from("qualified_leads")
-            .select("id", { count: "exact", head: true })
-            .or(`created_by.eq.${user.user_id},assigned_by.eq.${user.user_id}`)
-            .eq("cs_status", st);
-          if (range.from) q = q.gte("assigned_at", range.from);
-          if (range.to) q = q.lt("assigned_at", range.to);
-          const { count } = await q;
-          if (count && count > 0) counts[st] = count;
-        }),
-      );
-      return counts;
-    },
-    staleTime: 5 * 60_000,
-  });
-
-  const statusCounts = hasStatusCounts
-    ? user.status_counts
-    : (onDemandQuery.data ?? user.status_counts);
+  const statusCounts = user.status_counts;
 
   const processedCount = statusCounts["converted"] ?? 0;
   const undeliverCount = statusCounts["undeliver"] ?? 0;
@@ -1054,9 +1218,7 @@ function UserForwardedRow({
   const qualityIssuesCount =
     (statusCounts["undeliver"] ?? 0) +
     (statusCounts["wrong_number"] ?? 0) +
-    (statusCounts["wrong_lead"] ?? 0) +
-    (statusCounts["wrong_service"] ?? 0) +
-    (statusCounts["wrong_person"] ?? 0);
+    (statusCounts["wrong_lead"] ?? 0);
   const issuesPct = ((qualityIssuesCount / total) * 100).toFixed(1);
 
   const selectedCount = selectedStatus !== "__all__" ? (statusCounts[selectedStatus] ?? 0) : null;
@@ -1147,7 +1309,7 @@ function UserForwardedRow({
               {processedCount > 0 && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                   Delivered:{" "}
+                  Delivered:{" "}
                   <strong className="tabular-nums">{processedCount.toLocaleString()}</strong>
                 </span>
               )}
@@ -1251,7 +1413,7 @@ function UserForwardedRow({
                     to="/app/forwarded-leads"
                     search={{ forwardedByFilter: user.user_id } as Record<string, unknown>}
                     className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e: MouseEvent) => e.stopPropagation()}
                   >
                     View forwarded leads
                     <ExternalLink className="h-3 w-3" />
@@ -1260,61 +1422,54 @@ function UserForwardedRow({
               </div>
 
               {/* Status Grid */}
-              {onDemandQuery.isLoading ? (
-                <div className="py-6 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                  Loading lead status breakdown…
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
-                  {CS_STATUSES.map((st) => {
-                    const count = statusCounts[st] ?? 0;
-                    const pct = total > 0 ? ((count / total) * 100).toFixed(1) : "0.0";
-                    const isSelected = selectedStatus === st;
-                    return (
-                      <div
-                        key={st}
-                        className={cn(
-                          "p-2.5 rounded-lg border text-left transition-all",
-                          isSelected
-                            ? "border-primary bg-primary/10 shadow-xs ring-1 ring-primary/30"
-                            : "border-border/60 bg-background/50 hover:bg-background hover:border-border",
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-1 mb-1">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span
-                              className={cn("h-2 w-2 rounded-full shrink-0", statusDotTone(st))}
-                            />
-                            <span className="text-[11px] font-medium text-muted-foreground truncate">
-                              {CS_LABELS[st] ?? st}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-baseline justify-between mt-1">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
+                {CS_STATUSES.map((st) => {
+                  const count = statusCounts[st] ?? 0;
+                  const pct = total > 0 ? ((count / total) * 100).toFixed(1) : "0.0";
+                  const isSelected = selectedStatus === st;
+                  return (
+                    <div
+                      key={st}
+                      className={cn(
+                        "p-2.5 rounded-lg border text-left transition-all",
+                        isSelected
+                          ? "border-primary bg-primary/10 shadow-xs ring-1 ring-primary/30"
+                          : "border-border/60 bg-background/50 hover:bg-background hover:border-border",
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <span
-                            className={cn(
-                              "text-base font-bold tabular-nums",
-                              count > 0 ? "text-foreground" : "text-muted-foreground/60",
-                            )}
-                          >
-                            {count.toLocaleString()}
-                          </span>
-                          <span className="text-[10.5px] tabular-nums text-muted-foreground font-medium">
-                            {pct}%
-                          </span>
-                        </div>
-                        <div className="h-1 w-full rounded-full bg-muted/50 overflow-hidden mt-1.5">
-                          <div
-                            className={cn("h-full rounded-full", statusDotTone(st))}
-                            style={{ width: `${pct}%` }}
+                            className={cn("h-2 w-2 rounded-full shrink-0", statusDotTone(st))}
                           />
+                          <span className="text-[11px] font-medium text-muted-foreground truncate">
+                            {CS_LABELS[st] ?? st}
+                          </span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                      <div className="flex items-baseline justify-between mt-1">
+                        <span
+                          className={cn(
+                            "text-base font-bold tabular-nums",
+                            count > 0 ? "text-foreground" : "text-muted-foreground/60",
+                          )}
+                        >
+                          {count.toLocaleString()}
+                        </span>
+                        <span className="text-[10.5px] tabular-nums text-muted-foreground font-medium">
+                          {pct}%
+                        </span>
+                      </div>
+                      <div className="h-1 w-full rounded-full bg-muted/50 overflow-hidden mt-1.5">
+                        <div
+                          className={cn("h-full rounded-full", statusDotTone(st))}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </td>
         </tr>

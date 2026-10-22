@@ -12,10 +12,8 @@
 -- cs_leads_status_counts() is left in place and is still used for the
 -- unfiltered view, where it is cached and shared across the app.
 --
--- Column names cannot be parameterised, so the searched and garage-door
--- columns are fixed here and must match the lists in src/routes/app.cs-leads.tsx.
--- The garage-door PATTERNS are passed in so they stay defined once, in the
--- client, rather than drifting between two places.
+-- Column names cannot be parameterised, so the searched columns are fixed here
+-- and must match the list in src/routes/app.cs-leads.tsx.
 
 CREATE OR REPLACE FUNCTION public.cs_leads_status_counts_filtered(
   p_date_from timestamptz DEFAULT NULL,
@@ -23,9 +21,9 @@ CREATE OR REPLACE FUNCTION public.cs_leads_status_counts_filtered(
   p_owner uuid DEFAULT NULL,
   p_unassigned boolean DEFAULT false,
   p_not_called boolean DEFAULT false,
+  p_important boolean DEFAULT false,
   p_search text DEFAULT NULL,
-  p_phone text DEFAULT NULL,
-  p_garage_patterns text[] DEFAULT NULL
+  p_phone text DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -88,6 +86,7 @@ BEGIN
             END
           )
       AND (NOT p_not_called OR q.called_at IS NULL)
+      AND (NOT p_important OR q.is_important IS TRUE)
       AND (
             search_like IS NULL
             OR q.customer_name ILIKE search_like
@@ -100,19 +99,6 @@ BEGIN
             OR q.requirement_1 ILIKE search_like
             OR q.requirement_2 ILIKE search_like
           )
-      AND (
-            p_garage_patterns IS NULL
-            OR EXISTS (
-              SELECT 1
-              FROM unnest(p_garage_patterns) AS pattern
-              WHERE q.service ILIKE pattern
-                 OR q.pass_it_to ILIKE pattern
-                 OR q.context ILIKE pattern
-                 OR q.post_text ILIKE pattern
-                 OR q.requirement_1 ILIKE pattern
-                 OR q.requirement_2 ILIKE pattern
-            )
-          )
     GROUP BY q.cs_status
   ) AS counts;
 
@@ -124,9 +110,9 @@ END
 $function$;
 
 REVOKE ALL ON FUNCTION public.cs_leads_status_counts_filtered(
-  timestamptz, timestamptz, uuid, boolean, boolean, text, text, text[]
+  timestamptz, timestamptz, uuid, boolean, boolean, boolean, text, text
 ) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.cs_leads_status_counts_filtered(
-  timestamptz, timestamptz, uuid, boolean, boolean, text, text, text[]
+  timestamptz, timestamptz, uuid, boolean, boolean, boolean, text, text
 ) TO authenticated;

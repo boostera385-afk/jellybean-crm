@@ -825,6 +825,93 @@ export type Database = {
         }
         Relationships: []
       }
+      cs_compose_eval_jobs: {
+        Row: {
+          cases: Json
+          completed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          results: Json | null
+          status: string
+          token_hash: string
+        }
+        Insert: {
+          cases: Json
+          completed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          results?: Json | null
+          status?: string
+          token_hash: string
+        }
+        Update: {
+          cases?: Json
+          completed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          results?: Json | null
+          status?: string
+          token_hash?: string
+        }
+        Relationships: []
+      }
+      cs_compose_runs: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          duration_ms: number | null
+          id: string
+          lead_id: string | null
+          model: string
+          outcome: string
+          prompt_version: string
+          question_keys: string[]
+          warnings: string[]
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          id?: string
+          lead_id?: string | null
+          model: string
+          outcome?: string
+          prompt_version: string
+          question_keys?: string[]
+          warnings?: string[]
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          id?: string
+          lead_id?: string | null
+          model?: string
+          outcome?: string
+          prompt_version?: string
+          question_keys?: string[]
+          warnings?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cs_compose_runs_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "processed_leads_export"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cs_compose_runs_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "qualified_leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       incogniton_profiles: {
         Row: {
           account_area: string | null
@@ -897,6 +984,139 @@ export type Database = {
           {
             foreignKeyName: "incogniton_profiles_linked_lead_id_fkey"
             columns: ["linked_lead_id"]
+            isOneToOne: false
+            referencedRelation: "qualified_leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_ai_status: {
+        Row: {
+          ai_status: Database["public"]["Enums"]["cs_status"] | null
+          analyzed_at: string
+          confidence: number | null
+          evidence_ids: string[]
+          history_hash: string | null
+          lead_id: string
+          message_count: number
+          model: string
+          policy_version: string
+          reason_code: string
+          run_id: string
+          source_key: string
+          state: string
+        }
+        Insert: {
+          ai_status?: Database["public"]["Enums"]["cs_status"] | null
+          analyzed_at?: string
+          confidence?: number | null
+          evidence_ids?: string[]
+          history_hash?: string | null
+          lead_id: string
+          message_count?: number
+          model: string
+          policy_version: string
+          reason_code: string
+          run_id: string
+          source_key: string
+          state: string
+        }
+        Update: {
+          ai_status?: Database["public"]["Enums"]["cs_status"] | null
+          analyzed_at?: string
+          confidence?: number | null
+          evidence_ids?: string[]
+          history_hash?: string | null
+          lead_id?: string
+          message_count?: number
+          model?: string
+          policy_version?: string
+          reason_code?: string
+          run_id?: string
+          source_key?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_ai_status_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: true
+            referencedRelation: "processed_leads_export"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_ai_status_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: true
+            referencedRelation: "qualified_leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_ai_status_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "lead_ai_status_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_ai_status_runs: {
+        Row: {
+          actor_id: string | null
+          finished_at: string | null
+          id: string
+          last_progress_at: string | null
+          lead_id: string
+          manual_status: Database["public"]["Enums"]["cs_status"]
+          outcome: string
+          requested_via: string
+          result: Json | null
+          source_key: string
+          started_at: string
+          work_done: number
+          work_total: number
+        }
+        Insert: {
+          actor_id?: string | null
+          finished_at?: string | null
+          id?: string
+          last_progress_at?: string | null
+          lead_id: string
+          manual_status: Database["public"]["Enums"]["cs_status"]
+          outcome?: string
+          requested_via?: string
+          result?: Json | null
+          source_key: string
+          started_at?: string
+          work_done?: number
+          work_total?: number
+        }
+        Update: {
+          actor_id?: string | null
+          finished_at?: string | null
+          id?: string
+          last_progress_at?: string | null
+          lead_id?: string
+          manual_status?: Database["public"]["Enums"]["cs_status"]
+          outcome?: string
+          requested_via?: string
+          result?: Json | null
+          source_key?: string
+          started_at?: string
+          work_done?: number
+          work_total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_ai_status_runs_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "processed_leads_export"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_ai_status_runs_lead_id_fkey"
+            columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "qualified_leads"
             referencedColumns: ["id"]
@@ -1615,10 +1835,31 @@ export type Database = {
           id: string
         }[]
       }
+      checkpoint_quo_ai_job: {
+        Args: {
+          p_checkpoint: string
+          p_done: number
+          p_lease_token: string
+          p_retry?: boolean
+          p_run_id: string
+          p_total: number
+        }
+        Returns: boolean
+      }
       claim_crisp_visitor_sync: {
         Args: { p_stale_before: string; p_website_id: string }
         Returns: boolean
       }
+      claim_lead_ai_batch: {
+        Args: {
+          p_actor_id: string
+          p_from?: string
+          p_lead_id?: string
+          p_to?: string
+        }
+        Returns: Json
+      }
+      claim_quo_ai_job: { Args: never; Returns: Json }
       count_pending_reminder_leads: { Args: never; Returns: number }
       crisp_accept_event: {
         Args: { p_body: Json; p_fingerprint: string }
@@ -1711,7 +1952,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      crisp_get_site_bridge: { Args: { p_website_id: string }; Returns: Json }
       crisp_finish_presence_v3: {
         Args: {
           p_active: number
@@ -1730,6 +1970,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      crisp_get_site_bridge: { Args: { p_website_id: string }; Returns: Json }
       crisp_get_workspace_secret: {
         Args: { p_secret_id: string }
         Returns: Json
@@ -1739,11 +1980,14 @@ export type Database = {
         Args: { p_conversation_id: string; p_observed_at: string }
         Returns: undefined
       }
+      crisp_pending_site_sessions: {
+        Args: { p_website_id: string }
+        Returns: string[]
+      }
       crisp_process_events: {
         Args: { p_limit?: number; p_website_id?: string }
         Returns: number
       }
-      crisp_pending_site_sessions: { Args: { p_website_id: string }; Returns: string[] }
       crisp_provision_site_bridge: {
         Args: { p_key: string; p_origin: string; p_website_id: string }
         Returns: undefined
@@ -1784,8 +2028,21 @@ export type Database = {
         Returns: boolean
       }
       crisp_worker_authorized: { Args: { p_token: string }; Returns: boolean }
+      cs_claim_compose_eval: {
+        Args: { p_job_id: string; p_token: string }
+        Returns: Json
+      }
       cs_leads_status_counts: { Args: never; Returns: Json }
       cs_next_compose_sender_tick: { Args: never; Returns: number }
+      cs_reserve_compose_run: {
+        Args: {
+          p_actor_id: string
+          p_lead_id: string
+          p_model: string
+          p_version: string
+        }
+        Returns: string
+      }
       cs_user_assignment_totals: {
         Args: { _from?: string; _to?: string }
         Returns: {
@@ -1806,6 +2063,25 @@ export type Database = {
       }
       current_user_has_role_text: { Args: { _role: string }; Returns: boolean }
       email_for_username: { Args: { _username: string }; Returns: string }
+      enqueue_quo_ai_batch: {
+        Args: {
+          p_actor_id: string
+          p_from?: string
+          p_inbox_ids: string[]
+          p_lead_id?: string
+          p_to?: string
+        }
+        Returns: number
+      }
+      expire_quo_ai_jobs: { Args: never; Returns: undefined }
+      finish_lead_ai_run: {
+        Args: { p_result: Json; p_run_id: string }
+        Returns: boolean
+      }
+      finish_quo_ai_job: {
+        Args: { p_lease_token: string; p_result: Json; p_run_id: string }
+        Returns: boolean
+      }
       generate_access_code: { Args: never; Returns: string }
       generate_login_otp: { Args: never; Returns: string }
       get_admin_dashboard_stats: { Args: { _today: string }; Returns: Json }
@@ -1874,6 +2150,16 @@ export type Database = {
       }
       is_crisp_masked_content: { Args: { p_content: string }; Returns: boolean }
       is_my_access_verified: { Args: never; Returns: boolean }
+      lead_ai_extra_phones: { Args: { p_phones: string[] }; Returns: string[] }
+      lead_ai_phone: { Args: { p_phone: string }; Returns: string }
+      lead_ai_phone_is_unique: {
+        Args: { p_lead_id: string; p_phone: string }
+        Returns: boolean
+      }
+      lead_ai_source_key: {
+        Args: { q: Database["public"]["Tables"]["qualified_leads"]["Row"] }
+        Returns: string
+      }
       list_pending_reminder_leads: {
         Args: never
         Returns: {
@@ -2102,6 +2388,10 @@ export type Database = {
         Returns: undefined
       }
       refresh_mv_raw_lead_cache_counts: { Args: never; Returns: undefined }
+      report_lead_ai_status: {
+        Args: { p_from?: string; p_to?: string }
+        Returns: Json
+      }
       report_leads_by_account:
         | {
             Args: never
@@ -2140,6 +2430,10 @@ export type Database = {
           user_id: string
           user_name: string
         }[]
+      }
+      report_quo_ai_progress: {
+        Args: { p_from?: string; p_to?: string }
+        Returns: Json
       }
       send_lead_reminder: {
         Args: { _lead_id: string; _message: string }

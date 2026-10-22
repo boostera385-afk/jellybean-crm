@@ -49,14 +49,22 @@ import { US_STATES, US_STATE_NAME } from "@/lib/us-states";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/lead-statuses";
 
 export const Route = createFileRoute("/app/lead-assignment")({
-  head: () => ({ meta: [
-    { title: "Lead Assignment \u00b7 JellyBean" },
-    { name: "description", content: "Manage customer service lead routing and assignment totals." },
-    { property: "og:title", content: "Lead Assignment \u00b7 JellyBean" },
-    { property: "og:description", content: "Manage customer service lead routing and assignment totals." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Lead Assignment \u00b7 JellyBean" },
+      {
+        name: "description",
+        content: "Manage customer service lead routing and assignment totals.",
+      },
+      { property: "og:title", content: "Lead Assignment \u00b7 JellyBean" },
+      {
+        property: "og:description",
+        content: "Manage customer service lead routing and assignment totals.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: Page,
   pendingComponent: () => <RouteSkeleton />,
   pendingMs: 200,

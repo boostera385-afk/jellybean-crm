@@ -716,7 +716,11 @@ export const DOC_SECTIONS: DocSection[] = [
     blocks: [
       {
         kind: "p",
-        text: "Not implemented in the current build. This section is intentionally left empty until the integration ships.",
+        text: "Quo AI status is a comparison-only beta in Reports. Manual totals stay unchanged; each CS status card shows a separate AI status count. Refresh queues up to five eligible leads in the selected assigned-date range. Administrators configure QUO_API_KEY and OPENAI_API_KEY in Supabase Edge Function secrets. Inbox IDs are discovered automatically (up to 100); QUO_PHONE_NUMBER_IDS is only an optional allowlist. All 39 current inboxes are supported without manual IDs. Background work resumes in bounded chunks, including when the Reports tab is closed.",
+      },
+      {
+        kind: "p",
+        text: "The beta reads all pages of Quo SMS history, not call transcripts or attachment contents. Partial history is never classified. In-flight checkpoints are encrypted, backend-only, removed on completion, and expire after 24 hours. Shared phone numbers, incomplete history, missing delivery receipts and uncertain intent require review. No messages are sent and AI never changes manual lead statuses. Compare disagreements against the source chat during the initial week; agreement with manual status is not an accuracy guarantee.",
       },
     ],
   },

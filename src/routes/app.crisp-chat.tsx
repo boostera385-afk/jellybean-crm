@@ -2020,13 +2020,14 @@ function CrispInboxInner() {
                       onClick={() => handleSelectConversation(conv.id)}
                       className={cn(
                         "w-full text-left p-3 rounded-lg border transition-all space-y-1.5",
-                        isSelected
-                          ? "bg-accent/80 border-primary/50 shadow-sm"
-                          : isLive
-                            ? "bg-emerald-500/10 border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/30 hover:bg-emerald-500/15"
-                            : isUnread
-                              ? "bg-primary/10 border-primary/30 shadow-xs hover:bg-accent/40"
+                        isUnread
+                          ? "bg-amber-100 border-amber-500 border-l-4 shadow-sm hover:bg-amber-200/80 dark:bg-amber-950/60 dark:border-amber-400 dark:hover:bg-amber-900/60"
+                          : isSelected
+                            ? "bg-accent/80 border-primary/50 shadow-sm"
+                            : isLive
+                              ? "bg-emerald-500/10 border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/30 hover:bg-emerald-500/15"
                               : "border-border/20 hover:bg-accent/40",
+                        isSelected && "ring-2 ring-primary/60",
                       )}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -2042,7 +2043,7 @@ function CrispInboxInner() {
                           ) : (
                             isUnread && (
                               <span
-                                className="w-2.5 h-2.5 rounded-full bg-primary shrink-0 animate-pulse"
+                                className="w-2.5 h-2.5 rounded-full bg-amber-600 dark:bg-amber-400 shrink-0"
                                 title="Needs operator reply"
                               />
                             )
@@ -2070,6 +2071,12 @@ function CrispInboxInner() {
                         </span>
                       </div>
 
+                      {isUnread && (
+                        <span className="inline-flex items-center gap-1 rounded bg-amber-600 px-1.5 py-0.5 text-[10px] font-bold text-white dark:bg-amber-400 dark:text-amber-950">
+                          <MessageSquare className="h-3 w-3" />
+                          CUSTOMER REPLIED · {conv.unread_count} unread
+                        </span>
+                      )}
                       <div className="flex items-center gap-1 text-[10px] font-medium text-emerald-500/90">
                         <Building2 className="h-3 w-3 shrink-0" />
                         <span className="truncate">

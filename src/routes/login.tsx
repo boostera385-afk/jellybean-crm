@@ -15,14 +15,16 @@ type LoginProfile = {
 };
 
 export const Route = createFileRoute("/login")({
-  head: () => ({ meta: [
-    { title: "Sign In \u00b7 JellyBean" },
-    { name: "description", content: "Sign in to your JellyBean CRM account." },
-    { property: "og:title", content: "Sign In \u00b7 JellyBean" },
-    { property: "og:description", content: "Sign in to your JellyBean CRM account." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Sign In \u00b7 JellyBean" },
+      { name: "description", content: "Sign in to your JellyBean CRM account." },
+      { property: "og:title", content: "Sign In \u00b7 JellyBean" },
+      { property: "og:description", content: "Sign in to your JellyBean CRM account." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: LoginPage,
 });
 

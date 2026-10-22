@@ -51,14 +51,19 @@ import { confirmDiscardUnsaved } from "@/components/confirm-dialog-store";
 import { LeadReminderDialog, type ReminderLeadInfo } from "@/components/lead-reminder-dialog";
 
 export const Route = createFileRoute("/app/forwarded-leads")({
-  head: () => ({ meta: [
-    { title: "Forwarded Leads \u00b7 JellyBean" },
-    { name: "description", content: "Track your forwarded leads and their customer outcomes." },
-    { property: "og:title", content: "Forwarded Leads \u00b7 JellyBean" },
-    { property: "og:description", content: "Track your forwarded leads and their customer outcomes." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Forwarded Leads \u00b7 JellyBean" },
+      { name: "description", content: "Track your forwarded leads and their customer outcomes." },
+      { property: "og:title", content: "Forwarded Leads \u00b7 JellyBean" },
+      {
+        property: "og:description",
+        content: "Track your forwarded leads and their customer outcomes.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: Page,
   pendingComponent: () => <RouteSkeleton />,
   pendingMs: 200,
@@ -99,7 +104,6 @@ const OUTCOME_FILTERS = [
   "wrong_lead",
   "already_got_someone",
   "service_provider_himself",
-  "small_service",
   "converted",
   "cx_interested",
   "cx_not_interested",
@@ -154,7 +158,7 @@ function Inner() {
   }, [debouncedQuery]);
 
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 500;
+  const PAGE_SIZE = 200;
 
   const dbDateFrom = useMemo(() => {
     return dateFrom ? startOfDay(new Date(dateFrom)).toISOString() : null;

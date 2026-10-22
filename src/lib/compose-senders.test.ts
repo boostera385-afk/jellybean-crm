@@ -17,8 +17,16 @@ describe("compose sender rotation", () => {
     // a public figure, two misspellings, typos, a fictional character,
     // initials, a bare surname and a one-off.
     for (const bad of [
-      "Elon", "Buttler", "Nathen", "Altas", "aJoshua", "Jaoshua",
-      "Reacher", "CJ", "Smith", "Saim",
+      "Elon",
+      "Buttler",
+      "Nathen",
+      "Altas",
+      "aJoshua",
+      "Jaoshua",
+      "Reacher",
+      "CJ",
+      "Smith",
+      "Saim",
     ]) {
       expect(COMPOSE_SENDER_NAMES).not.toContain(bad);
     }
