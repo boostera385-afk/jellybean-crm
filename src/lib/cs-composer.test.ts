@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { ASK_INTENTS } from "../../supabase/functions/_shared/cs-ask-catalogue-types";
+import { normalizeSource } from "../../supabase/functions/_shared/cs-detect";
 import {
   CS_COMPOSER_MODEL,
   CS_COMPOSER_VERSION,
@@ -33,7 +34,7 @@ describe("first-contact sensible-question regressions", () => {
       for (const intent of test.forbiddenKeys ?? []) expect(ASK_INTENTS).toContain(intent);
   });
   it.each(cases)("$name keeps the approved format and supplied facts", async (test) => {
-    const fetcher = vi.fn().mockResolvedValue(targeting("a home service"));
+    const fetcher = echoingModel();
     const result = await composeAnswerAware(test.input!, { apiKey: "test-key", fetcher });
     const keys = result.plan.questions.map((q) => q.key);
     // Targeting prose is mocked here; real model scope coverage is checked by
@@ -59,6 +60,25 @@ const plan = (overrides: Partial<ComposePlan> = {}): ComposePlan => ({
   questions: [],
   ...overrides,
 });
+/**
+ * A stand-in model that behaves as the real one is told to: it names the job
+ * in the customer's own words. The fixed "a home service" this replaces no
+ * longer passes, because an opening must name the item the questions ask
+ * about, and these regressions exist to exercise question selection, not that
+ * refusal (tested on its own below). Each call gets a fresh Response, as the
+ * network would give it: a body can only be read once.
+ */
+function echoingModel() {
+  return vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const { lead } = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
+    const words = normalizeSource(lead.postText || lead.context)
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    // parseTargeting refuses anything over 250 characters; cut at a word.
+    return targeting(words.length > 200 ? words.slice(0, words.lastIndexOf(" ", 200)) : words);
+  });
+}
 const targeting = (serviceContext: string, targetObject = "none", finish = "stop") =>
   new Response(
     JSON.stringify({
