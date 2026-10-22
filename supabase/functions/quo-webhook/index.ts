@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { verifyQuoWebhook } from "../_shared/quo-webhook-verify.ts";
-import { readQuoMessageEvent } from "../_shared/quo-webhook-event.ts";
+import { verifyQuoWebhook } from "./quo-webhook-verify.ts";
+import { readQuoMessageEvent } from "./quo-webhook-event.ts";
 
 /**
  * Quo message webhook: read-only, comparison-only.

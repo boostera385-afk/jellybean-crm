@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readQuoMessageEvent } from "../../supabase/functions/_shared/quo-webhook-event";
+import { readQuoMessageEvent } from "../../supabase/functions/quo-webhook/quo-webhook-event";
 
 const envelope = (type: string, object: unknown) => JSON.stringify({ type, data: { object } });
 
