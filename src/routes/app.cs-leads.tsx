@@ -634,9 +634,8 @@ function Inner() {
     refetchOnWindowFocus: false,
   });
 
-  // Admin-only AI tag suggestions for the leads on this page. The
-  // lead_ai_status table is RLS-restricted to reporting administrators, so the
-  // query is also skipped entirely for other roles.
+  // AI tag suggestions for admins and CS admins on this page. The
+  // lead_ai_status table enforces the same access through RLS.
   const aiSuggestions = useQuery({
     queryKey: [
       "cs_leads_ai_suggestions",
@@ -650,22 +649,24 @@ function Inner() {
         importantOnly,
         notCalledOnly,
         ids: list.data?.map((l) => l.id).join(",") ?? "",
+        openedId: opened?.id ?? null,
       },
     ],
     enabled: isAdmin,
     queryFn: async (): Promise<Map<string, AiSuggestion>> => {
-      const ids = (list.data ?? [])
+      const ids = [...(list.data ?? []), ...(opened ? [opened] : [])]
         .filter((l) => l.cs_status !== "need_follow_up")
         .map((l) => l.id);
       if (ids.length === 0) return new Map();
       const { data, error } = await supabase
         .from("lead_ai_status")
         .select("lead_id,state,ai_status,confidence,reason_code,message_count,analyzed_at,model")
-        .in("lead_id", ids);
+        .in("lead_id", [...new Set(ids)]);
       if (error) throw error;
       return new Map(((data ?? []) as unknown as AiSuggestion[]).map((row) => [row.lead_id, row]));
     },
     staleTime: 60_000,
+    refetchInterval: 30_000,
     refetchOnWindowFocus: false,
   });
 
@@ -1783,7 +1784,13 @@ function Inner() {
               ))}
             </div>
           ) : (
-            <CsLeadsTable leads={shownLeads} teamById={teamById} onOpen={setOpened} />
+            <CsLeadsTable
+              leads={shownLeads}
+              teamById={teamById}
+              onOpen={setOpened}
+              showAiStatus={isAdmin}
+              aiSuggestions={aiSuggestions.data}
+            />
           )}
         </div>
       )}
@@ -1924,10 +1931,14 @@ function CsLeadsTable({
   leads,
   teamById,
   onOpen,
+  showAiStatus,
+  aiSuggestions,
 }: {
   leads: Lead[];
   teamById: Map<string, CsTeamMember>;
   onOpen: (lead: Lead) => void;
+  showAiStatus: boolean;
+  aiSuggestions?: Map<string, AiSuggestion>;
 }) {
   return (
     <div className="overflow-x-auto rounded-md border border-border">
@@ -1939,6 +1950,7 @@ function CsLeadsTable({
             <th className="text-left px-3 py-2 font-medium">Second Phone</th>
             <th className="text-left px-3 py-2 font-medium">Number Name</th>
             <th className="text-left px-3 py-2 font-medium">Status</th>
+            {showAiStatus && <th className="text-left px-3 py-2 font-medium">AI status</th>}
             <th className="text-left px-3 py-2 font-medium">Delivery</th>
             <th className="text-left px-3 py-2 font-medium">Called at</th>
             <th className="text-left px-3 py-2 font-medium">Assigned</th>
@@ -1950,6 +1962,9 @@ function CsLeadsTable({
         <tbody>
           {leads.map((lead) => {
             const assignee = lead.assigned_to ? teamById.get(lead.assigned_to) : null;
+            const ai = aiSuggestions?.get(lead.id);
+            const visibleAi =
+              ai && !isUntouched(ai) && canShowAiSuggestion(lead.cs_status, ai.ai_status) ? ai : null;
             return (
               <tr
                 id={`lead-${lead.id}`}
@@ -2002,6 +2017,15 @@ function CsLeadsTable({
                 <td className="px-3 py-2">
                   <StatusBadge status={lead.cs_status} />
                 </td>
+                {showAiStatus && (
+                  <td className="px-3 py-2">
+                    {visibleAi ? (
+                      <AiTagChip ai={visibleAi} />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                )}
                 <td className="px-3 py-2">
                   <span
                     className={cn(
@@ -2823,7 +2847,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-/** One saved AI/Quo comparison result for a lead (admin-only data via RLS). */
+/** One saved AI/Quo comparison result for a lead (admin and CS admin data via RLS). */
 export type AiSuggestion = {
   lead_id: string;
   state: string;
@@ -2866,10 +2890,10 @@ function aiSuggestionTitle(ai: AiSuggestion): string {
   const parts = [aiReasonLabel(ai)];
   if (ai.confidence != null) parts.push(`${Math.round(ai.confidence * 100)}% confidence`);
   if (ai.message_count != null) parts.push(`${ai.message_count} Quo messages`);
-  return `Admin only · Comparison only, not saved · ${parts.join(" · ")}`;
+  return `Admin and CS admin · Comparison only, not saved · ${parts.join(" · ")}`;
 }
 
-/** Compact admin-only chip for lead cards: a dashed outline separates the AI
+/** Compact management chip for lead cards and table rows: a dashed outline separates the AI
  * guess from manual pipeline tags so agents never confuse the two. */
 function AiTagChip({ ai }: { ai: AiSuggestion }) {
   if (isUntouched(ai)) return null;
@@ -2880,7 +2904,7 @@ function AiTagChip({ ai }: { ai: AiSuggestion }) {
   return (
     <span
       title={aiSuggestionTitle(ai)}
-      className="hidden sm:inline-flex items-center gap-1 rounded-full border border-dashed border-violet-400/70 bg-violet-500/5 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:text-violet-300 whitespace-nowrap"
+      className="inline-flex items-center gap-1 rounded-full border border-dashed border-violet-400/70 bg-violet-500/5 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:text-violet-300 whitespace-nowrap"
     >
       <Sparkles className="h-2.5 w-2.5" />
       {prefix}: {label}
@@ -2915,7 +2939,7 @@ function AiSuggestionPanel({
     >
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-violet-700 dark:text-violet-300">
-          {isTransport ? "Quo delivery read" : "AI tag suggestion"} · Admin only
+          {isTransport ? "Quo delivery read" : "AI tag suggestion"} · Admin and CS admin
         </span>
         <span className="text-[10px] text-muted-foreground">Comparison only — not saved</span>
       </div>
