@@ -570,7 +570,7 @@ function Inner() {
               void cs.refetch();
               refreshAi.mutate({ ...range });
             }}
-            title="Check up to 5 eligible leads in the selected range; 15-minute per-lead cooldown and beta daily limit apply"
+            title="Check every eligible lead in the selected range; each lead is checked at most once every 15 minutes"
           >
             <RefreshCw
               className={cn("mr-1.5 h-3.5 w-3.5", refreshAi.isPending && "animate-spin")}
