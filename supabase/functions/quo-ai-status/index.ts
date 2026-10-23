@@ -99,7 +99,7 @@ export async function handleAiStatus(req: Request): Promise<Response> {
       return json({ error: "Queued worker unavailable; retry shortly." }, 503);
     }
   }
-  let inboxes: { ids: string[]; source: "configured" | "discovered" };
+  let inboxes: Awaited<ReturnType<typeof resolveQuoPhoneIds>>;
   try {
     inboxes = await resolveQuoPhoneIds({
       apiKey: quoKey,
@@ -116,6 +116,13 @@ export async function handleAiStatus(req: Request): Promise<Response> {
       },
       body.action === "configuration" ? 200 : 503,
     );
+  }
+  // Each lead names the inbox it is texted from (number_name); recording the
+  // inbox names lets its history be read from that one inbox, not all of them.
+  // Best effort: without them every lead is simply read from every inbox.
+  if (Object.keys(inboxes.names).length) {
+    const { error: syncError } = await db.rpc("sync_quo_inboxes", { p_names: inboxes.names });
+    if (syncError) console.warn("Could not record Quo inbox names", { message: syncError.message });
   }
   if (body.action === "configuration")
     return json({

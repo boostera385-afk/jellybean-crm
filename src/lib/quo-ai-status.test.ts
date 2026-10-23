@@ -59,16 +59,26 @@ describe("automatic Quo inbox discovery", () => {
       new Response(
         JSON.stringify({
           data: [
-            { id: "PN1", number: "+12025550101", users: [{ email: "private@example.com" }] },
+            {
+              id: "PN1",
+              name: "Houston Handyman OP1",
+              number: "+12025550101",
+              users: [{ email: "private@example.com" }],
+            },
             { id: "PN2" },
           ],
         }),
       ),
     );
-    expect(await resolveQuoPhoneIds({ apiKey: "test-only", fetcher })).toEqual({
+    const result = await resolveQuoPhoneIds({ apiKey: "test-only", fetcher });
+    // The inbox name is kept so a lead's number_name can pick its inbox; the
+    // inbox's phone number and its users never leave this function.
+    expect(result).toEqual({
       ids: ["PN1", "PN2"],
       source: "discovered",
+      names: { PN1: "Houston Handyman OP1" },
     });
+    expect(JSON.stringify(result)).not.toMatch(/2025550101|private@example/);
     expect(fetcher.mock.calls[0][0]).toBe("https://api.quo.com/v1/phone-numbers");
     expect(fetcher.mock.calls[0][1].headers.Authorization).toBe("test-only");
   });
@@ -78,7 +88,7 @@ describe("automatic Quo inbox discovery", () => {
       .mockResolvedValue(new Response(JSON.stringify({ data: [{ id: "PN1" }, { id: "PN2" }] })));
     expect(
       await resolveQuoPhoneIds({ apiKey: "test", configuredIds: " PN2,PN2 ", fetcher }),
-    ).toEqual({ ids: ["PN2"], source: "configured" });
+    ).toEqual({ ids: ["PN2"], source: "configured", names: {} });
   });
   it.each([
     { body: { data: [] }, error: "no_quo_phone_numbers" },

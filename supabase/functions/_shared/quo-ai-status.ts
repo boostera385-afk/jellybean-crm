@@ -83,7 +83,13 @@ export async function resolveQuoPhoneIds(options: {
   configuredIds?: string;
   fetcher?: Fetcher;
   signal?: AbortSignal;
-}): Promise<{ ids: string[]; source: "configured" | "discovered" }> {
+}): Promise<{
+  ids: string[];
+  source: "configured" | "discovered";
+  /** Inbox id -> its name in Quo, for matching a lead's number_name. Names
+   *  only: never the inbox's phone number or its users. */
+  names: Record<string, string>;
+}> {
   const requested = [
     ...new Set(
       (options.configuredIds ?? "")
@@ -126,7 +132,12 @@ export async function resolveQuoPhoneIds(options: {
   if (!ids.length) throw new Error("no_quo_phone_numbers");
   // Never silently analyze only a subset of a large account.
   if (ids.length > 100) throw new Error("quo_inbox_allowlist_required");
-  return { ids, source: requested.length ? "configured" : "discovered" };
+  const names: Record<string, string> = {};
+  for (const row of body.data as Array<{ id: string; name?: unknown }>) {
+    const name = typeof row.name === "string" ? row.name.trim() : "";
+    if (ids.includes(row.id) && name.length > 0 && name.length <= 200) names[row.id] = name;
+  }
+  return { ids, source: requested.length ? "configured" : "discovered", names };
 }
 
 export async function fetchQuoHistoryPage(options: {
