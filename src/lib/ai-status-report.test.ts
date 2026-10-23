@@ -14,12 +14,19 @@ describe("AI report counts", () => {
   it("keeps manual cohort size separate from AI coverage", () => {
     expect(parseAiStatusReport(report)).toEqual(report);
   });
+  it("reads the window start and the not-contacted count when the report has them", () => {
+    const scoped = { ...report, untouched: 3, scopeStart: "2026-10-18T09:00:00Z" };
+    expect(parseAiStatusReport(scoped)).toEqual(scoped);
+  });
   it.each([
     null,
     {},
     { ...report, counts: { converted: -1 } },
     { ...report, total: "10" },
     { ...report, lastAnalyzedAt: "invalid" },
+    { ...report, untouched: -1 },
+    { ...report, untouched: "3" },
+    { ...report, scopeStart: "not a date" },
   ])("does not render failed reports as zeros", (value) => {
     expect(() => parseAiStatusReport(value)).toThrow();
   });

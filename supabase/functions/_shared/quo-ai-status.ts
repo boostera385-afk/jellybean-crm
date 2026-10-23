@@ -1,5 +1,7 @@
 /** Read-only Quo integration and shadow classification. Never sends messages. */
-export const AI_STATUS_VERSION = "quo-shadow-v3";
+export const AI_STATUS_VERSION = "quo-shadow-v4";
+/** A delivered message with nothing back for this long is "didn't reply". */
+export const NO_REPLY_MS = 6 * 60 * 60 * 1000;
 export const AI_STATUS_MODEL = "gpt-4.1-mini-2025-04-14";
 export const INTENT_STATUSES = [
   "wrong_number",
@@ -213,20 +215,41 @@ export async function fetchQuoHistory(options: {
   throw new Error("incomplete_history");
 }
 
+/**
+ * The statuses that need no model: decided from Quo's own records.
+ *
+ *   messaged before the lead existed  -> already_received_before
+ *   nothing sent yet                  -> no status at all ("New" stays untouched)
+ *   last message undelivered          -> undeliver
+ *   delivered, nothing back           -> converted ("Delivered")
+ *   delivered, nothing back after 6h  -> cx_didnt_replied
+ *
+ * Returns null once the customer has replied: that is the model's to read.
+ */
 export function transportResult(
   messages: QuoMessage[],
   assignedAt: string,
   now: number,
+  createdAt?: string | null,
 ): AiResult | null {
+  // Before the lead existed. The earlier of creation and assignment, so a lead
+  // reassigned later does not count its own earlier messages as prior contact.
+  const leadStart = Math.min(
+    Date.parse(assignedAt),
+    createdAt && Number.isFinite(Date.parse(createdAt)) ? Date.parse(createdAt) : Infinity,
+  );
+  const prior = messages.filter((m) => Date.parse(m.createdAt) < leadStart);
+  if (prior.length)
+    return {
+      ...emptyResult("classified", "contacted_before_lead"),
+      status: "already_received_before",
+      confidence: 1,
+      evidenceIds: [prior[prior.length - 1].id],
+    };
   const current = messages.filter((m) => Date.parse(m.createdAt) >= Date.parse(assignedAt));
+  // Nothing sent to this lead yet: no AI status, so "New" is left alone.
   if (!current.length)
-    return messages.length
-      ? {
-          ...emptyResult("classified", "no_contact_for_current_assignment"),
-          status: "new",
-          confidence: 1,
-        }
-      : emptyResult("unmatched", "no_matching_quo_history");
+    return emptyResult("unmatched", messages.length ? "no_contact_yet" : "no_matching_quo_history");
   if (current.some((m) => m.direction === "incoming")) return null;
   const last = current[current.length - 1];
   const result = {
@@ -238,8 +261,8 @@ export function transportResult(
   if (last.status === "undelivered")
     return { ...result, status: "undeliver", reasonCode: "delivery_failed" };
   if (last.status !== "delivered") return emptyResult("review", "delivery_not_confirmed");
-  if (now - Date.parse(last.createdAt) >= 24 * 60 * 60 * 1000)
-    return { ...result, status: "cx_didnt_replied", reasonCode: "no_reply_after_24h" };
+  if (now - Date.parse(last.createdAt) >= NO_REPLY_MS)
+    return { ...result, status: "cx_didnt_replied", reasonCode: "no_reply_after_6h" };
   return result;
 }
 
@@ -299,6 +322,8 @@ export function validateIntent(
 export async function classifyQuoHistory(options: {
   messages: QuoMessage[];
   assignedAt: string;
+  /** The lead's own creation time; history before it means a repeat contact. */
+  createdAt?: string | null;
   service: string | null;
   apiKey: string;
   fetcher?: Fetcher;
@@ -331,7 +356,12 @@ export async function classifyQuoHistory(options: {
     historyHash,
     messageCount: messages.length,
   });
-  const transport = transportResult(messages, assignedAt, options.now ?? Date.now());
+  const transport = transportResult(
+    messages,
+    assignedAt,
+    options.now ?? Date.now(),
+    options.createdAt,
+  );
   if (transport) return withMeta(transport);
   // An inbound media-only reply needs a human, not a guessed image meaning.
   if (

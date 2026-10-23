@@ -32,7 +32,8 @@ const BASE = `
     'service_provider_himself','out_of_base');
   CREATE TABLE public.qualified_leads(id uuid PRIMARY KEY, customer_name text, customer_number text,
     customer_number_2 text, extra_numbers text[] NOT NULL DEFAULT '{}',
-    assigned_at timestamptz NOT NULL DEFAULT now(), cs_status public.cs_status NOT NULL DEFAULT 'new',
+    assigned_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now(),
+    cs_status public.cs_status NOT NULL DEFAULT 'new',
     is_important boolean DEFAULT false, service text, post_text text, context text, created_by uuid,
     assigned_to uuid, called_at timestamptz);
   ALTER TABLE public.qualified_leads ENABLE ROW LEVEL SECURITY;
@@ -51,6 +52,7 @@ const CHAIN = [
   "admin_only_lead_ai_status",
   "consolidate_cs_statuses",
   "quo_webhook_and_autoqueue",
+  "quo_ai_scope_and_rules",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -279,14 +281,14 @@ describe("the 24-hour no-reply rule", () => {
 
   it("settles in SQL, with no Quo request and no model call", async () => {
     await liveWebhook();
-    await seedDelivered(lead(1), "25 hours");
-    await seedDelivered(lead(2), "23 hours");
+    await seedDelivered(lead(1), "7 hours");
+    await seedDelivered(lead(2), "5 hours");
     expect(await call<number>("public.flip_quo_ai_no_reply()")).toBe(1);
     expect(await statusOf(lead(1))).toEqual({
       ai_status: "cx_didnt_replied",
-      reason_code: "no_reply_after_24h",
+      reason_code: "no_reply_after_6h",
     });
-    // Not yet 24 hours, so it stays as it was.
+    // Not yet 6 hours, so it stays as it was.
     expect(await statusOf(lead(2))).toMatchObject({ reason_code: "delivery_confirmed" });
   });
 
@@ -351,5 +353,112 @@ describe("the 24-hour no-reply rule", () => {
         )
       ).rows[0].last_message_at,
     ).toEqual(new Date("2026-10-21T08:00:00Z"));
+  });
+});
+
+describe("the AI applies to leads from five days ago onward", () => {
+  const OLD = "30000000-0000-4000-8000-000000000001";
+  const addOldLead = () =>
+    db.exec(`SET ROLE postgres;
+      INSERT INTO public.qualified_leads(id,customer_name,customer_number,assigned_at,created_at,service)
+        VALUES ('${OLD}','Old','(910) 555-7777',now()-interval '6 days',now()-interval '6 days','Painting');
+      SET ROLE service_role;`);
+
+  it("starts five days before the rules were switched on", async () => {
+    const start = await call<string>("public.quo_ai_scope_start()");
+    const days = (Date.now() - Date.parse(start)) / 86_400_000;
+    expect(days).toBeGreaterThan(4.99);
+    expect(days).toBeLessThan(5.01);
+  });
+
+  it("leaves a lead created before that alone, in the sweep and the webhook", async () => {
+    await addOldLead();
+    expect(await sweep(5)).toBe(3);
+    expect(await queuedLeadIds()).not.toContain(OLD);
+    expect(await accept("wh_old", "message.received", "+19105557777")).toMatchObject({
+      matched: 0,
+    });
+  });
+
+  it("hands the worker the lead's creation time, for 'already received before'", async () => {
+    await call<number>(
+      `public.enqueue_quo_ai_batch(NULL,'${INBOX}'::text[],NULL,NULL,'${lead(1)}'::uuid)`,
+    );
+    const job = await call<{ createdAt: string; assignedAt: string }>("public.claim_quo_ai_job()");
+    expect(Number.isFinite(Date.parse(job.createdAt))).toBe(true);
+  });
+
+  it("keeps a result as it is when no rules version is given", async () => {
+    await db.exec(
+      `SELECT public.test_seed_status('${lead(1)}','classified','cx_interested','customer_intent',
+         now() - interval '2 hours', interval '2 hours')`,
+    );
+    // No version given: an up-to-date-looking result has no reason to be re-read.
+    expect(await sweep(1)).toBe(1);
+    expect(await queuedLeadIds()).not.toContain(lead(1));
+  });
+
+  it("re-reads results decided under older rules once the version is passed", async () => {
+    await db.exec(
+      `SELECT public.test_seed_status('${lead(1)}','classified','cx_interested','customer_intent',
+         now() - interval '2 hours', interval '2 hours');
+       SELECT public.test_seed_status('${lead(2)}','classified','cx_interested','customer_intent',
+         now() - interval '2 hours', interval '2 hours');
+       SELECT public.test_seed_status('${lead(3)}','classified','cx_interested','customer_intent',
+         now() - interval '2 hours', interval '2 hours');`,
+    );
+    expect(
+      await call<number>(`public.enqueue_quo_ai_due('${INBOX}'::text[], 5, 'quo-shadow-v4')`),
+    ).toBe(3);
+  });
+
+  it("reports only leads in the window, with 'not contacted yet' apart from review", async () => {
+    await addOldLead();
+    await db.exec(
+      `SELECT public.test_seed_status('${lead(1)}','unmatched',NULL,'no_contact_yet',
+         NULL, interval '1 hour');
+       SELECT public.test_seed_status('${lead(2)}','review',NULL,'delivery_not_confirmed',
+         NULL, interval '1 hour');`,
+    );
+    const report = await call<Record<string, unknown>>("public.report_lead_ai_status()");
+    expect(report).toMatchObject({ total: 3, untouched: 1, review: 1 });
+    expect(Number.isFinite(Date.parse(String(report.scopeStart)))).toBe(true);
+  });
+});
+
+describe("switching the rules on", () => {
+  it("clears earlier results outside the window and keeps the audit of them", async () => {
+    // Its own database: the data has to exist BEFORE the migration runs.
+    const fresh = new PGlite();
+    try {
+      await fresh.exec(BASE);
+      for (const name of CHAIN.slice(0, -1)) {
+        const files = readdirSync("supabase/migrations").filter((f) => f.endsWith(`_${name}.sql`));
+        await fresh.exec(readFileSync(`supabase/migrations/${files[0]}`, "utf8"));
+      }
+      await fresh.exec(SEED_HELPER);
+      await fresh.exec(`
+        INSERT INTO public.qualified_leads(id,customer_number,created_at) VALUES
+          ('${lead(1)}','(910) 555-1234',now()-interval '6 days'),
+          ('${lead(2)}','(910) 555-5678',now()-interval '1 day');
+        SELECT public.test_seed_status('${lead(1)}','classified','new','no_contact_for_current_assignment',
+          NULL, interval '6 days');
+        SELECT public.test_seed_status('${lead(2)}','classified','converted','delivery_confirmed',
+          now() - interval '1 hour', interval '1 hour');`);
+      const last = readdirSync("supabase/migrations").filter((f) =>
+        f.endsWith(`_${CHAIN[CHAIN.length - 1]}.sql`),
+      );
+      await fresh.exec(readFileSync(`supabase/migrations/${last[0]}`, "utf8"));
+      const rows = await fresh.query<{ lead_id: string }>(
+        "SELECT lead_id FROM public.lead_ai_status ORDER BY lead_id",
+      );
+      expect(rows.rows.map((r) => r.lead_id)).toEqual([lead(2)]);
+      const audit = await fresh.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM public.lead_ai_status_runs WHERE lead_id='${lead(1)}'`,
+      );
+      expect(audit.rows[0].n).toBe(1);
+    } finally {
+      await fresh.close();
+    }
   });
 });

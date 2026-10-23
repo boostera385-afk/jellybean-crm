@@ -15,6 +15,10 @@ export type AiStatusReport = {
   disagreements: number;
   review: number;
   stale: number;
+  /** In-scope leads nothing has been sent to yet: no AI status by design. */
+  untouched?: number;
+  /** The AI applies to leads created from this time on. */
+  scopeStart?: string | null;
   lastAnalyzedAt: string | null;
 };
 
@@ -27,6 +31,16 @@ export function parseAiStatusReport(value: unknown): AiStatusReport {
   for (const field of fields)
     if (typeof v[field] !== "number" || !Number.isSafeInteger(v[field]) || v[field] < 0)
       throw new Error("Invalid AI report");
+  if (
+    v.untouched !== undefined &&
+    (typeof v.untouched !== "number" || !Number.isSafeInteger(v.untouched) || v.untouched < 0)
+  )
+    throw new Error("Invalid AI report");
+  if (
+    v.scopeStart != null &&
+    (typeof v.scopeStart !== "string" || !Number.isFinite(Date.parse(v.scopeStart)))
+  )
+    throw new Error("Invalid AI scope");
   if (!v.counts || typeof v.counts !== "object" || Array.isArray(v.counts))
     throw new Error("Invalid AI counts");
   for (const count of Object.values(v.counts))

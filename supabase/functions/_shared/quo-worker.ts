@@ -35,6 +35,7 @@ type SyncJob = {
   customerNumber2: string | null;
   extraNumbers: string[] | null;
   assignedAt: string;
+  createdAt?: string | null;
   service: string | null;
 };
 
@@ -131,6 +132,7 @@ export async function processQuoJob(
       result = await classifyQuoHistory({
         messages: checkpoint.messages,
         assignedAt: job.assignedAt,
+        createdAt: job.createdAt,
         service: job.service,
         apiKey: modelKey,
         previous: cached,
