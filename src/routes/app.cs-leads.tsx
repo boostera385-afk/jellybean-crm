@@ -2836,13 +2836,24 @@ const AI_REASON_LABEL: Record<string, string> = {
   customer_intent: "Customer intent read from the Quo chat",
   delivery_confirmed: "Confirmed by Quo delivery receipt",
   delivery_failed: "Quo reports the message failed delivery",
+  no_reply_after_6h: "Delivered, and no reply within 6 hours",
+  contacted_before_lead: "This number was texting with us before the lead was created",
   media_requires_review: "An image reply needs human review",
   phone_shared_between_leads: "Phone number is shared with other leads",
   invalid_or_excess_customer_numbers: "Customer numbers are invalid or too many",
   history_too_large: "Chat history too large to analyze",
 };
 
-const AI_TRANSPORT_REASONS = new Set(["delivery_confirmed", "delivery_failed"]);
+/** Set from Quo's own records, with no model: shown as "Quo", not "AI". */
+const AI_TRANSPORT_REASONS = new Set([
+  "delivery_confirmed",
+  "delivery_failed",
+  "no_reply_after_6h",
+  "contacted_before_lead",
+]);
+
+/** Nothing has been sent to this lead yet: it gets no AI status at all. */
+const isUntouched = (ai: AiSuggestion) => ai.state === "unmatched";
 
 function aiReasonLabel(ai: AiSuggestion): string {
   return AI_REASON_LABEL[ai.reason_code] ?? ai.reason_code.replace(/_/g, " ");
@@ -2858,6 +2869,7 @@ function aiSuggestionTitle(ai: AiSuggestion): string {
 /** Compact admin-only chip for lead cards: a dashed outline separates the AI
  * guess from manual pipeline tags so agents never confuse the two. */
 function AiTagChip({ ai }: { ai: AiSuggestion }) {
+  if (isUntouched(ai)) return null;
   const suggested = ai.state === "classified" ? ai.ai_status : null;
   const prefix = AI_TRANSPORT_REASONS.has(ai.reason_code) ? "Quo" : "AI";
   const label = suggested ? (STATUS_LABEL[suggested] ?? suggested) : "Needs review";
@@ -2888,6 +2900,7 @@ function AiSuggestionPanel({
   disabled?: boolean;
   onUse: (tag: string) => void;
 }) {
+  if (isUntouched(ai)) return null;
   const isTransport = AI_TRANSPORT_REASONS.has(ai.reason_code);
   const suggested = ai.state === "classified" ? ai.ai_status : null;
   const pct = ai.confidence != null ? Math.round(ai.confidence * 100) : null;

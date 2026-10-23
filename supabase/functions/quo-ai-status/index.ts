@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
+  AI_STATUS_VERSION,
   isQuoConfigurationProbe,
   isQuoWorker,
   resolveQuoPhoneIds,
@@ -140,6 +141,9 @@ export async function handleAiStatus(req: Request): Promise<Response> {
     const { data: queued, error: sweepError } = await db.rpc("enqueue_quo_ai_due", {
       p_inbox_ids: inboxes.ids,
       p_limit: 5,
+      // Results from an older rule set are re-read so every lead in scope ends
+      // up classified by the current rules.
+      p_policy_version: AI_STATUS_VERSION,
     });
     if (sweepError || typeof queued !== "number")
       return json({ error: "Could not reserve analysis batch" }, 503);

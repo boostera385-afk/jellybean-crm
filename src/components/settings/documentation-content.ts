@@ -732,7 +732,11 @@ export const DOC_SECTIONS: DocSection[] = [
       },
       {
         kind: "p",
-        text: "The 24-hour rule needs no provider call: Delivered with nothing since is arithmetic, and no webhook can report the passage of time, so a quarter-hourly job advances those rows in SQL. It will not do so when no webhook delivery has arrived for a day, because silence is then no evidence that nobody replied; those leads are re-read from Quo by the sweep instead.",
+        text: "The no-reply rule needs no provider call: Delivered with nothing since is arithmetic, and no webhook can report the passage of time, so a quarter-hourly job advances those rows in SQL. It will not do so when no webhook delivery has arrived for a day, because silence is then no evidence that nobody replied; those leads are re-read from Quo by the sweep instead.",
+      },
+      {
+        kind: "p",
+        text: "AI status applies to leads created from five days before it was switched on, and every lead after; older leads have none. It is a separate tag, shown to administrators only, and never changes the manual status. A lead nothing has been sent to has no AI status, so New stays untouched. From Quo's own records, with no model: a number that was texting with us before the lead was created is Already received before; an undelivered message is Undeliver; a delivered one is Delivered, and becomes CX didn't replied after 6 hours with nothing back. When the customer replies, the model reads the chat for CX interested, CX not interested, Wrong number, Already got someone or Service provider himself. A later reply re-queues the lead, so Delivered and CX didn't replied update when the customer answers.",
       },
     ],
   },

@@ -511,12 +511,22 @@ function Inner() {
               Large totals are manual. AI counts use complete Quo SMS history; calls and attachment
               contents are not analyzed.
             </p>
+            {ai.data?.scopeStart && (
+              <p className="mt-1 text-muted-foreground">
+                Applies to leads created since{" "}
+                {new Date(ai.data.scopeStart).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                })}
+                . Leads not contacted yet get no AI status.
+              </p>
+            )}
             <p className="mt-1 text-muted-foreground" role="status">
               {ai.isError
                 ? "AI reporting is unavailable. Manual totals are unaffected."
                 : ai.isPending
                   ? "Loading AI coverage…"
-                  : `${ai.data.classified.toLocaleString()} / ${ai.data.total.toLocaleString()} classified · ${ai.data.disagreements.toLocaleString()} differ from manual · ${ai.data.review.toLocaleString()} need review · ${ai.data.stale.toLocaleString()} outdated`}
+                  : `${ai.data.classified.toLocaleString()} / ${ai.data.total.toLocaleString()} classified · ${ai.data.disagreements.toLocaleString()} differ from manual · ${ai.data.review.toLocaleString()} need review${ai.data.untouched ? ` · ${ai.data.untouched.toLocaleString()} not contacted yet` : ""} · ${ai.data.stale.toLocaleString()} outdated`}
             </p>
             {ai.data?.lastAnalyzedAt && (
               <p className="mt-1 text-muted-foreground">
