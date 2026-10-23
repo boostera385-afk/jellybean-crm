@@ -1,6 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { readFileSync, readdirSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { NUMBER_NAMES, quoNameKey } from "../../supabase/functions/_shared/quo-number-names";
 
 /**
  * The event queue, the demand-driven sweep, and the 24-hour rule.
@@ -55,6 +56,7 @@ const CHAIN = [
   "quo_webhook_and_autoqueue",
   "quo_ai_scope_and_rules",
   "quo_ai_lead_inbox",
+  "quo_ai_inbox_keys",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -468,7 +470,12 @@ describe("switching the rules on", () => {
 describe("each lead is read from the inbox it names", () => {
   const BOTH = "{PNhouston,PNmiami}";
   const record = (names: Record<string, string>) =>
-    call<number>(`public.sync_quo_inboxes('${JSON.stringify(names)}'::jsonb)`);
+    // What the quo-ai-status function sends: quoNameKey(name) -> inbox id.
+    call<number>(
+      `public.sync_quo_inbox_keys('${JSON.stringify(
+        Object.fromEntries(Object.entries(names).map(([id, name]) => [quoNameKey(name), id])),
+      )}'::jsonb)`,
+    );
   const jobInboxes = async () =>
     (
       await db.query<{ lead_id: string; inbox_ids: string[] }>(
@@ -513,8 +520,23 @@ describe("each lead is read from the inbox it names", () => {
     await record({ PNhouston: "Houston Handyman OP1" });
     expect(await record({})).toBe(0);
     const kept = await db.query<{ n: number }>(
-      "SELECT count(*)::int AS n FROM private.quo_inboxes",
+      "SELECT count(*)::int AS n FROM private.quo_inbox_keys",
     );
     expect(kept.rows[0].n).toBe(1);
+  });
+});
+
+describe("the inbox name key is the same in TypeScript and SQL", () => {
+  it("for every lead-card name and the names Quo has changed", async () => {
+    const names = [
+      ...NUMBER_NAMES.map((entry) => entry.name),
+      "Dallas Garage Door (HOLD OUTBOUND)",
+      "Chicago Facebook (No Outbound)",
+      "Los Angeles - Handyman (HOLD OUTBOUND)",
+    ];
+    for (const name of names)
+      expect(await call<string>(`public.quo_name_key('${name.replace(/'/g, "''")}')`)).toBe(
+        quoNameKey(name),
+      );
   });
 });

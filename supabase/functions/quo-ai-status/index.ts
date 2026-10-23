@@ -7,6 +7,7 @@ import {
   safeAiError,
 } from "../_shared/quo-ai-status.ts";
 import { processQuoJob, type QuoWorkerDb } from "../_shared/quo-worker.ts";
+import { inboxKeys } from "../_shared/quo-number-names.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -117,11 +118,15 @@ export async function handleAiStatus(req: Request): Promise<Response> {
       body.action === "configuration" ? 200 : 503,
     );
   }
-  // Each lead names the inbox it is texted from (number_name); recording the
-  // inbox names lets its history be read from that one inbox, not all of them.
-  // Best effort: without them every lead is simply read from every inbox.
-  if (Object.keys(inboxes.names).length) {
-    const { error: syncError } = await db.rpc("sync_quo_inboxes", { p_names: inboxes.names });
+  // Each lead names the inbox it is texted from (number_name). Recording which
+  // inbox each name means - by the inbox's number first, then by its Quo name -
+  // lets its history be read from that one inbox, not all of them. Best
+  // effort: without it every lead is simply read from every inbox.
+  const keys = inboxKeys(
+    inboxes.ids.map((id) => ({ id, name: inboxes.names[id], number: inboxes.numbers[id] })),
+  );
+  if (Object.keys(keys).length) {
+    const { error: syncError } = await db.rpc("sync_quo_inbox_keys", { p_keys: keys });
     if (syncError) console.warn("Could not record Quo inbox names", { message: syncError.message });
   }
   if (body.action === "configuration")
