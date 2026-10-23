@@ -35,6 +35,7 @@ const BASE = `
     assigned_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now(),
     cs_status public.cs_status NOT NULL DEFAULT 'new',
     is_important boolean DEFAULT false, service text, post_text text, context text, created_by uuid,
+    number_name text,
     assigned_to uuid, called_at timestamptz);
   ALTER TABLE public.qualified_leads ENABLE ROW LEVEL SECURITY;
   GRANT USAGE ON SCHEMA public,auth TO authenticated,service_role;
@@ -53,6 +54,7 @@ const CHAIN = [
   "consolidate_cs_statuses",
   "quo_webhook_and_autoqueue",
   "quo_ai_scope_and_rules",
+  "quo_ai_lead_inbox",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -432,7 +434,9 @@ describe("switching the rules on", () => {
     const fresh = new PGlite();
     try {
       await fresh.exec(BASE);
-      for (const name of CHAIN.slice(0, -1)) {
+      // Everything up to, but not including, the migration under test.
+      const cleanup = "quo_ai_scope_and_rules";
+      for (const name of CHAIN.slice(0, CHAIN.indexOf(cleanup))) {
         const files = readdirSync("supabase/migrations").filter((f) => f.endsWith(`_${name}.sql`));
         await fresh.exec(readFileSync(`supabase/migrations/${files[0]}`, "utf8"));
       }
@@ -445,9 +449,7 @@ describe("switching the rules on", () => {
           NULL, interval '6 days');
         SELECT public.test_seed_status('${lead(2)}','classified','converted','delivery_confirmed',
           now() - interval '1 hour', interval '1 hour');`);
-      const last = readdirSync("supabase/migrations").filter((f) =>
-        f.endsWith(`_${CHAIN[CHAIN.length - 1]}.sql`),
-      );
+      const last = readdirSync("supabase/migrations").filter((f) => f.endsWith(`_${cleanup}.sql`));
       await fresh.exec(readFileSync(`supabase/migrations/${last[0]}`, "utf8"));
       const rows = await fresh.query<{ lead_id: string }>(
         "SELECT lead_id FROM public.lead_ai_status ORDER BY lead_id",
@@ -460,5 +462,59 @@ describe("switching the rules on", () => {
     } finally {
       await fresh.close();
     }
+  });
+});
+
+describe("each lead is read from the inbox it names", () => {
+  const BOTH = "{PNhouston,PNmiami}";
+  const record = (names: Record<string, string>) =>
+    call<number>(`public.sync_quo_inboxes('${JSON.stringify(names)}'::jsonb)`);
+  const jobInboxes = async () =>
+    (
+      await db.query<{ lead_id: string; inbox_ids: string[] }>(
+        `SELECT r.lead_id, j.inbox_ids FROM private.quo_ai_sync_jobs j
+           JOIN public.lead_ai_status_runs r ON r.id = j.run_id ORDER BY r.lead_id`,
+      )
+    ).rows;
+  const name = (id: string, value: string | null) =>
+    db.exec(`SET ROLE postgres;
+      UPDATE public.qualified_leads SET number_name = ${value === null ? "NULL" : `'${value}'`}
+       WHERE id = '${id}'; SET ROLE service_role;`);
+
+  it("reads only the named inbox, matching past case, spaces and punctuation", async () => {
+    await record({ PNhouston: "Houston Handyman OP1", PNmiami: "Miami Handyman" });
+    await name(lead(1), "houston handyman  op1");
+    await name(lead(2), "Miami - Handyman");
+    await call<number>(`public.enqueue_quo_ai_due('${BOTH}'::text[], 2)`);
+    expect(await jobInboxes()).toEqual([
+      { lead_id: lead(1), inbox_ids: ["PNhouston"] },
+      { lead_id: lead(2), inbox_ids: ["PNmiami"] },
+    ]);
+  });
+
+  it("falls back to every inbox when the lead names none, or one we do not have", async () => {
+    await record({ PNhouston: "Houston Handyman OP1", PNmiami: "Miami Handyman" });
+    await name(lead(1), null);
+    await name(lead(2), "Dallas Garage Door");
+    await call<number>(`public.enqueue_quo_ai_due('${BOTH}'::text[], 2)`);
+    for (const job of await jobInboxes()) expect(job.inbox_ids).toEqual(["PNhouston", "PNmiami"]);
+  });
+
+  it("never reads an inbox outside the allowed set, even when the lead names it", async () => {
+    await record({ PNhouston: "Houston Handyman OP1", PNmiami: "Miami Handyman" });
+    await name(lead(1), "Miami Handyman");
+    await call<number>(
+      `public.enqueue_quo_ai_batch(NULL,'{PNhouston}'::text[],NULL,NULL,'${lead(1)}'::uuid)`,
+    );
+    expect(await jobInboxes()).toEqual([{ lead_id: lead(1), inbox_ids: ["PNhouston"] }]);
+  });
+
+  it("keeps the recorded names when Quo's list comes back empty", async () => {
+    await record({ PNhouston: "Houston Handyman OP1" });
+    expect(await record({})).toBe(0);
+    const kept = await db.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM private.quo_inboxes",
+    );
+    expect(kept.rows[0].n).toBe(1);
   });
 });
