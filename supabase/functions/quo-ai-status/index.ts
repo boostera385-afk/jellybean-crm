@@ -119,9 +119,9 @@ export async function handleAiStatus(req: Request): Promise<Response> {
     );
   }
   // Each lead names the inbox it is texted from (number_name). Recording which
-  // inbox each name means - by the inbox's number first, then by its Quo name -
-  // lets its history be read from that one inbox, not all of them. Best
-  // effort: without it every lead is simply read from every inbox.
+  // inbox each name means - by the inbox's number - lets its history be read
+  // from that one inbox, not all of them. Best effort: without it every lead
+  // is simply read from every inbox.
   const keys = inboxKeys(
     inboxes.ids.map((id) => ({ id, name: inboxes.names[id], number: inboxes.numbers[id] })),
   );
