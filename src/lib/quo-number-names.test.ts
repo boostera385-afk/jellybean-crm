@@ -50,13 +50,14 @@ describe("which Quo inbox a saved name means", () => {
     expect(keys[quoNameKey("Houston Handyman OP1")]).toBe("PNright");
   });
 
-  it("falls back to the Quo name for an option whose number is not known", () => {
+  it("never matches by name, even when the Quo name is identical", () => {
+    // Numbers only: a matching name with a different number is not that inbox.
     const keys = inboxKeys([{ id: "PNjoc", name: "JOC HOT TUB", number: "+15551112222" }]);
-    expect(keys[quoNameKey("JOC HOT TUB")]).toBe("PNjoc");
+    expect(keys[quoNameKey("JOC HOT TUB")]).toBeUndefined();
   });
 
-  it("maps nothing for a name no inbox answers to", () => {
-    const keys = inboxKeys([{ id: "PN1", name: "Somewhere Else", number: "+15551112222" }]);
-    expect(keys[quoNameKey("Max Mad")]).toBeUndefined();
+  it("ignores Quo inboxes that are not lead-card options", () => {
+    const keys = inboxKeys([{ id: "PNnaples", name: "NAPLES FLORIDA", number: "+12393067796" }]);
+    expect(keys).toEqual({});
   });
 });

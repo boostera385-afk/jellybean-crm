@@ -1,5 +1,5 @@
 /** Read-only Quo integration and shadow classification. Never sends messages. */
-export const AI_STATUS_VERSION = "quo-shadow-v4";
+export const AI_STATUS_VERSION = "quo-shadow-v5";
 /** A delivered message with nothing back for this long is "didn't reply". */
 export const NO_REPLY_MS = 6 * 60 * 60 * 1000;
 export const AI_STATUS_MODEL = "gpt-4.1-mini-2025-04-14";
@@ -248,6 +248,10 @@ export function transportResult(
   assignedAt: string,
   now: number,
   createdAt?: string | null,
+  /** Look for texts from before the lead existed. Only when the history read
+   *  is the lead's own inbox, named on its card; otherwise earlier texts in
+   *  some other inbox say nothing about this lead. */
+  checkPriorContact = true,
 ): AiResult | null {
   // Before the lead existed. The earlier of creation and assignment, so a lead
   // reassigned later does not count its own earlier messages as prior contact.
@@ -255,7 +259,9 @@ export function transportResult(
     Date.parse(assignedAt),
     createdAt && Number.isFinite(Date.parse(createdAt)) ? Date.parse(createdAt) : Infinity,
   );
-  const prior = messages.filter((m) => Date.parse(m.createdAt) < leadStart);
+  const prior = checkPriorContact
+    ? messages.filter((m) => Date.parse(m.createdAt) < leadStart)
+    : [];
   if (prior.length)
     return {
       ...emptyResult("classified", "contacted_before_lead"),
@@ -341,6 +347,8 @@ export async function classifyQuoHistory(options: {
   assignedAt: string;
   /** The lead's own creation time; history before it means a repeat contact. */
   createdAt?: string | null;
+  /** Whether the history is the lead's own inbox; see transportResult. */
+  checkPriorContact?: boolean;
   service: string | null;
   apiKey: string;
   fetcher?: Fetcher;
@@ -378,6 +386,7 @@ export async function classifyQuoHistory(options: {
     assignedAt,
     options.now ?? Date.now(),
     options.createdAt,
+    options.checkPriorContact ?? true,
   );
   if (transport) return withMeta(transport);
   // An inbound media-only reply needs a human, not a guessed image meaning.

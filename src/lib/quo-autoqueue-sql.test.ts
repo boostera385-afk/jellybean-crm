@@ -516,6 +516,24 @@ describe("each lead is read from the inbox it names", () => {
     expect(await jobInboxes()).toEqual([{ lead_id: lead(1), inbox_ids: ["PNhouston"] }]);
   });
 
+  it("tells the worker whether the lead was read from its own inbox only", async () => {
+    await record({ PNhouston: "Houston Handyman OP1" });
+    await name(lead(1), "Houston Handyman OP1");
+    await name(lead(2), null);
+    await call<number>(`public.enqueue_quo_ai_due('${BOTH}'::text[], 2)`);
+    const claim = async () => {
+      const job = await call<{ runId: string; leadId: string; inboxMatched: boolean }>(
+        "public.claim_quo_ai_job()",
+      );
+      // One job is leased at a time; finish this one so the next can be claimed.
+      await db.exec(`DELETE FROM private.quo_ai_sync_jobs WHERE run_id = '${job.runId}'`);
+      return job;
+    };
+    const claimed = [await claim(), await claim()];
+    const matched = Object.fromEntries(claimed.map((job) => [job.leadId, job.inboxMatched]));
+    expect(matched).toEqual({ [lead(1)]: true, [lead(2)]: false });
+  });
+
   it("keeps the recorded names when Quo's list comes back empty", async () => {
     await record({ PNhouston: "Houston Handyman OP1" });
     expect(await record({})).toBe(0);
