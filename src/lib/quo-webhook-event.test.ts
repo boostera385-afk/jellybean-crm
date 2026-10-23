@@ -2,8 +2,63 @@ import { describe, expect, it } from "vitest";
 import { readQuoMessageEvent } from "../../supabase/functions/quo-webhook/quo-webhook-event";
 
 const envelope = (type: string, object: unknown) => JSON.stringify({ type, data: { object } });
+const currentEnvelope = (type: string, resource: unknown, context: unknown) =>
+  JSON.stringify({ apiVersion: "2026-03-30", type, data: { resource, context } });
 
 describe("reading a Quo webhook delivery", () => {
+  it("reads the customer from current API inbound context", () => {
+    expect(
+      readQuoMessageEvent(
+        currentEnvelope(
+          "message.received",
+          { id: "ACin", direction: "incoming", status: "received" },
+          {
+            senderIdentifier: "+19105551234",
+            recipientIdentifiers: ["+19105559999"],
+          },
+        ),
+      ),
+    ).toEqual({ kind: "message", type: "message.received", participant: "+19105551234" });
+  });
+
+  it.each(["message.delivered", "message.undelivered"])(
+    "reads the customer from current API outbound context on %s",
+    (type) => {
+      expect(
+        readQuoMessageEvent(
+          currentEnvelope(
+            type,
+            { id: "ACout", direction: "outgoing", status: type.slice(8) },
+            {
+              senderIdentifier: "+19105559999",
+              recipientIdentifiers: ["+19105551234"],
+            },
+          ),
+        ),
+      ).toEqual({ kind: "message", type, participant: "+19105551234" });
+    },
+  );
+
+  it("does not attribute a current API group message to one lead", () => {
+    expect(
+      readQuoMessageEvent(
+        currentEnvelope(
+          "message.delivered",
+          { direction: "outgoing" },
+          { senderIdentifier: "+19105559999", recipientIdentifiers: ["+19105551234", "+19105555678"] },
+        ),
+      ),
+    ).toEqual({ kind: "ignored", reason: "group_conversation" });
+  });
+
+  it("does not use the old message fields when current API context is missing", () => {
+    expect(
+      readQuoMessageEvent(
+        currentEnvelope("message.received", { direction: "incoming", from: "+19105551234" }, null),
+      ),
+    ).toEqual({ kind: "ignored", reason: "missing_event_context" });
+  });
+
   it("takes the sender as the customer on an inbound message", () => {
     expect(
       readQuoMessageEvent(
