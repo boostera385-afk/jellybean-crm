@@ -57,6 +57,7 @@ const CHAIN = [
   "quo_ai_scope_and_rules",
   "quo_ai_lead_inbox",
   "quo_ai_inbox_keys",
+  "quo_ai_no_caps",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -248,18 +249,16 @@ describe("the demand-driven sweep", () => {
     expect(await queuedLeadIds()).toContain(lead(1));
   });
 
-  it("leaves the last fifth of the daily budget for a person pressing Refresh", async () => {
-    // 400 runs already today: the sweep's own ceiling, with the full 500 still
-    // open to the manual batch.
+  it("has no daily limit for the sweep or the Refresh button", async () => {
+    // 600 runs already today, more than the old 400 and 500 ceilings.
     await db.exec(`INSERT INTO public.lead_ai_status_runs(lead_id,actor_id,source_key,
       manual_status,outcome,started_at,finished_at)
       SELECT '${lead(3)}',NULL,'k','new','classified',now()-interval '2 hours',now()-interval '2 hours'
-      FROM generate_series(1,400)`);
-    expect(await sweep()).toBe(0);
-    // The button still works, which is the point of stopping at 400.
+      FROM generate_series(1,600)`);
+    expect(await sweep(2)).toBe(2);
     expect(
       await call<number>(
-        `public.enqueue_quo_ai_batch('${ADMIN}'::uuid,'${INBOX}'::text[],NULL,NULL,'${lead(1)}'::uuid)`,
+        `public.enqueue_quo_ai_batch('${ADMIN}'::uuid,'${INBOX}'::text[],NULL,NULL,'${lead(3)}'::uuid)`,
       ),
     ).toBe(1);
   });

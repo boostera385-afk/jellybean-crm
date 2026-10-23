@@ -91,11 +91,23 @@ export async function handleAiStatus(req: Request): Promise<Response> {
   if (body.from && body.to && Date.parse(body.from as string) >= Date.parse(body.to as string))
     return json({ error: "Invalid date range" }, 400);
   if (body.action === "work") {
+    // The cron calls once a minute. One job per call held the backlog to a lead
+    // a minute, so keep claiming until the queue is idle or 40 seconds have
+    // passed, which ends the call before the next minute's one starts.
+    const started = Date.now();
     try {
-      return json({
-        mode: "shadow",
-        ...(await processQuoJob(db as unknown as QuoWorkerDb, quoKey, modelKey)),
-      });
+      let last = await processQuoJob(db as unknown as QuoWorkerDb, quoKey, modelKey);
+      let processed = last.processed;
+      const results = [...last.results];
+      while (
+        (last.processed > 0 || ("advanced" in last && last.advanced)) &&
+        Date.now() - started < 40_000
+      ) {
+        last = await processQuoJob(db as unknown as QuoWorkerDb, quoKey, modelKey);
+        processed += last.processed;
+        results.push(...last.results);
+      }
+      return json({ mode: "shadow", ...last, processed, results });
     } catch {
       return json({ error: "Queued worker unavailable; retry shortly." }, 503);
     }
@@ -147,12 +159,11 @@ export async function handleAiStatus(req: Request): Promise<Response> {
   if (body.action === "enqueue") {
     // Demand-driven: enqueue_quo_ai_due queues only leads with a reason to be
     // looked at -- an event, never classified, an unconfirmed delivery, an
-    // edited lead -- and leaves the last fifth of the daily budget for a
-    // person pressing Refresh. A lead nothing happened to is not queued, which
-    // is the whole saving over re-scanning the catalogue in rotation.
+    // edited lead. A lead nothing happened to is not queued, which is the
+    // whole saving over re-scanning the catalogue in rotation.
     const { data: queued, error: sweepError } = await db.rpc("enqueue_quo_ai_due", {
       p_inbox_ids: inboxes.ids,
-      p_limit: 5,
+      p_limit: 25,
       // Results from an older rule set are re-read so every lead in scope ends
       // up classified by the current rules.
       p_policy_version: AI_STATUS_VERSION,
