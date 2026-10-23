@@ -86,6 +86,7 @@ import { listCsTeam, bulkAssignImportantLeads, type CsTeamMember } from "@/lib/c
 import { downloadCsv, formatPhone, phoneSearchPattern, phoneDigitsMatch } from "@/lib/crm-lite";
 import type { CsStatus, LeadNote } from "@/lib/crm-types";
 import { NumberNameSelect } from "@/components/number-name-select";
+import { numberNameLabel } from "../../supabase/functions/_shared/quo-number-names";
 import {
   STATUS_LABEL,
   STATUS_TONE,
@@ -1995,7 +1996,9 @@ function CsLeadsTable({
                     "-"
                   )}
                 </td>
-                <td className="px-3 py-2 text-muted-foreground">{lead.number_name || "-"}</td>
+                <td className="px-3 py-2 text-muted-foreground">
+                  {numberNameLabel(lead.number_name) || "-"}
+                </td>
                 <td className="px-3 py-2">
                   <StatusBadge status={lead.cs_status} />
                 </td>

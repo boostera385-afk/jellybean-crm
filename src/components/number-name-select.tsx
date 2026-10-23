@@ -11,47 +11,15 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  NUMBER_NAMES,
+  formatInboxPhone,
+  numberNameLabel,
+} from "../../supabase/functions/_shared/quo-number-names";
 
-export const NUMBER_NAME_OPTIONS = [
-  "Appliance Repair Nationwide MIS",
-  "Atlanta Georgia Appliance Repair / GD",
-  "Atlanta Georgia Handyman",
-  "Austin Handyman N/FB",
-  "Chicago Facebook",
-  "Chicago Handyman",
-  "Dallas Garage Door",
-  "Exterior Painting Nationwide / TV Mounting",
-  "Garage Door NATIONWIDE MIS",
-  "Houston Facebook ND Garage Door OP1",
-  "Houston Handyman",
-  "Houston Handyman OP1",
-  "Indianapolis Handyman",
-  "JOC HOT TUB",
-  "Junk Removal Nationwide MIS",
-  "Los Angeles - Handyman",
-  "Los Angeles Appliance OP1",
-  "Los Angeles Facebook OP1",
-  "LOS ANGELES GARAGE DOOR / CLEANING / PLUMBING",
-  "Los Angeles Handyman FB",
-  "Max Mad",
-  "Miami Appliance Repair",
-  "Miami FB/ND Garage Door OP1",
-  "Miami Handyman",
-  "Nationwide Christmas Lights",
-  "Nationwide Drywall Patch Repair",
-  "Nationwide Plumbing FB / Nationwide Handyman",
-  "New Jersey Handyman",
-  "New York Handyman",
-  "Orange County Appliance Repair",
-  "Orange County Handyman OP1",
-  "San Diego - Appliance Repair",
-  "San Diego - Handyman",
-  "San Diego Garage Door OP1",
-  "San Jose Appliance Repair",
-  "San Jose Handyman",
-  "Santa Clarita Handyman",
-  "Sliding Door",
-] as const;
+/** The saved values. The list and its inbox numbers live in one shared file,
+ *  so the lead card and the Quo matching cannot disagree. */
+export const NUMBER_NAME_OPTIONS = NUMBER_NAMES.map((entry) => entry.name);
 
 export function NumberNameSelect({
   value,
@@ -86,7 +54,7 @@ export function NumberNameSelect({
           )}
           onClick={(e) => e.stopPropagation()}
         >
-          <span className="truncate">{value || placeholder}</span>
+          <span className="truncate">{value ? numberNameLabel(value) : placeholder}</span>
           <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -96,9 +64,14 @@ export function NumberNameSelect({
         onClick={(e) => e.stopPropagation()}
       >
         <Command
-          filter={(value, search) => (value.toLowerCase().startsWith(search.toLowerCase()) ? 1 : 0)}
+          filter={(value, search, keywords) => {
+            if (value.toLowerCase().startsWith(search.toLowerCase())) return 1;
+            // Typing digits finds the inbox by its number, however it is written.
+            const digits = search.replace(/\D/g, "");
+            return digits.length >= 3 && keywords?.some((phone) => phone.includes(digits)) ? 1 : 0;
+          }}
         >
-          <CommandInput placeholder="Search... (matches start)" className="h-9" />
+          <CommandInput placeholder="Search name or number..." className="h-9" />
           <CommandList>
             <CommandEmpty>No match.</CommandEmpty>
             <CommandGroup>
@@ -115,13 +88,16 @@ export function NumberNameSelect({
                 <Check className={cn("mr-2 h-3.5 w-3.5", !value ? "opacity-100" : "opacity-0")} />
                 No number name
               </CommandItem>
-              {NUMBER_NAME_OPTIONS.map((opt) => (
+              {NUMBER_NAMES.map(({ name: opt, phone }) => (
                 <CommandItem
                   key={opt}
                   value={opt}
-                  onSelect={(v) => {
-                    onChange(v);
-                    onCommit?.(v);
+                  keywords={phone ? [phone.replace(/\D/g, "")] : undefined}
+                  // Save the name itself, never the displayed label with its
+                  // number: number_name is matched to the Quo inbox by name.
+                  onSelect={() => {
+                    onChange(opt);
+                    onCommit?.(opt);
                     setOpen(false);
                   }}
                   className="text-[12.5px]"
@@ -129,7 +105,12 @@ export function NumberNameSelect({
                   <Check
                     className={cn("mr-2 h-3.5 w-3.5", value === opt ? "opacity-100" : "opacity-0")}
                   />
-                  {opt}
+                  <span className="flex-1 truncate">{opt}</span>
+                  {phone && (
+                    <span className="ml-2 shrink-0 tabular-nums text-[11px] text-muted-foreground">
+                      {formatInboxPhone(phone)}
+                    </span>
+                  )}
                 </CommandItem>
               ))}
             </CommandGroup>

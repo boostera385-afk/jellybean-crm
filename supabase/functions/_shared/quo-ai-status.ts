@@ -86,9 +86,11 @@ export async function resolveQuoPhoneIds(options: {
 }): Promise<{
   ids: string[];
   source: "configured" | "discovered";
-  /** Inbox id -> its name in Quo, for matching a lead's number_name. Names
-   *  only: never the inbox's phone number or its users. */
+  /** Inbox id -> its name in Quo, for matching a lead's number_name. */
   names: Record<string, string>;
+  /** Inbox id -> its own (business) number, which identifies it even after a
+   *  rename. Never the inbox's users. */
+  numbers: Record<string, string>;
 }> {
   const requested = [
     ...new Set(
@@ -133,11 +135,15 @@ export async function resolveQuoPhoneIds(options: {
   // Never silently analyze only a subset of a large account.
   if (ids.length > 100) throw new Error("quo_inbox_allowlist_required");
   const names: Record<string, string> = {};
-  for (const row of body.data as Array<{ id: string; name?: unknown }>) {
+  const numbers: Record<string, string> = {};
+  for (const row of body.data as Array<{ id: string; name?: unknown; number?: unknown }>) {
+    if (!ids.includes(row.id)) continue;
     const name = typeof row.name === "string" ? row.name.trim() : "";
-    if (ids.includes(row.id) && name.length > 0 && name.length <= 200) names[row.id] = name;
+    if (name.length > 0 && name.length <= 200) names[row.id] = name;
+    if (typeof row.number === "string" && /^\+?[\d\s().-]{7,20}$/.test(row.number))
+      numbers[row.id] = row.number;
   }
-  return { ids, source: requested.length ? "configured" : "discovered", names };
+  return { ids, source: requested.length ? "configured" : "discovered", names, numbers };
 }
 
 export async function fetchQuoHistoryPage(options: {
