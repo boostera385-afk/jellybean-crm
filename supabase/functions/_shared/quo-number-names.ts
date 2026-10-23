@@ -8,8 +8,8 @@
  * name stops matching it.
  *
  * Numbers were read from screenshots of the Quo inbox list on 2026-10-23. A
- * null number is an option that was not in those screenshots; it still
- * matches by name.
+ * null number is an inbox no longer in use: it stays selectable for the leads
+ * already saved with it, but is never matched to a Quo inbox.
  */
 export const NUMBER_NAMES: ReadonlyArray<{ name: string; phone: string | null }> = [
   { name: "Appliance Repair Nationwide MIS", phone: null },
@@ -82,18 +82,15 @@ export function numberNameLabel(name: string | null | undefined): string {
 /**
  * Which Quo inbox each saved number_name means, keyed by quoNameKey.
  *
- * Every inbox answers to its own Quo name. A lead-card option answers to the
- * inbox with its number, which wins over the name: Quo has added "(HOLD
- * OUTBOUND)" to some names, and a number does not change when a name does.
+ * By number only. Quo's inbox names have drifted from the lead-card names
+ * ("Dallas Garage Door (HOLD OUTBOUND)"), and a number does not change when a
+ * name does. An option with no number is not matched at all: those are inboxes
+ * no longer in use. Inboxes in Quo that are not lead-card options are ignored.
  */
 export function inboxKeys(
   inboxes: ReadonlyArray<{ id: string; name?: string | null; number?: string | null }>,
 ): Record<string, string> {
   const keys: Record<string, string> = {};
-  for (const inbox of inboxes) {
-    const key = quoNameKey(inbox.name);
-    if (key) keys[key] = inbox.id;
-  }
   for (const entry of NUMBER_NAMES) {
     if (!entry.phone) continue;
     const inbox = inboxes.find((candidate) => lastTen(candidate.number) === lastTen(entry.phone));

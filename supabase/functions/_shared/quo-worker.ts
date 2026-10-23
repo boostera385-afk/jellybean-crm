@@ -36,6 +36,8 @@ type SyncJob = {
   extraNumbers: string[] | null;
   assignedAt: string;
   createdAt?: string | null;
+  /** The job reads exactly the inbox the lead's number_name maps to. */
+  inboxMatched?: boolean;
   service: string | null;
 };
 
@@ -133,6 +135,8 @@ export async function processQuoJob(
         messages: checkpoint.messages,
         assignedAt: job.assignedAt,
         createdAt: job.createdAt,
+        // Strict: a job from before the claim reported it does not qualify.
+        checkPriorContact: job.inboxMatched === true,
         service: job.service,
         apiKey: modelKey,
         previous: cached,

@@ -244,6 +244,18 @@ describe("evidence-based shadow status", () => {
       "already_received_before",
     );
   });
+  it("skips 'already received before' when the lead is not mapped to its own inbox", () => {
+    // Read across every inbox, an older message may belong to another lead.
+    const before = outgoing({ id: "ACold", createdAt: "2026-09-01T10:00:00Z" });
+    const result = transportResult(
+      [before, outgoing()],
+      assigned,
+      now,
+      "2026-10-20T09:00:00Z",
+      false,
+    );
+    expect(result?.status).toBe("converted");
+  });
   it("does not count a lead's own messages from before a reassignment as prior contact", () => {
     // Created 09:00, messaged 09:30, reassigned 10:00 with nothing since.
     const own = outgoing({ createdAt: "2026-10-20T09:30:00Z" });
