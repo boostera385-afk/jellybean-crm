@@ -13,7 +13,7 @@
  */
 export const NUMBER_NAMES: ReadonlyArray<{ name: string; phone: string | null }> = [
   { name: "Appliance Repair Nationwide MIS", phone: null },
-  { name: "Atlanta Georgia Appliance Repair / GD", phone: "+14706232133" },
+  { name: "Atlanta Georgia Appliance Repair / GD", phone: "+14708232133" },
   { name: "Atlanta Georgia Handyman", phone: "+14709448210" },
   { name: "Austin Handyman N/FB", phone: "+17374027035" },
   { name: "Chicago Facebook", phone: "+18723287251" },
