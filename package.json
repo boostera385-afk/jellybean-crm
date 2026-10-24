@@ -17,6 +17,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:crisp-sql": "node scripts/test-crisp-pipeline.mjs",
+    "test:backend-sql": "node scripts/test-backend-hot-paths.mjs",
     "test:crisp-chat-safety": "node scripts/test-crisp-chat-safety.mjs"
   },
   "dependencies": {

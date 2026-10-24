@@ -57,12 +57,20 @@ export function readQuoMessageEvent(raw: string): QuoEventReadResult {
   const data = envelope.data;
   if (!data || typeof data !== "object" || Array.isArray(data))
     return { kind: "ignored", reason: "missing_event_data" };
-  const object = (data as Record<string, unknown>).object;
+  const payload = data as Record<string, unknown>;
+  const currentVersion = "resource" in payload;
+  const object = currentVersion ? payload.resource : payload.object;
   if (!object || typeof object !== "object" || Array.isArray(object))
     return { kind: "ignored", reason: "missing_event_object" };
   const message = object as Record<string, unknown>;
+  const context = payload.context;
+  if (currentVersion && (!context || typeof context !== "object" || Array.isArray(context)))
+    return { kind: "ignored", reason: "missing_event_context" };
+  const participants = context as Record<string, unknown> | undefined;
 
-  const { direction, from, to } = message;
+  const direction = message.direction;
+  const from = currentVersion ? participants?.senderIdentifier : message.from;
+  const to = currentVersion ? participants?.recipientIdentifiers : message.to;
   if (direction !== undefined && direction !== "incoming" && direction !== "outgoing")
     return { kind: "ignored", reason: "unexpected_direction" };
   const inbound =
@@ -83,7 +91,7 @@ export function readQuoMessageEvent(raw: string): QuoEventReadResult {
   const number =
     typeof recipient === "string"
       ? recipient
-      : recipient && typeof recipient === "object" && !Array.isArray(recipient)
+      : !currentVersion && recipient && typeof recipient === "object" && !Array.isArray(recipient)
         ? (recipient as Record<string, unknown>).phoneNumber
         : undefined;
   if (typeof number !== "string" || !number.trim())

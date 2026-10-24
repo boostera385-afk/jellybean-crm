@@ -82,7 +82,8 @@ export function useRealtimeSync(role: AppRole | null) {
           (payload: { eventType: string; new?: { key?: string; value?: unknown } }) => {
             if (payload.new?.key === GOOGLE_SHEETS_SHARED_STATE_KEY) {
               const cfg = payload.new.value as
-                { webhookUrl?: string; autoSync?: boolean } | undefined;
+                | { webhookUrl?: string; autoSync?: boolean }
+                | undefined;
               if (cfg && typeof cfg === "object") {
                 setGoogleSheetsConfigInMemory(cfg.webhookUrl, cfg.autoSync);
               }
