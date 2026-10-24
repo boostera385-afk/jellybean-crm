@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { crispFetch, type RpcClient } from "../_shared/crisp-api.ts";
 import { mapConcurrent, sendOutcome, timingSafeEqual } from "../_shared/crisp-policy.ts";
 import { countCheckDue, readPresence } from "../_shared/crisp-presence.ts";
+import { workspaceHeaders } from "../_shared/crisp-worker-credentials.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -56,11 +57,12 @@ async function rpc(admin: Admin, name: string, args: Record<string, unknown>) {
 async function reconcile(
   admin: Admin,
   websiteId: string,
-  headers: Record<string, string>,
+  getHeaders: () => Promise<Record<string, string>>,
   workspace: Workspace,
 ) {
   const token = await rpc(admin, "crisp_claim_presence", { p_website_id: websiteId });
   if (!token) return;
+  const headers = await getHeaders();
   const startedAt = new Date().toISOString();
   const start = performance.now();
   // Arrival hints request a one-page identity read, never a full sweep or
@@ -135,12 +137,14 @@ async function reconcile(
 async function greet(
   admin: Admin,
   websiteId: string,
-  headers: Record<string, string>,
+  getHeaders: () => Promise<Record<string, string>>,
 ): Promise<number> {
   const jobs = (await rpc(admin, "crisp_claim_greetings", {
     p_website_id: websiteId,
     p_limit: 2,
   })) as Job[];
+  if (!jobs.length) return 0;
+  const headers = await getHeaders();
   let sent = 0;
   await mapConcurrent(jobs, 2, async (job) => {
     // Reserve quota BEFORE marking a send as started, so budget failures remain
@@ -245,26 +249,18 @@ serve(async (req) => {
     await mapConcurrent((workspaces ?? []) as Workspace[], 3, async (workspace) => {
       try {
         if (!workspace.credential_secret_id) throw new Error("Workspace credentials missing");
-        const secret = (await rpc(admin, "crisp_get_workspace_secret", {
-          p_secret_id: workspace.credential_secret_id,
-        })) as Record<string, unknown> | null;
-        const tokenId = secret?.token_id ?? secret?.tokenId;
-        const tokenKey = secret?.token_key ?? secret?.tokenKey;
-        if (!tokenId || !tokenKey) throw new Error("Workspace credentials missing");
-        const headers = {
-          Authorization: `Basic ${btoa(`${tokenId}:${tokenKey}`)}`,
-          "X-Crisp-Tier": "website",
-          "Content-Type": "application/json",
-        };
+        // Idle ticks must not decrypt credentials. Resolve at most once, only
+        // after a greeting or presence lease actually needs an external call.
+        const getHeaders = workspaceHeaders(admin, workspace.credential_secret_id);
         // Event-derived presence must be greeted without waiting for REST polling.
-        totals.push(await greet(admin, workspace.crisp_website_id, headers));
+        totals.push(await greet(admin, workspace.crisp_website_id, getHeaders));
         if (
           body.greetingsOnly !== true &&
           (!workspace.crisp_cooldown_until ||
             Date.parse(workspace.crisp_cooldown_until) <= Date.now())
         ) {
-          await reconcile(admin, workspace.crisp_website_id, headers, workspace);
-          totals.push(await greet(admin, workspace.crisp_website_id, headers));
+          await reconcile(admin, workspace.crisp_website_id, getHeaders, workspace);
+          totals.push(await greet(admin, workspace.crisp_website_id, getHeaders));
         }
       } catch (error) {
         failures.push(workspace.crisp_website_id);

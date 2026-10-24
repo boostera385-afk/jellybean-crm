@@ -51,6 +51,11 @@ import {
   type CrispVisitor,
 } from "@/lib/crisp.functions";
 import { mergeIncomingMessage } from "@/lib/crisp-chat-messages";
+import {
+  conversationSummaryChanged,
+  createCoalescedRefresh,
+  workspaceSummaryChanged,
+} from "@/lib/crisp-refresh";
 import { useCrispVisitors } from "@/hooks/use-crisp-visitors";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -978,6 +983,9 @@ function CrispInboxInner() {
 
   // Stable Realtime Subscriptions (Single channel created ONCE on mount)
   useEffect(() => {
+    const refreshCounts = createCoalescedRefresh(async () => {
+      if (document.visibilityState !== "hidden") await loadWorkspaceCounts();
+    });
     const channel = supabase
       .channel("crisp_inbox_realtime_stable")
       .on(
@@ -991,8 +999,8 @@ function CrispInboxInner() {
           // and scroll position.
           //
           // For INSERT events we prepend/re-sort locally; for UPDATE we patch
-          // in place. For DELETE we remove. Counts are always refreshed.
-          loadWorkspaceCounts();
+          // in place. Only summary-relevant changes require another DB read.
+          if (conversationSummaryChanged(payload)) refreshCounts.schedule();
 
           const changedRow = (payload.new ?? payload.old) as ConversationRecord | undefined;
           if (!changedRow?.id) {
@@ -1109,16 +1117,22 @@ function CrispInboxInner() {
           }
         },
       )
-      .on("postgres_changes", { event: "*", schema: "public", table: "crisp_workspaces" }, () => {
-        loadWorkspaces();
-      })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "crisp_workspaces" },
+        (payload) => {
+          if (workspaceSummaryChanged(payload)) refreshCounts.schedule();
+          loadWorkspaces();
+        },
+      )
       .subscribe();
 
     // ── Background Auto-Sync Heartbeat (Every 30s) ──────────────────────────
     // Automatically refreshes conversations, workspace counts, and active chat
     // so new messages always appear without requiring manual sync clicks.
     const pollInterval = setInterval(() => {
-      loadWorkspaceCounts();
+      if (document.visibilityState === "hidden") return;
+      refreshCounts.schedule();
       loadConversations(selectedWebsiteIdRef.current, true);
       const activeId = selectedConversationIdRef.current;
       if (activeId) {
@@ -1128,7 +1142,7 @@ function CrispInboxInner() {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        loadWorkspaceCounts();
+        refreshCounts.schedule();
         loadConversations(selectedWebsiteIdRef.current, true);
         const activeId = selectedConversationIdRef.current;
         if (activeId) {
@@ -1139,6 +1153,7 @@ function CrispInboxInner() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
+      refreshCounts.dispose();
       clearInterval(pollInterval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       supabase.removeChannel(channel);
