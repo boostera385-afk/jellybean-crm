@@ -3,11 +3,9 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { AppRole } from "@/hooks/use-auth";
 import {
-  syncLeadToGoogleSheet,
   initGoogleSheetsConfig,
   setGoogleSheetsConfigInMemory,
   GOOGLE_SHEETS_SHARED_STATE_KEY,
-  type LeadSyncPayload,
 } from "@/lib/google-sheets-sync";
 
 // Map each replicated table to the React Query keys that should refresh
@@ -61,40 +59,20 @@ export function useRealtimeSync(role: AppRole | null) {
 
     for (const table of tables) {
       if (table === "qualified_leads") {
-        // Full listener for qualified_leads: INSERT, UPDATE, DELETE with Google Sheets sync
+        // Refresh only. The Google Sheets mirror used to run from here, which
+        // meant EVERY signed-in client posted the same webhook for the same
+        // change - the per-tab dedup cannot see other tabs - so one edit
+        // produced as many Sheets writes as there were people online. Every
+        // write path already syncs from its own call site, so this is pure
+        // duplication; see the auto-rephrase handler in app.cs-leads.tsx for
+        // the one server-side write that now mirrors itself.
         (channel as unknown as { on: (...args: unknown[]) => typeof channel }).on(
           "postgres_changes",
           { event: "*", schema: "public", table: "qualified_leads" },
-          (payload: {
-            eventType: "INSERT" | "UPDATE" | "DELETE";
-            new?: Record<string, unknown>;
-            old?: Record<string, unknown>;
-          }) => {
+          () => {
             const invalidate = invalidateRef.current;
-            if (invalidate) {
-              for (const key of TABLE_QUERY_KEYS.qualified_leads) invalidate(key);
-            }
-
-            // Sync with Google Sheets automatically in the background
-            try {
-              if (payload.eventType === "DELETE") {
-                const id = String(payload.old?.id || "");
-                if (id) {
-                  void syncLeadToGoogleSheet("DELETE", {
-                    id,
-                    customer_number: (payload.old?.customer_number as string) || null,
-                    customer_name: (payload.old?.customer_name as string) || null,
-                  });
-                }
-              } else if (payload.new && payload.new.id) {
-                void syncLeadToGoogleSheet(
-                  payload.eventType,
-                  payload.new as unknown as LeadSyncPayload,
-                );
-              }
-            } catch (err) {
-              console.warn("[RealtimeGoogleSheetsSync] Error:", err);
-            }
+            if (!invalidate) return;
+            for (const key of TABLE_QUERY_KEYS.qualified_leads) invalidate(key);
           },
         );
       } else if (table === "shared_state") {

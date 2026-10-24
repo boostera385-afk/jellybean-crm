@@ -44,10 +44,15 @@ export type AskCatalogue = {
   /** object key -> [singular, plural] as the team writes it to customers.
    *  These fill the `{object}` / `{objects}` slots in a wording phrase. */
   objectLabels: Record<string, [string, string]>;
-  /** object key -> every plain noun its pattern recognises, in declaration
-   *  order. Used to keep the customer's own word: a pattern covers deck,
-   *  patio and porch, but only one of them is the label. */
+  /** object key -> the nouns, of those its pattern recognises, that the team
+   *  itself puts in a slot naming the thing ("a picture of the fridge"), in
+   *  declaration order. Used to keep the customer's own word: their porch stays
+   *  a porch. Words for the job ("paint", "pressure wash") never qualify. */
   objectNouns: Record<string, string[]>;
+  /** object key -> noun -> the plural the TEAM writes for it ("couch" ->
+   *  "couches"). A noun absent here has no attested plural, so a plural slot
+   *  uses the label's own plural instead of inventing one ("furnitures"). */
+  objectNounPlurals: Record<string, Record<string, string>>;
   /** Action patterns, applied only after object spans are masked out. */
   actionPatterns: [string, string][];
   factPatterns: Record<string, string>;

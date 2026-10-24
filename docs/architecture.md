@@ -375,10 +375,24 @@ concrete/driveway/sidewalk/slab - and only one is the catalogue label, so a
 porch was being called "the deck", a concrete slab "the driveway" and a French
 drain "the sink". `labelFor` substitutes only when the label itself is absent
 from the post, which leaves every attested phrase intact and changed 10.1% of
-messages to 0.02%. The noun list is derived from each pattern by the
+messages to 0.02%. The candidate nouns are derived from each pattern by the
 generator, skipping any alternative carrying group syntax, since those are
 qualifiers or inflected stems rather than nouns ("estate cleanout", and
 `\bmov(?:e|ing|ers)\b`, which otherwise yielded "mov").
+
+A pattern also recognises words for the JOB, though, and those were being
+substituted for the thing: "exterior house painters" produced "the size of the
+paint that needs to be painted" on 1,034 drafts, alongside "a picture of the
+pressure wash" and "the assembls that need to be assembled". Since
+`2026-10-22.catalogue-v3.3-grounded` a candidate is kept only once the team has
+itself put it in a slot naming the thing ("a picture of the fridge") in at least
+three messages; job words score zero there and drop out without being listed.
+Plurals are the team's own (`objectNounPlurals`) or the label's, never built
+blindly into "furnitures" or "vanitys", and the runtime match is whole-word, so
+"painters" no longer matches "paint". Across the export this took questions
+the team never wrote from 8.1% of leads to 1.4%, and most of what remains reads
+correctly but is simply not verbatim ("the area where the switch needs to be
+installed").
 
 A full replay of the 27,554-lead export through the live selection code is the
 standing audit. It reports zero re-asks on eight of the nine facts; the ninth,
@@ -386,13 +400,37 @@ brand, sits at 0.07% on multi-appliance posts where the brand is far from the
 appliance it belongs to, which is the adjacency guard correctly preferring to
 ask again over attributing one appliance's brand to another.
 
-Every one of the phrases the catalogue can emit appears verbatim in the
-delivered messages; a test asserts this over the whole catalogue. The single
+Every one of the phrase templates the catalogue can emit appears verbatim in
+the delivered messages; a test asserts this over the whole catalogue. A filled
+template need not, which is where the job-word nouns above had slipped through. The single
 exception anywhere in the system is the chip's last-resort service context
 ("the service you need"), reached on 0.41% of the export where there is no
 service column, no identifiable object and no usable context. On those rows the
 team wrote a trade it had inferred by hand, so there is no house wording to
 copy; the string is flagged in code and by test as a copy decision.
+
+#### The service phrase is checked against the data too
+
+Since `2026-10-22.catalogue-v3.3-grounded` the one phrase the model writes,
+"I saw that you are looking for \_\_\_.", is held to two checks in
+`cs-context-grounding.ts`. Grounded: every word is in that lead or is one of the
+team's own words for naming the work, a list `scripts/build-context-vocabulary.py`
+derives from 25,068 delivered phrases (stems the team adds in at least three
+messages). The team builds its phrases from exactly those two sources: on a
+held-out fifth of its messages the rule accepts 94.6% of them. Numbers, brands
+and the team's own typos are kept out of the list, because a word being in some
+other message does not license it in this one. Coherent: when a question calls
+the item by our label ("how big the unit is"), the phrase must name it, as the
+team's does in 98.9% of 7,113 such messages.
+
+A phrase that fails gets one retry naming exactly what was refused. If it still
+uses a word the lead lacks, the phrase falls back to "a {service} service",
+built only from the lead's own Service field; with no service, nothing is
+composed and the agent's draft is left alone. If it still does not name the
+item, the questions about that item are dropped for ones that need none. The
+brand list is likewise derived from the leads now rather than typed by hand,
+which is what stopped "a Thermador freezer repair service" from being followed
+by a request for the brand.
 
 Classification is **batched** — `.in()` lookups chunked by 10, posts under 20
 characters skipped, duplicates excluded, at most 50 rows per request, results

@@ -722,6 +722,22 @@ export const DOC_SECTIONS: DocSection[] = [
         kind: "p",
         text: "The beta reads all pages of Quo SMS history, not call transcripts or attachment contents. Partial history is never classified. In-flight checkpoints are encrypted, backend-only, removed on completion, and expire after 24 hours. Shared phone numbers, incomplete history, missing delivery receipts and uncertain intent require review. No messages are sent and AI never changes manual lead statuses. Compare disagreements against the source chat during the initial week; agreement with manual status is not an accuracy guarantee.",
       },
+      {
+        kind: "p",
+        text: "Analysis now runs unattended as well as on demand. A signed Quo webhook (message.received, message.delivered, message.undelivered) records that something happened to a phone number and parks the matching leads for a recheck; set QUO_WEBHOOK_SECRET to the whsec_ key Quo returns when the webhook is created, and create it on the current API version, because the legacy OpenPhone signature scheme is not interchangeable. The webhook sends no message and calls neither Quo nor a model: it is one indexed lookup per event.",
+      },
+      {
+        kind: "p",
+        text: "A five-minute sweep then enqueues only leads with a reason to be looked at, in that order: an event arrived, never classified, a delivery that had not confirmed yet, the lead itself was edited. A lead nothing happened to is not queued at all, which is the saving over re-scanning the catalogue in rotation at up to one paged Quo request per inbox per customer number. The sweep stops at 400 of the 500 daily runs so Refresh always still works, and only tops up an empty queue, never a backlog.",
+      },
+      {
+        kind: "p",
+        text: "The no-reply rule needs no provider call: Delivered with nothing since is arithmetic, and no webhook can report the passage of time, so a quarter-hourly job advances those rows in SQL. It will not do so when no webhook delivery has arrived for a day, because silence is then no evidence that nobody replied; those leads are re-read from Quo by the sweep instead.",
+      },
+      {
+        kind: "p",
+        text: "AI status applies to leads created from five days before it was switched on, and every lead after; older leads have none. It is a separate tag, shown to administrators only, and never changes the manual status. A lead nothing has been sent to has no AI status, so New stays untouched. From Quo's own records, with no model: a number that was texting with us before the lead was created is Already received before; an undelivered message is Undeliver; a delivered one is Delivered, and becomes CX didn't replied after 6 hours with nothing back. When the customer replies, the model reads the chat for CX interested, CX not interested, Wrong number, Already got someone or Service provider himself. A later reply re-queues the lead, so Delivered and CX didn't replied update when the customer answers.",
+      },
     ],
   },
   {

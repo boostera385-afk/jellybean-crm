@@ -7,6 +7,7 @@ import {
   normalizeQuoPhone,
   resolveQuoPhoneIds,
   safeAiError,
+  NO_REPLY_MS,
   transportResult,
   validateIntent,
   type QuoMessage,
@@ -44,24 +45,41 @@ describe("automatic Quo inbox discovery", () => {
     expect(isQuoConfigurationProbe("forged", "backend-secret", "configuration")).toBe(false);
     expect(isQuoConfigurationProbe("", "", "configuration")).toBe(false);
     expect(isQuoWorker("backend-secret", "backend-secret", "work")).toBe(true);
+    // The unattended sweep is the cron's alone: it picks its own leads, with no
+    // date range and nobody to attribute it to.
+    expect(isQuoWorker("backend-secret", "backend-secret", "enqueue")).toBe(true);
+    // "refresh" carries a person's chosen range and must stay theirs.
     expect(isQuoWorker("backend-secret", "backend-secret", "refresh")).toBe(false);
     expect(isQuoWorker("forged", "backend-secret", "work")).toBe(false);
+    expect(isQuoWorker("forged", "backend-secret", "enqueue")).toBe(false);
+    expect(isQuoWorker("backend-secret", "backend-secret", undefined)).toBe(false);
   });
   it("discovers IDs with only an API key and keeps credentials server-side", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
           data: [
-            { id: "PN1", number: "+12025550101", users: [{ email: "private@example.com" }] },
+            {
+              id: "PN1",
+              name: "Houston Handyman OP1",
+              number: "+12025550101",
+              users: [{ email: "private@example.com" }],
+            },
             { id: "PN2" },
           ],
         }),
       ),
     );
-    expect(await resolveQuoPhoneIds({ apiKey: "test-only", fetcher })).toEqual({
+    const result = await resolveQuoPhoneIds({ apiKey: "test-only", fetcher });
+    // The inbox's name and its own business number are kept so a lead's
+    // number_name can pick its inbox; the inbox's users never leave here.
+    expect(result).toEqual({
       ids: ["PN1", "PN2"],
       source: "discovered",
+      names: { PN1: "Houston Handyman OP1" },
+      numbers: { PN1: "+12025550101" },
     });
+    expect(JSON.stringify(result)).not.toMatch(/private@example/);
     expect(fetcher.mock.calls[0][0]).toBe("https://api.quo.com/v1/phone-numbers");
     expect(fetcher.mock.calls[0][1].headers.Authorization).toBe("test-only");
   });
@@ -71,7 +89,7 @@ describe("automatic Quo inbox discovery", () => {
       .mockResolvedValue(new Response(JSON.stringify({ data: [{ id: "PN1" }, { id: "PN2" }] })));
     expect(
       await resolveQuoPhoneIds({ apiKey: "test", configuredIds: " PN2,PN2 ", fetcher }),
-    ).toEqual({ ids: ["PN2"], source: "configured" });
+    ).toEqual({ ids: ["PN2"], source: "configured", names: {}, numbers: {} });
   });
   it.each([
     { body: { data: [] }, error: "no_quo_phone_numbers" },
@@ -193,21 +211,66 @@ describe("evidence-based shadow status", () => {
     for (const status of ["sent", "queued"])
       expect(transportResult([outgoing({ status })], assigned, now)?.state).toBe("review");
   });
-  it("uses delivery receipts and an explicit 24h no-response window", () => {
+  it("reads delivery from Quo's receipt, with no model", () => {
     expect(transportResult([outgoing()], assigned, now)?.status).toBe("converted");
     expect(transportResult([outgoing({ status: "undelivered" })], assigned, now)?.status).toBe(
       "undeliver",
     );
-    expect(transportResult([outgoing()], assigned, now + 25 * 3600_000)?.status).toBe(
-      "cx_didnt_replied",
-    );
     expect(transportResult([message()], assigned, now)).toBeNull();
   });
-  it("does not apply historical outcomes to a new assignment or invent unmatched outcomes", () => {
-    expect(
-      transportResult([outgoing({ createdAt: "2025-01-01T00:00:00Z" })], assigned, now)?.status,
-    ).toBe("new");
-    expect(transportResult([], assigned, now)?.state).toBe("unmatched");
+  it("calls it didn't reply after exactly 6 hours with nothing back", () => {
+    // outgoing() is sent at 11:00; `now` is 12:00.
+    const sent = Date.parse("2026-10-20T11:00:00Z");
+    const at = (ms: number) => transportResult([outgoing()], assigned, ms);
+    expect(at(sent + NO_REPLY_MS - 1)?.status).toBe("converted");
+    expect(at(sent + NO_REPLY_MS)).toMatchObject({
+      status: "cx_didnt_replied",
+      reasonCode: "no_reply_after_6h",
+    });
+    expect(NO_REPLY_MS).toBe(6 * 3600_000);
+  });
+  it("marks a lead we were already talking to before it was created", () => {
+    const created = "2026-10-20T09:00:00Z";
+    const before = outgoing({ id: "ACold", createdAt: "2026-09-01T10:00:00Z" });
+    expect(transportResult([before, outgoing()], assigned, now, created)).toMatchObject({
+      state: "classified",
+      status: "already_received_before",
+      reasonCode: "contacted_before_lead",
+      evidenceIds: ["ACold"],
+    });
+    // A customer who wrote to us first counts the same.
+    const theyWrote = message({ id: "ACthem", createdAt: "2026-08-01T10:00:00Z" });
+    expect(transportResult([theyWrote], assigned, now, created)?.status).toBe(
+      "already_received_before",
+    );
+  });
+  it("skips 'already received before' when the lead is not mapped to its own inbox", () => {
+    // Read across every inbox, an older message may belong to another lead.
+    const before = outgoing({ id: "ACold", createdAt: "2026-09-01T10:00:00Z" });
+    const result = transportResult(
+      [before, outgoing()],
+      assigned,
+      now,
+      "2026-10-20T09:00:00Z",
+      false,
+    );
+    expect(result?.status).toBe("converted");
+  });
+  it("does not count a lead's own messages from before a reassignment as prior contact", () => {
+    // Created 09:00, messaged 09:30, reassigned 10:00 with nothing since.
+    const own = outgoing({ createdAt: "2026-10-20T09:30:00Z" });
+    expect(transportResult([own], assigned, now, "2026-10-20T09:00:00Z")).toMatchObject({
+      state: "unmatched",
+      status: null,
+      reasonCode: "no_contact_yet",
+    });
+  });
+  it("gives a lead nothing has been sent to no status at all", () => {
+    expect(transportResult([], assigned, now)).toMatchObject({
+      state: "unmatched",
+      status: null,
+      reasonCode: "no_matching_quo_history",
+    });
   });
   it.each([
     { status: "cx_interested", confidence: 0.84, evidenceIds: ["AC1"] },

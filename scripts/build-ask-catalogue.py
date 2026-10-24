@@ -425,6 +425,158 @@ def pick_phrase(counter: Counter) -> tuple[str, int]:
     return phrase, sum(best.values())
 
 
+# ---- nouns the team actually uses --------------------------------------
+# An object's pattern recognises several words, and the runtime may put the
+# customer's own word in place of the label: their "porch" stays a porch rather
+# than becoming "the deck". But a pattern also contains words for the JOB, not
+# the thing, and substituting one of those produced questions the team never
+# wrote: "the size of the paint that needs to be painted" (1,034 drafts),
+# "a picture of the pressure wash", "the assembls that need to be assembled".
+#
+# So a word may stand in for the label only once the team itself has put it in
+# a slot that names the THING -- "a picture of the fridge", "the issue you are
+# facing with your spa" -- in at least NOUN_MIN_USES messages about that object.
+# Job words score 0 there and drop out on their own: paint 0, pressure wash 0,
+# assembl 0, haul 0. Real synonyms stay: fridge 20, stove 25, couch 37, spa 4.
+NOUN_MIN_USES = 3
+THING_SLOT = (
+    r"(?:pictures? of|photos? of|size of|issue you are facing with|"
+    r"brand (?:name )?of|model of) (?:the|your) "
+)
+
+
+def noun_singular(noun: str) -> str:
+    """Must match `singular` in cs-ask-policy.ts."""
+    return noun[:-1] if re.search(r"[^s]s$", noun) else noun
+
+
+def plural_candidates(base: str) -> list[str]:
+    forms = [base + "s", base + "es"]
+    if re.search(r"[^aeiou]y$", base):
+        forms.append(base[:-1] + "ies")
+    return forms
+
+
+def attested_nouns(rows: list[dict]) -> tuple[dict, dict]:
+    """Per object: the pattern nouns the team uses for the thing, and the
+    plural the team writes for each. A noun with no attested plural is left
+    out of the plural map, so the runtime falls back to the label's own plural
+    rather than inventing "furnitures" or "vanitys"."""
+    uses: dict[str, Counter] = defaultdict(Counter)
+    plurals: dict[str, dict[str, Counter]] = defaultdict(lambda: defaultdict(Counter))
+    for row in rows:
+        if not row["objects"]:
+            continue
+        primary = row["objects"][0]
+        text = row["ask_text"]
+        for noun in OBJECT_PATTERN_NOUNS.get(primary, []):
+            base = noun_singular(noun)
+            forms = {noun, base, *plural_candidates(base)}
+            if any(re.search(THING_SLOT + re.escape(f) + r"\b", text) for f in forms):
+                uses[primary][noun] += 1
+            for form in plural_candidates(base):
+                if re.search(THING_SLOT + re.escape(form) + r"\b", text):
+                    plurals[primary][noun][form] += 1
+    object_nouns = {}
+    noun_plurals = {}
+    for key, nouns in OBJECT_PATTERN_NOUNS.items():
+        kept = [n for n in nouns if uses[key][n] >= NOUN_MIN_USES]
+        object_nouns[key] = kept
+        forms = {
+            n: plurals[key][n].most_common(1)[0][0]
+            for n in kept
+            if plurals[key][n]
+        }
+        if forms:
+            noun_plurals[key] = forms
+    return object_nouns, noun_plurals
+
+
+# ---- brands from the data --------------------------------------------
+# The brand list was 21 names typed by hand, so a customer who wrote
+# "Thermador freezer" was asked for the brand in the sentence after we named
+# it. Brands are found instead the way people write them: a word written
+# Capitalised directly before an appliance -- only appliances the team asks
+# the brand of -- in at least BRAND_MIN_LEADS leads, and written lower-case
+# less than twice as often as Capitalised there. Ordinary words fail that last
+# test by orders of magnitude ("my": 45 against 10,067), which is what makes
+# the rule safe without a dictionary; so do look-alikes such as "freon",
+# "hvac" and "french". The hand-typed list is kept as well.
+BRAND_MIN_LEADS = 3
+BRAND_MAX_LOWER_RATIO = 2
+# "Asks the brand" has to mean the team does so as a matter of course for that
+# object, the same bar a ladder entry has to clear. Counting any object it has
+# EVER asked the brand of pulls in doors and lights, and with them the cities
+# and holidays people write next to those: "in Austin", "Christmas lights".
+BRAND_OBJECT_MIN_ROWS = 25
+BRAND_OBJECT_MIN_RATE = 0.08
+# At most one word may sit between brand and appliance ("Jenn-Air gas cooktop").
+# A wider gap reached across clauses: "moving to Dallas and the dryer".
+BRAND_MAX_GAP_WORDS = 1
+HAND_BRANDS = [
+    "lg", "whirlpool", "samsung", "bosch", "ge profile", "ge", "zline", "kenmore",
+    "maytag", "frigidaire", "carrier", "trane", "lennox", "rheem", "goodman",
+    "kohler", "moen", "delta", "liftmaster", "chamberlain", "genie",
+]
+
+
+def appliance_nouns(rows: list[dict], object_nouns: dict) -> list[str]:
+    """Nouns of every object the team routinely asks the brand of.
+
+    Built from the team-attested nouns, not the raw pattern words or the
+    label: the label is a generic stand-in ("area", "unit"), and a city written
+    before it ("the Marietta area", "north Miami area") looks exactly like a
+    brand written before an appliance.
+    """
+    totals = Counter(r["objects"][0] for r in rows if r["objects"])
+    asked = Counter(
+        r["objects"][0] for r in rows if r["objects"] and "BRAND/MODEL" in r["intents"]
+    )
+    branded = {
+        key
+        for key, n in totals.items()
+        if n >= BRAND_OBJECT_MIN_ROWS and asked[key] / n >= BRAND_OBJECT_MIN_RATE
+    }
+    nouns = {noun_singular(n) for key in branded for n in object_nouns.get(key, []) if n}
+    return sorted(nouns, key=len, reverse=True)
+
+
+def discovered_brands(source: Path, nouns: list[str]) -> list[str]:
+    appliance = "|".join(re.escape(n) for n in nouns)
+    before = re.compile(
+        r"(?<=[a-z,] )([A-Z][A-Za-z-]+) (?:\w+ ){0,"
+        + str(BRAND_MAX_GAP_WORDS)
+        + r"}?(?:"
+        + appliance
+        + r")s?\b"
+    )
+    capitalised: dict[str, set] = defaultdict(set)
+    lower = Counter()
+    with source.open(newline="", encoding="utf-8") as handle:
+        for index, row in enumerate(csv.DictReader(handle)):
+            text = f"{row.get('Context') or ''} {row.get('Exact Customer Requirement') or ''}"
+            for match in before.finditer(text):
+                capitalised[match.group(1).lower()].add(index)
+            lower.update(re.findall(r"\b[a-z][a-z-]*\b", text))
+    found = {
+        word
+        for word, leads in capitalised.items()
+        if len(leads) >= BRAND_MIN_LEADS
+        and lower[word] < BRAND_MAX_LOWER_RATIO * len(leads)
+        and word not in nouns
+    }
+    return sorted(set(HAND_BRANDS) | found, key=lambda b: (-len(b), b))
+
+
+def brand_pattern(brands: list[str]) -> str:
+    # Plain words only, so nothing needs escaping. The pattern is compiled by
+    # JavaScript as well, where Python's re.escape output ("sub\\-zero") is not
+    # guaranteed to be valid, so anything that is not a plain word is dropped
+    # rather than escaped.
+    plain = [b for b in brands if re.fullmatch(r"[a-z0-9]+(?:[ -][a-z0-9]+)*", b)]
+    return r"\b(?:" + "|".join(plain) + r")\b"
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print(__doc__)
@@ -455,6 +607,7 @@ def main() -> int:
                     "action": actions[0] if actions else None,
                     "known": known,
                     "asks": asks,
+                    "ask_text": " and ".join(asks),
                     "intents": [classify_ask(a) for a in asks],
                     "service": service_key(row.get("Service", "")),
                 }
@@ -463,6 +616,9 @@ def main() -> int:
     if not rows:
         print("No usable rows found - check the export's column names.", file=sys.stderr)
         return 1
+
+    object_nouns, noun_plurals = attested_nouns(rows)
+    brands = discovered_brands(source, appliance_nouns(rows, object_nouns))
 
     # ---- ladders -------------------------------------------------------
     # asked_missing / asked_known per key. A key is only emitted once it has
@@ -623,9 +779,10 @@ def main() -> int:
         },
         "objectPatterns": [[name, pat] for name, pat, _s, _p in OBJECTS],
         "objectLabels": {k: list(v) for k, v in OBJECT_LABELS.items()},
-        "objectNouns": OBJECT_PATTERN_NOUNS,
+        "objectNouns": object_nouns,
+        "objectNounPlurals": noun_plurals,
         "actionPatterns": [[name, pat] for name, pat in ACTIONS],
-        "factPatterns": FACTS,
+        "factPatterns": {**FACTS, "BRAND/MODEL": brand_pattern(brands)},
         "photoNegation": PHOTO_NEGATION,
         "ladders": ladders,
         "pairs": pairs,

@@ -6,7 +6,7 @@
 
 Nextdoor scraping → AI qualification → customer-service pipeline → outcome tracking.
 
-[![CI](https://github.com/pastry-marketing/JellyBean/actions/workflows/ci.yml/badge.svg)](https://github.com/pastry-marketing/JellyBean/actions/workflows/ci.yml)
+[![CI](https://github.com/boostera385-afk/jellybean-crm/actions/workflows/ci.yml/badge.svg)](https://github.com/boostera385-afk/jellybean-crm/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)

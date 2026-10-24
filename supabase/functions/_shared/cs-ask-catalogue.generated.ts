@@ -37,7 +37,7 @@ export const CS_ASK_CATALOGUE = {
  "factPatterns": {
   "ADDRESS": "\\b\\d{1,6}[a-z]?\\s+(?:[a-z0-9.'-]+\\s+){1,5}(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|boulevard|blvd|court|ct|circle|cir|way|place|pl|terrace|ter|parkway|pkwy)\\b|address (?:is )?(?:on file|already (?:provided|supplied|shared))",
   "AVAILABILITY": "\\b(?:today|tonight|tomorrow|asap|this (?:morning|afternoon|evening|week|weekend)|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\\b|\\b\\d{1,2}(?::\\d{2})?\\s*[ap]\\.?m\\b|within (?:the )?(?:next )?(?:day or two|\\d+ days?)",
-  "BRAND/MODEL": "\\b(?:lg|whirlpool|samsung|bosch|ge profile|ge|zline|kenmore|maytag|frigidaire|carrier|trane|lennox|rheem|goodman|kohler|moen|delta|liftmaster|chamberlain|genie)\\b",
+  "BRAND/MODEL": "\\b(?:chamberlain|electrolux|frigidaire|ge profile|kitchenaid|liftmaster|thermador|whirlpool|hotpoint|sub-zero|carrier|goodman|kenmore|samsung|kohler|lennox|maytag|rinnai|viking|amana|bosch|delta|genie|rheem|trane|zline|moen|ge|lg)\\b",
   "OWNERSHIP": "\\b(?:i|we)\\s*(?:already\\s*)?(?:have|bought|purchased|own|got)\\b|already have the|materials? (?:are )?supplied",
   "PHOTO": "(?:picture|photo|image)s?\\s+(?:below|attached|included|already sent)|(?:attached|posted|sent|included|adding)\\s+(?:the\\s+|some\\s+|a\\s+few\\s+)?(?:pictures?|photos?|images?)|see\\s+(?:the\\s+)?(?:picture|photo|image)",
   "PROBLEM": "\\b(?:not (?:working|cooling|closing|opening|heating|draining|turning on)|no (?:heat|power|hot water|circulation)|won'?t|stopped working|leak(?:ing|s)?|frost|off.track|broken|cracked|stuck|clogged|making noise|burning smell)\\b",
@@ -6166,16 +6166,113 @@ export const CS_ASK_CATALOGUE = {
    "windows"
   ]
  },
+ "objectNounPlurals": {
+  "blinds": {
+   "blinds": "blinds",
+   "curtains": "curtains"
+  },
+  "cabinet": {
+   "cabinet": "cabinets",
+   "countertop": "countertops"
+  },
+  "carpet": {
+   "carpets": "carpets",
+   "rugs": "rugs"
+  },
+  "chimney": {
+   "chimney": "chimneys"
+  },
+  "concrete": {
+   "sidewalk": "sidewalks"
+  },
+  "deck": {
+   "decks": "decks",
+   "porch": "porches"
+  },
+  "door": {
+   "doors": "doors",
+   "gates": "gates"
+  },
+  "dryer_vent": {
+   "air duct": "air ducts",
+   "ducts": "ducts"
+  },
+  "faucet": {
+   "faucet": "faucets",
+   "spigot": "spigots"
+  },
+  "fence": {
+   "fences": "fences"
+  },
+  "floor": {
+   "floor": "floors",
+   "tiles": "tiles"
+  },
+  "furniture_move": {
+   "couch": "couches",
+   "sofa": "sofas"
+  },
+  "garage_door": {
+   "garage door": "garage doors"
+  },
+  "garbage_disposal": {
+   "garbage disposal": "garbage disposals"
+  },
+  "gutter": {
+   "gutters": "gutters"
+  },
+  "junk": {
+   "debris": "debris",
+   "junk": "junks"
+  },
+  "light_fixture": {
+   "chandelier": "chandeliers",
+   "lights": "lights"
+  },
+  "outlet_switch": {
+   "outlets": "outlets",
+   "switch": "switches"
+  },
+  "pipe_leak": {
+   "pipes": "pipes"
+  },
+  "pool": {
+   "pool": "pools"
+  },
+  "refrigerator": {
+   "refrigerator": "refrigerators"
+  },
+  "screen": {
+   "screens": "screens"
+  },
+  "shower_tub": {
+   "shower": "showers"
+  },
+  "sink_drain": {
+   "sink": "sinks"
+  },
+  "toilet": {
+   "toilet": "toilets"
+  },
+  "tree": {
+   "branch": "branches",
+   "stump": "stumps",
+   "trees": "trees"
+  },
+  "water_heater": {
+   "water heater": "water heaters"
+  },
+  "window": {
+   "windows": "windows"
+  }
+ },
  "objectNouns": {
   "ac_unit": [
-   "air condition",
-   "hvac",
-   "condenser"
+   "hvac"
   ],
   "blinds": [
    "blinds",
-   "curtains",
-   "shades"
+   "curtains"
   ],
   "cabinet": [
    "cabinet",
@@ -6184,8 +6281,7 @@ export const CS_ASK_CATALOGUE = {
   ],
   "carpet": [
    "carpets",
-   "rugs",
-   "upholstery"
+   "rugs"
   ],
   "ceiling_fan": [
    "ceiling fan",
@@ -6195,10 +6291,7 @@ export const CS_ASK_CATALOGUE = {
    "chimney",
    "fireplace"
   ],
-  "christmas_lights": [
-   "christmas light",
-   "holiday light"
-  ],
+  "christmas_lights": [],
   "concrete": [
    "concrete",
    "driveway",
@@ -6227,40 +6320,31 @@ export const CS_ASK_CATALOGUE = {
   ],
   "drywall": [
    "drywall",
-   "sheetrock",
-   "plaster"
+   "sheetrock"
   ],
   "electrical_panel": [
    "electrical panel",
-   "breakers",
-   "wiring"
+   "breakers"
   ],
   "faucet": [
    "faucet",
    "spigot"
   ],
   "fence": [
-   "fences",
-   "fencing"
+   "fences"
   ],
   "floor": [
    "floor",
    "tiles",
    "laminate",
-   "hardwood",
-   "vinyl plank"
+   "hardwood"
   ],
   "furnace_heater": [
    "furnace",
-   "heat pump",
    "boiler",
    "heater"
   ],
-  "furniture_assembly": [
-   "assembl",
-   "put together",
-   "ikea"
-  ],
+  "furniture_assembly": [],
   "furniture_move": [
    "sofa",
    "couch",
@@ -6269,15 +6353,13 @@ export const CS_ASK_CATALOGUE = {
    "furniture"
   ],
   "garage_door": [
-   "garage door",
-   "garage opener"
+   "garage door"
   ],
   "garbage_disposal": [
    "garbage disposal"
   ],
   "gutter": [
-   "gutters",
-   "downspout"
+   "gutters"
   ],
   "hot_tub": [
    "hot tub",
@@ -6291,15 +6373,11 @@ export const CS_ASK_CATALOGUE = {
   "junk": [
    "junk",
    "debris",
-   "trash",
-   "haul"
+   "trash"
   ],
   "light_fixture": [
    "lights",
-   "lighting",
-   "chandelier",
-   "recessed",
-   "led"
+   "chandelier"
   ],
   "mailbox": [
    "mailbox"
@@ -6309,65 +6387,40 @@ export const CS_ASK_CATALOGUE = {
   ],
   "outlet_switch": [
    "outlets",
-   "switch",
-   "receptacle"
+   "switch"
   ],
   "oven_stove": [
    "oven",
    "stove",
-   "range",
-   "cooktop"
+   "range"
   ],
-  "paint": [
-   "paint"
-  ],
+  "paint": [],
   "pest": [
-   "pests",
-   "roach",
-   "termite",
-   "bed bug",
-   "rodent",
-   "mice",
-   "rats",
-   "ants",
-   "wasp",
-   "hornet"
+   "wasp"
   ],
   "pipe_leak": [
    "pipes",
-   "plumbing",
    "leak"
   ],
   "pool": [
    "pool"
   ],
-  "pressure_wash": [
-   "pressure wash",
-   "power wash",
-   "soft wash"
-  ],
+  "pressure_wash": [],
   "refrigerator": [
    "refrigerator",
    "fridge",
    "freezer",
    "ice maker"
   ],
-  "remodel": [
-   "remodel",
-   "renovat"
-  ],
+  "remodel": [],
   "roof": [
    "roof"
   ],
   "screen": [
-   "screens",
-   "screening"
+   "screens"
   ],
   "shed": [
-   "shed",
-   "playset",
-   "swing set",
-   "trampoline"
+   "shed"
   ],
   "shower_tub": [
    "shower",
@@ -6376,26 +6429,21 @@ export const CS_ASK_CATALOGUE = {
   ],
   "sink_drain": [
    "sink",
-   "drains",
-   "clog"
+   "drains"
   ],
   "sprinkler": [
    "sprinkler",
    "irrigation"
   ],
   "toilet": [
-   "toilet",
-   "commode"
+   "toilet"
   ],
   "tree": [
    "trees",
    "stump",
-   "branch",
-   "shrubs"
+   "branch"
   ],
-  "tv_mount": [
-   "television"
-  ],
+  "tv_mount": [],
   "wallpaper": [
    "wallpaper"
   ],

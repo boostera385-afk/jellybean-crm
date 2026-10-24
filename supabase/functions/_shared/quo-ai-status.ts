@@ -1,5 +1,7 @@
 /** Read-only Quo integration and shadow classification. Never sends messages. */
-export const AI_STATUS_VERSION = "quo-shadow-v3";
+export const AI_STATUS_VERSION = "quo-shadow-v5";
+/** A delivered message with nothing back for this long is "didn't reply". */
+export const NO_REPLY_MS = 6 * 60 * 60 * 1000;
 export const AI_STATUS_MODEL = "gpt-4.1-mini-2025-04-14";
 export const INTENT_STATUSES = [
   "wrong_number",
@@ -65,8 +67,14 @@ export function isQuoConfigurationProbe(
   return action === "configuration" && Boolean(serviceKey) && token === serviceKey;
 }
 
+/**
+ * Backend-only actions: draining the queue, and the unattended sweep that
+ * fills it. "refresh" is deliberately absent -- that one carries a person's
+ * chosen date range and must stay attributable to them.
+ */
+const WORKER_ACTIONS = new Set(["work", "enqueue"]);
 export function isQuoWorker(token: string, serviceKey: string, action: unknown): boolean {
-  return action === "work" && Boolean(serviceKey) && token === serviceKey;
+  return WORKER_ACTIONS.has(String(action)) && Boolean(serviceKey) && token === serviceKey;
 }
 
 /** Discover inbox IDs using the server-side key; never expose phone numbers/users. */
@@ -75,7 +83,15 @@ export async function resolveQuoPhoneIds(options: {
   configuredIds?: string;
   fetcher?: Fetcher;
   signal?: AbortSignal;
-}): Promise<{ ids: string[]; source: "configured" | "discovered" }> {
+}): Promise<{
+  ids: string[];
+  source: "configured" | "discovered";
+  /** Inbox id -> its name in Quo, for matching a lead's number_name. */
+  names: Record<string, string>;
+  /** Inbox id -> its own (business) number, which identifies it even after a
+   *  rename. Never the inbox's users. */
+  numbers: Record<string, string>;
+}> {
   const requested = [
     ...new Set(
       (options.configuredIds ?? "")
@@ -118,7 +134,16 @@ export async function resolveQuoPhoneIds(options: {
   if (!ids.length) throw new Error("no_quo_phone_numbers");
   // Never silently analyze only a subset of a large account.
   if (ids.length > 100) throw new Error("quo_inbox_allowlist_required");
-  return { ids, source: requested.length ? "configured" : "discovered" };
+  const names: Record<string, string> = {};
+  const numbers: Record<string, string> = {};
+  for (const row of body.data as Array<{ id: string; name?: unknown; number?: unknown }>) {
+    if (!ids.includes(row.id)) continue;
+    const name = typeof row.name === "string" ? row.name.trim() : "";
+    if (name.length > 0 && name.length <= 200) names[row.id] = name;
+    if (typeof row.number === "string" && /^\+?[\d\s().-]{7,20}$/.test(row.number))
+      numbers[row.id] = row.number;
+  }
+  return { ids, source: requested.length ? "configured" : "discovered", names, numbers };
 }
 
 export async function fetchQuoHistoryPage(options: {
@@ -207,20 +232,47 @@ export async function fetchQuoHistory(options: {
   throw new Error("incomplete_history");
 }
 
+/**
+ * The statuses that need no model: decided from Quo's own records.
+ *
+ *   messaged before the lead existed  -> already_received_before
+ *   nothing sent yet                  -> no status at all ("New" stays untouched)
+ *   last message undelivered          -> undeliver
+ *   delivered, nothing back           -> converted ("Delivered")
+ *   delivered, nothing back after 6h  -> cx_didnt_replied
+ *
+ * Returns null once the customer has replied: that is the model's to read.
+ */
 export function transportResult(
   messages: QuoMessage[],
   assignedAt: string,
   now: number,
+  createdAt?: string | null,
+  /** Look for texts from before the lead existed. Only when the history read
+   *  is the lead's own inbox, named on its card; otherwise earlier texts in
+   *  some other inbox say nothing about this lead. */
+  checkPriorContact = true,
 ): AiResult | null {
+  // Before the lead existed. The earlier of creation and assignment, so a lead
+  // reassigned later does not count its own earlier messages as prior contact.
+  const leadStart = Math.min(
+    Date.parse(assignedAt),
+    createdAt && Number.isFinite(Date.parse(createdAt)) ? Date.parse(createdAt) : Infinity,
+  );
+  const prior = checkPriorContact
+    ? messages.filter((m) => Date.parse(m.createdAt) < leadStart)
+    : [];
+  if (prior.length)
+    return {
+      ...emptyResult("classified", "contacted_before_lead"),
+      status: "already_received_before",
+      confidence: 1,
+      evidenceIds: [prior[prior.length - 1].id],
+    };
   const current = messages.filter((m) => Date.parse(m.createdAt) >= Date.parse(assignedAt));
+  // Nothing sent to this lead yet: no AI status, so "New" is left alone.
   if (!current.length)
-    return messages.length
-      ? {
-          ...emptyResult("classified", "no_contact_for_current_assignment"),
-          status: "new",
-          confidence: 1,
-        }
-      : emptyResult("unmatched", "no_matching_quo_history");
+    return emptyResult("unmatched", messages.length ? "no_contact_yet" : "no_matching_quo_history");
   if (current.some((m) => m.direction === "incoming")) return null;
   const last = current[current.length - 1];
   const result = {
@@ -232,8 +284,8 @@ export function transportResult(
   if (last.status === "undelivered")
     return { ...result, status: "undeliver", reasonCode: "delivery_failed" };
   if (last.status !== "delivered") return emptyResult("review", "delivery_not_confirmed");
-  if (now - Date.parse(last.createdAt) >= 24 * 60 * 60 * 1000)
-    return { ...result, status: "cx_didnt_replied", reasonCode: "no_reply_after_24h" };
+  if (now - Date.parse(last.createdAt) >= NO_REPLY_MS)
+    return { ...result, status: "cx_didnt_replied", reasonCode: "no_reply_after_6h" };
   return result;
 }
 
@@ -293,6 +345,10 @@ export function validateIntent(
 export async function classifyQuoHistory(options: {
   messages: QuoMessage[];
   assignedAt: string;
+  /** The lead's own creation time; history before it means a repeat contact. */
+  createdAt?: string | null;
+  /** Whether the history is the lead's own inbox; see transportResult. */
+  checkPriorContact?: boolean;
   service: string | null;
   apiKey: string;
   fetcher?: Fetcher;
@@ -325,7 +381,13 @@ export async function classifyQuoHistory(options: {
     historyHash,
     messageCount: messages.length,
   });
-  const transport = transportResult(messages, assignedAt, options.now ?? Date.now());
+  const transport = transportResult(
+    messages,
+    assignedAt,
+    options.now ?? Date.now(),
+    options.createdAt,
+    options.checkPriorContact ?? true,
+  );
   if (transport) return withMeta(transport);
   // An inbound media-only reply needs a human, not a guessed image meaning.
   if (

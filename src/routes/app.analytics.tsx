@@ -210,15 +210,12 @@ function Inner({ isAdmin }: { isAdmin: boolean }) {
       const [series, prevSeries, csResults, forwardersRes] = await Promise.all([
         fetchDailySeries(range.since, range.until, range.start, range.end),
         fetchDailySeries(range.prevSince, range.prevUntil, range.prevStart, range.start),
-        Promise.all(
-          CS_STATUSES.map((status) =>
-            supabase
-              .from("qualified_leads")
-              .select("id", { count: "exact", head: true })
-              .eq("cs_status", status)
-              .gte("assigned_at", range.since)
-              .lt("assigned_at", range.until),
-          ),
+        supabase.rpc(
+          "report_cs_status_counts" as never,
+          {
+            p_from: range.since,
+            p_to: range.until,
+          } as never,
         ),
         isAdmin
           ? supabase.rpc("report_leads_forwarded_by_maturing", {
@@ -228,15 +225,13 @@ function Inner({ isAdmin }: { isAdmin: boolean }) {
           : Promise.resolve({ data: [], error: null }),
       ]);
 
-      const csBuckets = csResults
-        .map((result, index) => {
-          if (result.error) throw result.error;
-          return {
-            key: CS_STATUSES[index],
-            status: CS_LABELS[CS_STATUSES[index]] ?? CS_STATUSES[index].replace(/_/g, " "),
-            count: result.count ?? 0,
-          };
-        })
+      if (csResults.error) throw csResults.error;
+      const csCounts = (csResults.data ?? {}) as Record<string, number | string>;
+      const csBuckets = CS_STATUSES.map((status) => ({
+        key: status,
+        status: CS_LABELS[status] ?? status.replace(/_/g, " "),
+        count: Number(csCounts[status] ?? 0),
+      }))
         .filter((b) => b.count > 0)
         .sort((a, b) => b.count - a.count);
 
@@ -256,6 +251,7 @@ function Inner({ isAdmin }: { isAdmin: boolean }) {
       return { series, prevSeries, csBuckets, forwarders };
     },
     staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
     placeholderData: keepPreviousData,
   });
 
@@ -781,22 +777,22 @@ function SentToCsSection({
   const [chartType, setChartType] = useState<SentToCsChartType>("area");
   const [selectedDept, setSelectedDept] = useState<DeptKey | "all">("all");
 
-  // Fetch department breakdown for leads sent to CS in this date range
+  // Fetch grouped day/department totals instead of transferring every lead.
   const deptLeadsQuery = useQuery({
     queryKey: ["sent-to-cs-dept-breakdown", since, until],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("qualified_leads")
-        .select("assigned_at, submitted_by_role")
-        .gte("assigned_at", since)
-        .lt("assigned_at", until);
-      if (error) {
-        console.warn("Could not fetch sent-to-cs dept breakdown:", error);
-        return [];
-      }
+      const { data, error } = await supabase.rpc(
+        "report_cs_department_daily" as never,
+        {
+          p_from: since,
+          p_to: until,
+        } as never,
+      );
+      if (error) throw error;
       return (data ?? []) as Array<{
-        assigned_at: string | null;
+        day_key: string;
         submitted_by_role: string | null;
+        lead_count: number | string;
       }>;
     },
     staleTime: 5 * 60_000,
@@ -815,10 +811,10 @@ function SentToCsSection({
       facebook: 0,
     };
     for (const r of deptRows) {
-      counts.all += 1;
+      counts.all += Number(r.lead_count);
       const role = r.submitted_by_role as DeptKey;
       if (role && role in counts) {
-        counts[role] += 1;
+        counts[role] += Number(r.lead_count);
       }
     }
     return counts;
@@ -837,9 +833,8 @@ function SentToCsSection({
     // Filter by department
     const map = new Map<string, number>();
     for (const r of deptRows) {
-      if (r.submitted_by_role === selectedDept && r.assigned_at) {
-        const dayKey = r.assigned_at.slice(0, 10);
-        map.set(dayKey, (map.get(dayKey) ?? 0) + 1);
+      if (r.submitted_by_role === selectedDept) {
+        map.set(r.day_key, (map.get(r.day_key) ?? 0) + Number(r.lead_count));
       }
     }
 
@@ -1249,21 +1244,20 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
   const deptQuery = useQuery({
     queryKey: ["analytics-dept-leads-raw", since, until],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("qualified_leads")
-        .select("service, state_code, main_area, submitted_by_role")
-        .gte("assigned_at", since)
-        .lt("assigned_at", until);
-
-      if (error) {
-        console.warn("Could not fetch department leads:", error);
-        return [];
-      }
+      const { data, error } = await supabase.rpc(
+        "report_cs_service_state_counts" as never,
+        {
+          p_from: since,
+          p_to: until,
+        } as never,
+      );
+      if (error) throw error;
       return (data ?? []) as Array<{
         service: string | null;
         state_code: string | null;
         main_area: string | null;
         submitted_by_role: string | null;
+        lead_count: number | string;
       }>;
     },
     staleTime: 5 * 60_000,
@@ -1282,10 +1276,10 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
       facebook: 0,
     };
     for (const r of rawRows) {
-      counts.all += 1;
+      counts.all += Number(r.lead_count);
       const role = r.submitted_by_role as DeptKey;
       if (role && role in counts) {
-        counts[role] += 1;
+        counts[role] += Number(r.lead_count);
       }
     }
     return counts;
@@ -1300,13 +1294,17 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
     if (selectedDept === "all") return rawRows;
     return rawRows.filter((r) => r.submitted_by_role === selectedDept);
   }, [rawRows, selectedDept]);
+  const deptTotal = useMemo(
+    () => deptFilteredRows.reduce((sum, row) => sum + Number(row.lead_count), 0),
+    [deptFilteredRows],
+  );
 
   // List of all states in this department (for state filter)
   const availableStates = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const r of deptFilteredRows) {
       const state = formatStateLabel(r.state_code, r.main_area);
-      counts[state] = (counts[state] ?? 0) + 1;
+      counts[state] = (counts[state] ?? 0) + Number(r.lead_count);
     }
     return Object.entries(counts)
       .map(([state, count]) => ({ state, count }))
@@ -1318,7 +1316,7 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
     const counts: Record<string, number> = {};
     for (const r of deptFilteredRows) {
       const s = r.service?.trim() || "(no service)";
-      counts[s] = (counts[s] ?? 0) + 1;
+      counts[s] = (counts[s] ?? 0) + Number(r.lead_count);
     }
     return Object.entries(counts)
       .map(([service, count]) => ({ service, count }))
@@ -1339,7 +1337,7 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
     return rows;
   }, [deptFilteredRows, breakdownMode, selectedState, selectedService]);
 
-  const currentTotal = activeFilteredRows.length;
+  const currentTotal = activeFilteredRows.reduce((sum, row) => sum + Number(row.lead_count), 0);
 
   // Compute breakdown data for the horizontal bar chart
   const breakdownData = useMemo(() => {
@@ -1350,7 +1348,7 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
         breakdownMode === "service"
           ? r.service?.trim() || "(no service)"
           : formatStateLabel(r.state_code, r.main_area);
-      counts[key] = (counts[key] ?? 0) + 1;
+      counts[key] = (counts[key] ?? 0) + Number(r.lead_count);
     }
 
     return Object.entries(counts)
@@ -1374,8 +1372,8 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
         entry = { total: 0, services: {} };
         map.set(state, entry);
       }
-      entry.total += 1;
-      entry.services[service] = (entry.services[service] ?? 0) + 1;
+      entry.total += Number(r.lead_count);
+      entry.services[service] = (entry.services[service] ?? 0) + Number(r.lead_count);
     }
 
     return Array.from(map.entries())
@@ -1390,12 +1388,12 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
         return {
           state,
           total: data.total,
-          pctOfDept: deptFilteredRows.length > 0 ? (data.total / deptFilteredRows.length) * 100 : 0,
+          pctOfDept: deptTotal > 0 ? (data.total / deptTotal) * 100 : 0,
           services: sortedServices,
         };
       })
       .sort((a, b) => b.total - a.total);
-  }, [deptFilteredRows]);
+  }, [deptFilteredRows, deptTotal]);
 
   // Filtered matrix based on stateSearch and selectedState
   const filteredMatrix = useMemo(() => {
@@ -1427,7 +1425,7 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
 
   const chartSubtitle = useMemo(() => {
     if (breakdownMode === "service_by_state") {
-      return `Showing lead counts for each service across all states for ${activeLabel} (${deptFilteredRows.length.toLocaleString()} leads across ${stateServiceMatrix.length} states)`;
+      return `Showing lead counts for each service across all states for ${activeLabel} (${deptTotal.toLocaleString()} leads across ${stateServiceMatrix.length} states)`;
     }
     if (breakdownMode === "service") {
       if (selectedState !== "all") {
@@ -1446,7 +1444,7 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
     activeLabel,
     currentTotal,
     breakdownData.length,
-    deptFilteredRows.length,
+    deptTotal,
     stateServiceMatrix.length,
   ]);
 
@@ -1589,7 +1587,7 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
                   onChange={(e) => setSelectedState(e.target.value)}
                   className="h-8 rounded-md bg-muted/60 border border-border/70 px-2.5 pr-8 py-1 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                 >
-                  <option value="all">All States ({deptFilteredRows.length} leads)</option>
+                  <option value="all">All States ({deptTotal} leads)</option>
                   {availableStates.map((st) => (
                     <option key={st.state} value={st.state}>
                       {st.state} ({st.count} lead{st.count === 1 ? "" : "s"})
@@ -1624,7 +1622,7 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
                   onChange={(e) => setSelectedService(e.target.value)}
                   className="h-8 rounded-md bg-muted/60 border border-border/70 px-2.5 pr-8 py-1 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                 >
-                  <option value="all">All Services ({deptFilteredRows.length} leads)</option>
+                  <option value="all">All Services ({deptTotal} leads)</option>
                   {availableServices.map((s) => (
                     <option key={s.service} value={s.service}>
                       {s.service} ({s.count} lead{s.count === 1 ? "" : "s"})
@@ -1694,7 +1692,7 @@ function DeptLeadsChart({ since, until }: { since: string; until: string }) {
                     : "bg-muted/60 text-muted-foreground hover:text-foreground",
                 )}
               >
-                All States ({deptFilteredRows.length})
+                All States ({deptTotal})
               </button>
               {availableStates.slice(0, 10).map((st) => (
                 <button

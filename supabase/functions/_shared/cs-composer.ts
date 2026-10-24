@@ -3,8 +3,15 @@ import { CS_ASK_CATALOGUE } from "./cs-ask-catalogue.generated.ts";
 import type { AskIntent } from "./cs-ask-catalogue-types.ts";
 import { detect, normalizeSource, type Detection } from "./cs-detect.ts";
 import { fragmentsAreSafe, selectAsks, type SelectedAsk } from "./cs-ask-policy.ts";
+import {
+  fallbackServiceContext,
+  GROUNDING_PROMPT_WORDS,
+  namesObject,
+  refersToObject,
+  ungroundedWords,
+} from "./cs-context-grounding.ts";
 
-export const CS_COMPOSER_VERSION = "2026-10-19.catalogue-v3.2";
+export const CS_COMPOSER_VERSION = "2026-10-22.catalogue-v3.3-grounded";
 export const CS_COMPOSER_MODEL = "gpt-5.4-nano-2026-03-17";
 
 export type ComposerInput = {
@@ -56,6 +63,14 @@ availability or scheduling claim, no brackets, placeholders or invented details.
 targetObject: which listed object the questions should be aimed at. Choose the
 one the customer's own words centre on - the item with the fault, or the item
 the work is for. Use "none" only when the list is empty.
+
+WORDS YOU MAY USE in serviceContext: words that appear in the lead itself, plus
+the team's own connecting words such as ${GROUNDING_PROMPT_WORDS.join(", ")}.
+Nothing else. Never add a number, brand, place, detail or claim the lead does
+not state. serviceContext must name the item you give as targetObject.
+
+If the request includes "correction", your previous answer was refused for
+the reason given there; fix exactly that.
 
 SOURCE PRIORITY
 postText is the customer's own words and outranks context, which is a fallible
@@ -193,7 +208,12 @@ type AiOptions = {
   signal?: AbortSignal;
 };
 
-async function requestTargeting(options: AiOptions, input: ComposerInput, detection: Detection) {
+async function requestTargeting(
+  options: AiOptions,
+  input: ComposerInput,
+  detection: Detection,
+  correction: string[] = [],
+) {
   const fetcher = options.fetcher ?? fetch;
   for (let attempt = 0; attempt < 2; attempt++) {
     let response: Response;
@@ -222,6 +242,7 @@ async function requestTargeting(options: AiOptions, input: ComposerInput, detect
                 },
                 objects: detection.objects,
                 stylePreferences: options.stylePreferences ?? "",
+                ...(correction.length ? { correction } : {}),
               }),
             },
           ],
@@ -280,6 +301,48 @@ async function requestTargeting(options: AiOptions, input: ComposerInput, detect
   throw new Error("Composer request failed");
 }
 
+/**
+ * Everything the lead itself says, which is what the phrase may draw on.
+ *
+ * Wider than sourceParts on purpose: the Service field and the requirements
+ * are the lead's own words too. The previous draft is still excluded - it is
+ * our output, and reading it back would let an invented word from one draft
+ * license the same word in the next.
+ */
+export function groundingParts(input: ComposerInput): string[] {
+  return [...sourceParts(input), input.service, ...(input.suggestedRequirements ?? [])].filter(
+    (value): value is string => Boolean(value?.trim()),
+  );
+}
+
+const fragmentsOf = (selection: { asks: { fragment: string }[] }) =>
+  selection.asks.map((ask) => ask.fragment);
+
+/** What is wrong with this phrase for this plan, worded for the model. */
+function contextProblems(
+  serviceContext: string,
+  plan: { targetObject: string | null; selection: { asks: { fragment: string }[] } },
+  lead: string[],
+): string[] {
+  const problems: string[] = [];
+  const unsupported = ungroundedWords(serviceContext, lead);
+  if (unsupported.length)
+    problems.push(
+      `These words are not in the lead, so they may not be used: ${unsupported.join(", ")}. ` +
+        "Use the customer's own words.",
+    );
+  const { targetObject, selection } = plan;
+  if (
+    refersToObject(fragmentsOf(selection), targetObject) &&
+    !namesObject(serviceContext, targetObject)
+  )
+    problems.push(
+      `The questions ask about the ${CS_ASK_CATALOGUE.objectLabels[targetObject ?? ""]?.[0] ?? "item"}, ` +
+        "so serviceContext must name it.",
+    );
+  return problems;
+}
+
 /** Fail closed: an error never becomes raw context pasted into a customer draft. */
 export async function composeAnswerAware(input: ComposerInput, options: AiOptions) {
   if (!input.postText?.trim() && !input.context?.trim())
@@ -301,21 +364,59 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
   const sources = normalizeSource(parts.join("\n"));
   const detection = detect(parts);
   const bounded = { ...options, signal: options.signal ?? AbortSignal.timeout(110_000) };
-  const targeting = await requestTargeting(bounded, input, detection);
+  const lead = groundingParts(input);
+  const checks: string[] = [];
 
-  const targetObject = targeting.targetObject ?? detection.objects[0] ?? null;
-  const selection = selectAsks(detection, input.service, targetObject, sources);
+  const attempt = (targeting: { serviceContext: string; targetObject: string | null }) => {
+    const targetObject = targeting.targetObject ?? detection.objects[0] ?? null;
+    const selection = selectAsks(detection, input.service, targetObject, sources);
+    return { targeting, targetObject, selection };
+  };
+  let draft = attempt(await requestTargeting(bounded, input, detection));
+  let problems = contextProblems(draft.targeting.serviceContext, draft, lead);
+  if (problems.length) {
+    // One retry naming exactly what was refused. Only the phrase can be
+    // wrong here: the questions are chosen deterministically, and asking the
+    // model again cannot improve them.
+    checks.push("context_retried");
+    draft = attempt(await requestTargeting(bounded, input, detection, problems));
+    problems = contextProblems(draft.targeting.serviceContext, draft, lead);
+  }
+  let serviceContext = draft.targeting.serviceContext;
+  // objects[0] is typed string but is undefined for a post naming no object,
+  // and the item is dropped below when the opening cannot name it.
+  let targetObject: string | null = draft.targetObject;
+  let selection = draft.selection;
+  if (ungroundedWords(serviceContext, lead).length) {
+    // Still using words the lead does not contain: fall back to a phrase
+    // built only from the lead's Service field, or compose nothing at all.
+    const fallback = fallbackServiceContext(input.service);
+    if (!fallback) throw new Error("Composer could not ground the service context");
+    serviceContext = fallback;
+    checks.push("context_fallback");
+  }
+  if (
+    refersToObject(fragmentsOf(selection), targetObject) &&
+    !namesObject(serviceContext, targetObject)
+  ) {
+    // The opening cannot name the item, so do not ask about "the unit" as if
+    // it had: use the questions that need no item named.
+    selection = selectAsks(detection, input.service, null, sources);
+    targetObject = null;
+    checks.push("object_questions_dropped");
+  }
   if (!fragmentsAreSafe(selection.asks)) throw new Error("Unsupported composer opening");
 
   const warnings = [
     ...selection.suppressed.map((intent) => `answered_${intent.replace("/", "_")}`),
     ...(detection.objects.length > 1 ? ["multiple_objects"] : []),
-    ...(targeting.targetObject === null && detection.objects.length ? ["retargeted"] : []),
+    ...(draft.targeting.targetObject === null && detection.objects.length ? ["retargeted"] : []),
     ...(selection.asks.length === 0 ? ["no_ask_available"] : []),
     ...(selection.asks.length === 1 ? ["single_ask"] : []),
+    ...checks,
   ];
   const plan: ComposePlan = {
-    serviceContext: targeting.serviceContext,
+    serviceContext,
     targetObject,
     ladderKey: selection.ladderKey,
     questions: selection.asks.map((ask: SelectedAsk) => ({
@@ -337,7 +438,8 @@ export function safeComposerError(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   return /^Composer provider failed \(\d{3};[a-z_]+\)$/.test(message) ||
     message === "Composer response incomplete or refused" ||
-    message === "Unsupported composer opening"
+    message === "Unsupported composer opening" ||
+    message === "Composer could not ground the service context"
     ? message
     : "generation_failed";
 }
