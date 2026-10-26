@@ -67,6 +67,7 @@ async function migratedDb(): Promise<PGlite> {
   await db.exec(SCHEMA);
   await db.exec(migration("cs_leads_status_counts_filtered"));
   await db.exec(migration("cs_leads_status_counts_filtered_important"));
+  await db.exec(migration("cs_status_counts_team_totals"));
   return db;
 }
 
@@ -155,6 +156,49 @@ describe("CS filtered status counts", () => {
         SET ROLE authenticated;`);
       expect((await call("p_important => true")).all).toBe(1);
       expect((await call("p_search => 'Today'")).all).toBe(3);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("gives a CS agent the whole team's counts, and nobody else any", async () => {
+    const db = await migratedDb();
+    const CS = "10000000-0000-4000-8000-000000000002";
+    const OTHER = "10000000-0000-4000-8000-000000000003";
+    const OUTSIDER = "10000000-0000-4000-8000-000000000004";
+    try {
+      await db.exec(`
+        INSERT INTO public.user_roles VALUES ('${CS}','cs'),('${OTHER}','cs'),('${OUTSIDER}','seo');
+        INSERT INTO public.qualified_leads(id, cs_status, assigned_at, assigned_to) VALUES
+          ('20000000-0000-4000-8000-000000000001','new','2026-10-22T09:00:00Z','${CS}'),
+          ('20000000-0000-4000-8000-000000000002','converted','2026-10-22T10:00:00Z','${OTHER}'),
+          ('20000000-0000-4000-8000-000000000003','converted','2026-10-22T11:00:00Z','${OTHER}'),
+          ('20000000-0000-4000-8000-000000000004','new','2026-10-01T10:00:00Z',NULL);
+        SET ROLE authenticated;`);
+      const as = (user: string, fn: string, args = "") =>
+        db
+          .query<{ result: { all: number; statuses: Record<string, number> } }>(
+            `SELECT set_config('request.jwt.claim.sub','${user}',false),
+                    public.${fn}(${args}) AS result`,
+          )
+          .then((r) => r.rows[0].result);
+
+      // Leads assigned to another agent count too.
+      expect(await as(CS, "cs_leads_status_counts")).toEqual({
+        all: 4,
+        statuses: { new: 2, converted: 2 },
+      });
+      const today = await as(
+        CS,
+        FUNCTION,
+        `p_date_from => '2026-10-22T00:00:00Z', p_date_to => '2026-10-23T00:00:00Z'`,
+      );
+      expect(today).toEqual({ all: 3, statuses: { new: 1, converted: 2 } });
+      // Picking another agent's leads counts theirs, not only one's own.
+      expect((await as(CS, FUNCTION, `p_owner => '${OTHER}'`)).all).toBe(2);
+
+      await expect(as(OUTSIDER, "cs_leads_status_counts")).rejects.toThrow(/Forbidden/);
+      await expect(as(OUTSIDER, FUNCTION)).rejects.toThrow(/Forbidden/);
     } finally {
       await db.close();
     }

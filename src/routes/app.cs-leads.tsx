@@ -577,6 +577,41 @@ function Inner() {
     setPage(1);
   }, [dbDateFrom, dbDateTo, dbOwner, dbStatus, areaFilter, dbSearch, importantOnly, notCalledOnly]);
 
+  // The list's server-side filters, shared by the rows and by CS agents' page
+  // count, so the two cannot drift apart.
+  function applyListFilters<Q extends LeadFilterQuery<Q>>(q: Q): Q {
+    // Date range — pushed to DB (assigned_at is indexed)
+    if (dbDateFrom) q = q.gte("assigned_at", dbDateFrom);
+    if (dbDateTo) q = q.lt("assigned_at", dbDateTo);
+
+    // Owner filter — pushed to DB (assigned_to is indexed)
+    if (dbOwner === "__unassigned__") {
+      q = q.is("assigned_to", null);
+    } else if (dbOwner !== null) {
+      q = q.eq("assigned_to", dbOwner);
+    }
+
+    // Status filter — pushed to DB (cs_status+created_at is indexed)
+    if (dbStatus) q = q.eq("cs_status", dbStatus);
+
+    if (notCalledOnly) q = q.is("called_at", null);
+
+    // Search text filter — pushed to DB across all pages
+    if (dbSearch) {
+      const s = `%${dbSearch}%`;
+      // Phone columns use a separator-agnostic pattern so a digits-only query
+      // matches formatted stored numbers (and vice versa). Falls back to the
+      // literal pattern for non-numeric queries.
+      const phone = phoneSearchPattern(dbSearch) ?? s;
+      q = q.or(
+        `customer_name.ilike.${s},customer_number.ilike.${phone},customer_number_2.ilike.${phone},number_name.ilike.${s},main_area.ilike.${s},sub_area.ilike.${s},pass_it_to.ilike.${s},requirement_1.ilike.${s},requirement_2.ilike.${s}`,
+      );
+    }
+
+    if (importantOnly) q = q.eq("is_important", true);
+    return q;
+  }
+
   const list = useQuery({
     queryKey: [
       "cs_leads",
@@ -586,44 +621,16 @@ function Inner() {
       const from = (page - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
-      let q = supabase
-        .from("qualified_leads")
-        .select(
-          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at",
-        )
-        .order("pinned_important", { ascending: false })
-        .order("assigned_at", { ascending: false })
-        .range(from, to);
-
-      // Date range — pushed to DB (assigned_at is indexed)
-      if (dbDateFrom) q = q.gte("assigned_at", dbDateFrom);
-      if (dbDateTo) q = q.lt("assigned_at", dbDateTo);
-
-      // Owner filter — pushed to DB (assigned_to is indexed)
-      if (dbOwner === "__unassigned__") {
-        q = q.is("assigned_to", null);
-      } else if (dbOwner !== null) {
-        q = q.eq("assigned_to", dbOwner);
-      }
-
-      // Status filter — pushed to DB (cs_status+created_at is indexed)
-      if (dbStatus) q = q.eq("cs_status", dbStatus);
-
-      if (notCalledOnly) q = q.is("called_at", null);
-
-      // Search text filter — pushed to DB across all pages
-      if (dbSearch) {
-        const s = `%${dbSearch}%`;
-        // Phone columns use a separator-agnostic pattern so a digits-only query
-        // matches formatted stored numbers (and vice versa). Falls back to the
-        // literal pattern for non-numeric queries.
-        const phone = phoneSearchPattern(dbSearch) ?? s;
-        q = q.or(
-          `customer_name.ilike.${s},customer_number.ilike.${phone},customer_number_2.ilike.${phone},number_name.ilike.${s},main_area.ilike.${s},sub_area.ilike.${s},pass_it_to.ilike.${s},requirement_1.ilike.${s},requirement_2.ilike.${s}`,
-        );
-      }
-
-      if (importantOnly) q = q.eq("is_important", true);
+      const q = applyListFilters(
+        supabase
+          .from("qualified_leads")
+          .select(
+            "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at",
+          )
+          .order("pinned_important", { ascending: false })
+          .order("assigned_at", { ascending: false })
+          .range(from, to),
+      );
 
       const { data, error } = await q;
       if (error) throw error;
@@ -807,7 +814,30 @@ function Inner() {
   // every case.
   const effectiveTotalCount = cachedStatusTotal;
 
-  const totalPages = Math.max(1, Math.ceil(effectiveTotalCount / PAGE_SIZE));
+  // CS agents see the whole team's counts, but can only open their own and
+  // unassigned leads, so their pages are counted from the rows they can read.
+  const csVisibleCount = useQuery({
+    queryKey: [
+      "cs_leads",
+      "visible_count",
+      { dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, importantOnly, notCalledOnly },
+    ],
+    enabled: isCs,
+    queryFn: async () => {
+      const q = applyListFilters(
+        supabase.from("qualified_leads").select("id", { count: "exact", head: true }),
+      );
+      const { count, error } = await q;
+      if (error) throw error;
+      return count ?? 0;
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    placeholderData: keepPreviousData,
+  });
+  const pageableTotal = isCs ? (csVisibleCount.data ?? 0) : effectiveTotalCount;
+
+  const totalPages = Math.max(1, Math.ceil(pageableTotal / PAGE_SIZE));
 
   const notCalledFilterValue: NotCalledFilter = notCalledOnly ? (dbStatus ?? "__all__") : "__off__";
 
@@ -1819,7 +1849,7 @@ function Inner() {
           </Button>
           <span className="text-[12px] text-muted-foreground tabular-nums px-2">
             Page {page} of {totalPages}
-            <span className="ml-1 text-[11px]">({effectiveTotalCount} total)</span>
+            <span className="ml-1 text-[11px]">({pageableTotal} total)</span>
           </span>
           <Button
             variant="outline"
@@ -1926,6 +1956,15 @@ function Inner() {
     </div>
   );
 }
+
+/** The filter methods applyListFilters uses, common to every select on leads. */
+type LeadFilterQuery<Q> = {
+  gte(column: string, value: string): Q;
+  lt(column: string, value: string): Q;
+  is(column: string, value: null): Q;
+  eq(column: string, value: string | boolean): Q;
+  or(filters: string): Q;
+};
 
 function CsLeadsTable({
   leads,

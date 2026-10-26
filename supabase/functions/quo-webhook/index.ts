@@ -30,6 +30,9 @@ const text = (body: string, status: number) =>
   new Response(body, { status, headers: { "Cache-Control": "no-store" } });
 
 export async function handleQuoWebhook(req: Request): Promise<Response> {
+  // Quo checks that the URL answers before it lets a webhook be enabled. A
+  // probe carries no event and changes nothing, so it simply gets an OK.
+  if (req.method === "GET" || req.method === "HEAD") return text("OK", 200);
   if (req.method !== "POST") return text("Method not allowed", 405);
 
   const secret = Deno.env.get("QUO_WEBHOOK_SECRET");
