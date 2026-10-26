@@ -2,7 +2,13 @@
 import { CS_ASK_CATALOGUE } from "./cs-ask-catalogue.generated.ts";
 import type { AskIntent } from "./cs-ask-catalogue-types.ts";
 import { detect, normalizeSource, type Detection } from "./cs-detect.ts";
-import { fragmentsAreSafe, selectAsks, type SelectedAsk } from "./cs-ask-policy.ts";
+import {
+  fragmentsAreSafe,
+  selectAsks,
+  type AskSelection,
+  type SelectedAsk,
+} from "./cs-ask-policy.ts";
+import { applyFit, CS_FIT_PROMPT, FIT_SCHEMA, fitMenuIds } from "./cs-question-fit.ts";
 import {
   fallbackServiceContext,
   GROUNDING_PROMPT_WORDS,
@@ -11,7 +17,7 @@ import {
   ungroundedWords,
 } from "./cs-context-grounding.ts";
 
-export const CS_COMPOSER_VERSION = "2026-10-22.catalogue-v3.3-grounded";
+export const CS_COMPOSER_VERSION = "2026-10-26.catalogue-v3.4-fitted";
 export const CS_COMPOSER_MODEL = "gpt-5.4-nano-2026-03-17";
 
 export type ComposerInput = {
@@ -203,17 +209,21 @@ export function renderComposePlan(input: ComposerInput, plan: ComposePlan, sende
 type AiOptions = {
   apiKey: string;
   model?: string;
+  /** Let the model fit the catalogue's questions to the lead (cs-question-fit). */
+  fitQuestions?: boolean;
   stylePreferences?: string;
   fetcher?: typeof fetch;
   signal?: AbortSignal;
 };
 
-async function requestTargeting(
+/** One strict-JSON model call, retried once on a network error, 429 or 5xx. */
+async function requestJson(
   options: AiOptions,
-  input: ComposerInput,
-  detection: Detection,
-  correction: string[] = [],
-) {
+  system: string,
+  payload: unknown,
+  name: string,
+  schema: unknown,
+): Promise<unknown> {
   const fetcher = options.fetcher ?? fetch;
   for (let attempt = 0; attempt < 2; attempt++) {
     let response: Response;
@@ -230,29 +240,12 @@ async function requestTargeting(
           max_completion_tokens: 2000,
           store: false,
           messages: [
-            { role: "system", content: CS_COMPOSER_PROMPT },
-            {
-              role: "user",
-              content: JSON.stringify({
-                lead: {
-                  postText: input.postText ?? "",
-                  context: input.context ?? "",
-                  service: input.service ?? "",
-                  notes: input.notes ?? [],
-                },
-                objects: detection.objects,
-                stylePreferences: options.stylePreferences ?? "",
-                ...(correction.length ? { correction } : {}),
-              }),
-            },
+            { role: "system", content: system },
+            { role: "user", content: JSON.stringify(payload) },
           ],
           response_format: {
             type: "json_schema",
-            json_schema: {
-              name: "cs_compose_target",
-              strict: true,
-              schema: COMPOSE_TARGET_SCHEMA(detection.objects),
-            },
+            json_schema: { name, strict: true, schema },
           },
         }),
       });
@@ -296,9 +289,72 @@ async function requestTargeting(
     const choice = body.choices?.[0];
     if (choice?.message?.refusal || choice?.finish_reason !== "stop")
       throw new Error("Composer response incomplete or refused");
-    return parseTargeting(JSON.parse(choice.message.content), detection.objects);
+    return JSON.parse(choice.message.content);
   }
   throw new Error("Composer request failed");
+}
+
+async function requestTargeting(
+  options: AiOptions,
+  input: ComposerInput,
+  detection: Detection,
+  correction: string[] = [],
+) {
+  const value = await requestJson(
+    options,
+    CS_COMPOSER_PROMPT,
+    {
+      lead: {
+        postText: input.postText ?? "",
+        context: input.context ?? "",
+        service: input.service ?? "",
+        notes: input.notes ?? [],
+      },
+      objects: detection.objects,
+      stylePreferences: options.stylePreferences ?? "",
+      ...(correction.length ? { correction } : {}),
+    },
+    "cs_compose_target",
+    COMPOSE_TARGET_SCHEMA(detection.objects),
+  );
+  return parseTargeting(value, detection.objects);
+}
+
+/**
+ * The questions fitted to this lead, or null to keep the measured pair: on a
+ * refused answer, and on any failure of the call itself, since the measured
+ * pair is always a sendable reply.
+ */
+async function requestFit(
+  options: AiOptions,
+  input: ComposerInput,
+  serviceContext: string,
+  selection: AskSelection,
+  lead: string[],
+): Promise<SelectedAsk[] | null> {
+  const ids = fitMenuIds(selection.options);
+  try {
+    const value = await requestJson(
+      options,
+      CS_FIT_PROMPT,
+      {
+        lead: {
+          postText: input.postText ?? "",
+          context: input.context ?? "",
+          service: input.service ?? "",
+          notes: input.notes ?? [],
+        },
+        opening: serviceContext,
+        menu: selection.options.map((ask, index) => ({ id: ids[index], text: ask.fragment })),
+        suggested: selection.asks.map((ask) => ids[selection.options.indexOf(ask)] ?? null),
+      },
+      "cs_fit_questions",
+      FIT_SCHEMA(ids),
+    );
+    return applyFit(value, selection.options, lead);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -407,19 +463,42 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
   }
   if (!fragmentsAreSafe(selection.asks)) throw new Error("Unsupported composer opening");
 
+  let asks = selection.asks;
+  if (options.fitQuestions && asks.length) {
+    const fitted = await requestFit(bounded, input, serviceContext, selection, lead);
+    // The fitted questions answer to the same opening rule as the catalogue's:
+    // "the unit" needs an opening that names the unit.
+    const coherent =
+      fitted &&
+      !(
+        refersToObject(
+          fitted.map((ask) => ask.fragment),
+          targetObject,
+        ) && !namesObject(serviceContext, targetObject)
+      );
+    if (!fitted) checks.push("fit_unavailable");
+    else if (!coherent || !fragmentsAreSafe(fitted)) checks.push("fit_refused");
+    else {
+      const same = (a: SelectedAsk[], b: SelectedAsk[]) =>
+        a.length === b.length && a.every((ask, i) => ask.fragment === b[i].fragment);
+      if (!same(fitted, asks)) checks.push("questions_fitted");
+      asks = fitted;
+    }
+  }
+
   const warnings = [
     ...selection.suppressed.map((intent) => `answered_${intent.replace("/", "_")}`),
     ...(detection.objects.length > 1 ? ["multiple_objects"] : []),
     ...(draft.targeting.targetObject === null && detection.objects.length ? ["retargeted"] : []),
-    ...(selection.asks.length === 0 ? ["no_ask_available"] : []),
-    ...(selection.asks.length === 1 ? ["single_ask"] : []),
+    ...(asks.length === 0 ? ["no_ask_available"] : []),
+    ...(asks.length === 1 ? ["single_ask"] : []),
     ...checks,
   ];
   const plan: ComposePlan = {
     serviceContext,
     targetObject,
     ladderKey: selection.ladderKey,
-    questions: selection.asks.map((ask: SelectedAsk) => ({
+    questions: asks.map((ask: SelectedAsk) => ({
       key: ask.intent,
       object: ask.object,
       text: ask.fragment,

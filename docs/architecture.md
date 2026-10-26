@@ -432,6 +432,23 @@ brand list is likewise derived from the leads now rather than typed by hand,
 which is what stopped "a Thermador freezer repair service" from being followed
 by a request for the brand.
 
+#### The questions are fitted to the lead
+
+Since `2026-10-26.catalogue-v3.4-fitted` a second model step, `cs-question-fit.ts`,
+looks at the measured pair next to every other question the catalogue still has
+open for the lead. It may swap a question that does not make sense for this
+lead for another on that list, and name the customer's own item in it: "replace
+my garage door opener" had been asked availability and address, "rebuild six
+garage drawers" "a picture of the cabinets", a garage floor "let me know the
+size". It cannot add a question: it answers with menu ids only. Each fitted
+wording must keep its kind of ask, start with the team's verb, and use only
+words from that question, the lead, or the team's common connecting words for
+that ask, never an item name borrowed from another job's phrase ("spring" on an
+off-track door). A wording that fails keeps the catalogue's; a choice that
+breaks a pair rule (two of a kind, scope with problem, more than two) or a
+failed call keeps the measured pair, so the step can only make a reply fit
+better. Warnings record `questions_fitted`, `fit_refused` or `fit_unavailable`.
+
 Classification is **batched** — `.in()` lookups chunked by 10, posts under 20
 characters skipped, duplicates excluded, at most 50 rows per request, results
 written back through the single `batch_update_raw_lead_decisions` RPC.

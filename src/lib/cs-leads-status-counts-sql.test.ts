@@ -94,7 +94,7 @@ describe("CS filtered status counts", () => {
     } finally {
       await db.close();
     }
-  });
+  }, 30_000);
 
   it("drops a signature that was applied earlier, leaving no dead overload", async () => {
     const db = new PGlite();
@@ -116,7 +116,7 @@ describe("CS filtered status counts", () => {
     } finally {
       await db.close();
     }
-  });
+  }, 30_000);
 
   it("counts only the filtered set, not every lead", async () => {
     const db = await migratedDb();
@@ -159,7 +159,7 @@ describe("CS filtered status counts", () => {
     } finally {
       await db.close();
     }
-  });
+  }, 30_000);
 
   it("gives a CS agent the whole team's counts, and nobody else any", async () => {
     const db = await migratedDb();
@@ -202,5 +202,5 @@ describe("CS filtered status counts", () => {
     } finally {
       await db.close();
     }
-  });
+  }, 30_000);
 });

@@ -47,7 +47,7 @@ for (const [index, entry] of cases.entries()) {
           "Set OPENAI_API_KEY for local model testing, or use authenticated deployed leadId cases",
         );
       if (!entry.input) throw new Error("Local case requires input");
-      const result = await composeAnswerAware(entry.input, { apiKey });
+      const result = await composeAnswerAware(entry.input, { apiKey, fitQuestions: true });
       output = {
         rephrased: renderComposePlan(entry.input, result.plan, "Alex"),
         version: result.version,
