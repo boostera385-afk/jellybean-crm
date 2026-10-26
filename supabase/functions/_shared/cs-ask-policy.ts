@@ -41,6 +41,9 @@ export type AskSelection = {
   ladderKey: string;
   /** Candidate intents dropped because the customer had already answered. */
   suppressed: AskIntent[];
+  /** Every ask that survived for this lead, most-asked first, one per intent:
+   *  what the fit step may choose from instead of the measured pair. */
+  options: SelectedAsk[];
 };
 
 export function serviceKey(service: string | null | undefined): string {
@@ -355,6 +358,9 @@ export function selectAsks(
     fragment: candidate.fragment,
   });
   const byIntent = new Map(candidates.map((candidate) => [candidate.entry.intent, candidate]));
+  const options = ranked
+    .filter((c, i) => ranked.findIndex((o) => o.entry.intent === c.entry.intent) === i)
+    .map(take);
 
   // The sub-category's own pair distribution first, then the global one. Both
   // are ordered most-used first, so the first pair whose asks both survive
@@ -368,6 +374,7 @@ export function selectAsks(
         asks: [take(lead), take(closer)],
         ladderKey: key,
         suppressed: [...new Set(suppressed)],
+        options,
       };
     }
   }
@@ -389,6 +396,7 @@ export function selectAsks(
         asks: [take(first), take(second)],
         ladderKey: key,
         suppressed: [...new Set(suppressed)],
+        options,
       };
   }
   let solo: { score: number; candidate: Candidate } | null = null;
@@ -401,6 +409,7 @@ export function selectAsks(
     asks: solo ? [take(solo.candidate)] : [],
     ladderKey: key,
     suppressed: [...new Set(suppressed)],
+    options,
   };
 }
 

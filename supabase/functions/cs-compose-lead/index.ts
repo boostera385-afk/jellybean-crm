@@ -89,7 +89,7 @@ export async function handleCompose(req: Request): Promise<Response> {
           cases.slice(start, start + 3).map(async (test) => {
             if (!test.input || JSON.stringify(test.input).length > 8000)
               throw new Error("Invalid evaluation fixture");
-            const result = await composeAnswerAware(test.input, { apiKey });
+            const result = await composeAnswerAware(test.input, { apiKey, fitQuestions: true });
             const message = renderComposePlan(test.input, result.plan, "Alex");
             const keys = result.plan.questions.map((q) => q.key);
             return {
@@ -206,7 +206,11 @@ export async function handleCompose(req: Request): Promise<Response> {
       pref?.policyVersion === CS_COMPOSER_VERSION && typeof pref.text === "string"
         ? pref.text.slice(0, 2000)
         : "";
-    const result = await composeAnswerAware(input, { apiKey, stylePreferences });
+    const result = await composeAnswerAware(input, {
+      apiKey,
+      stylePreferences,
+      fitQuestions: true,
+    });
     const { data: tick, error: tickError } = await admin.rpc("cs_next_compose_sender_tick");
     const sender = senderForTick(!tickError && tick !== null ? Number(tick) : fallbackTick());
     const rephrased = renderComposePlan(input, result.plan, sender);
