@@ -6,9 +6,9 @@ describe("urgent CS/Crisp UI contracts", () => {
     const source = readFileSync("src/routes/app.cs-leads.tsx", "utf8");
     expect(source).toContain("IMP LEADS");
     expect(source).not.toContain("garageDoorOnly");
-    // Listing filters in the query itself; pagination's total now comes from
-    // cs_leads_status_counts_filtered, which applies the same predicate
-    // server-side, so the exact count(*) that carried the second copy is gone.
+    // One copy of the listing filters (applyListFilters), shared by the rows and
+    // by CS agents' page count; everyone else's pagination total comes from
+    // cs_leads_status_counts_filtered, which applies the same predicate.
     expect(source.match(/if \(importantOnly\) q = q\.eq\("is_important", true\)/g)).toHaveLength(1);
     expect(source).toContain("p_important: importantOnly");
     expect(source).toContain('if (!importantOnly) setActiveStatus("__all__")');
