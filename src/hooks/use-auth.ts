@@ -38,6 +38,8 @@ export interface AuthState {
   profile: AuthProfile | null;
   roles: AppRole[];
   primaryRole: AppRole | null;
+  /** Optional, role-independent features granted to this user (e.g. "analytics"). */
+  features: string[];
   accessCodeVerified: boolean;
   accessCodeChecking: boolean;
   refreshAccessCode: () => Promise<void>;
@@ -60,6 +62,7 @@ export function useAuthState(): AuthState {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
+  const [features, setFeatures] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [accessCodeVerified, setAccessCodeVerified] = useState(false);
   const [accessCodeChecking, setAccessCodeChecking] = useState(false);
@@ -69,21 +72,29 @@ export function useAuthState(): AuthState {
     if (!uid) {
       setProfile(null);
       setRoles([]);
+      setFeatures([]);
       return;
     }
-    const [{ data: prof, error: profileError }, { data: rolesData, error: rolesError }] =
-      await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, user_id, full_name, username, email, is_active")
-          .eq("user_id", uid)
-          .maybeSingle(),
-        supabase.from("user_roles").select("role").eq("user_id", uid),
-      ]);
+    const [
+      { data: prof, error: profileError },
+      { data: rolesData, error: rolesError },
+      { data: featureData, error: featuresError },
+    ] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("id, user_id, full_name, username, email, is_active")
+        .eq("user_id", uid)
+        .maybeSingle(),
+      supabase.from("user_roles").select("role").eq("user_id", uid),
+      supabase.from("user_feature_access").select("feature").eq("user_id", uid).eq("enabled", true),
+    ]);
     if (profileError) throw profileError;
     if (rolesError) throw rolesError;
+    // Feature grants are optional; never block sign-in if the lookup fails.
+    if (featuresError) console.error("[Auth] Could not load feature access", featuresError);
     setProfile((prof as AuthProfile | null) ?? null);
     setRoles(((rolesData as { role: AppRole }[] | null) ?? []).map((r) => r.role));
+    setFeatures(((featureData as { feature: string }[] | null) ?? []).map((row) => row.feature));
   }, []);
 
   useEffect(() => {
@@ -104,6 +115,7 @@ export function useAuthState(): AuthState {
           if (!latestSessionRef.current) {
             setProfile(null);
             setRoles([]);
+            setFeatures([]);
           }
         })
         .finally(() => {
@@ -182,6 +194,7 @@ export function useAuthState(): AuthState {
     profile,
     roles,
     primaryRole,
+    features,
     accessCodeVerified,
     accessCodeChecking,
     refreshAccessCode,

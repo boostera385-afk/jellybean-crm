@@ -64,6 +64,12 @@ const SERVICE_AREA_BASE_ITEM: Item = {
   icon: MapPinned,
 };
 
+// Optional feature entries an admin can grant per user from
+// Settings -> Feature Access. Keyed by the feature flag name.
+const FEATURE_NAV_ITEMS: Record<string, Item> = {
+  analytics: { to: "/app/analytics", label: "Analytics", icon: LineChart },
+};
+
 const ADMIN: Item[] = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, shortcut: "D" },
   { to: "/app/raw-leads", label: "Raw Leads", icon: Table2, shortcut: "L" },
@@ -148,8 +154,20 @@ function itemsForRole(role: AppRole | null): Item[] {
   return [];
 }
 
-function navigationGroupsForRole(role: AppRole | null): Array<{ label: string; items: Item[] }> {
-  const available = itemsForRole(role);
+// Append any granted optional features that the role doesn't already surface.
+function withGrantedFeatures(items: Item[], features: string[]): Item[] {
+  const present = new Set(items.map((item) => item.to));
+  const extra = features
+    .map((feature) => FEATURE_NAV_ITEMS[feature])
+    .filter((item): item is Item => !!item && !present.has(item.to));
+  return extra.length > 0 ? [...items, ...extra] : items;
+}
+
+function navigationGroupsForRole(
+  role: AppRole | null,
+  features: string[],
+): Array<{ label: string; items: Item[] }> {
+  const available = withGrantedFeatures(itemsForRole(role), features);
   if (role !== "admin" && role !== "sub_admin") return [{ label: "Workspace", items: available }];
 
   const groups = [
@@ -195,7 +213,7 @@ function roleLabel(role: AppRole | null) {
 
 export function AppShell({ auth, children }: { auth: AuthState; children: React.ReactNode }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
-  const navigationGroups = navigationGroupsForRole(auth.primaryRole);
+  const navigationGroups = navigationGroupsForRole(auth.primaryRole, auth.features);
   const displayName = auth.profile?.full_name || auth.user?.email || "-";
   const skewSeconds = useClockSkew();
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);

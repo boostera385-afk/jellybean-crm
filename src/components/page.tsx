@@ -56,12 +56,19 @@ type Role =
 export function RoleGate({
   allow,
   current,
+  allowOverride = false,
   children,
 }: {
   allow: Array<Role>;
   current: Role | null;
+  /** Grant access regardless of role, e.g. when the user has a per-user feature grant. */
+  allowOverride?: boolean;
   children: React.ReactNode;
 }) {
+  if (allowOverride) {
+    return <>{children}</>;
+  }
+
   if (!current) {
     return (
       <div className="flex items-center justify-center p-10 text-muted-foreground">

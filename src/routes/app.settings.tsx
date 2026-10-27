@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -52,6 +53,8 @@ import {
   Megaphone,
   MessageSquare,
   RefreshCw,
+  LineChart,
+  Search,
 } from "lucide-react";
 import { DocumentationTab } from "@/components/settings/documentation-tab";
 import { CrmUpdatesTab } from "@/components/settings/crm-updates-tab";
@@ -69,18 +72,26 @@ import {
 } from "@/lib/admin-users.functions";
 import { adminDeleteUser } from "@/lib/login-otp.functions";
 import {
+  listFeatureAccess,
+  setFeatureAccess,
+  type FeatureAccessUserRow,
+  type ManagedFeature,
+} from "@/lib/feature-access.functions";
+import {
   manageableRolesFor,
   type UserManagementRole,
   type UserManagerRole,
 } from "@/lib/user-management-permissions";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "general" | "updates" | "users" | "docs" | "crm-updates" | "crisp";
+type SettingsTab =
+  "general" | "updates" | "users" | "feature-access" | "docs" | "crm-updates" | "crisp";
 
 const SETTINGS_TABS = new Set<SettingsTab>([
   "general",
   "updates",
   "users",
+  "feature-access",
   "docs",
   "crm-updates",
   "crisp",
@@ -185,6 +196,13 @@ function Page() {
                   Users
                 </TabBtn>
                 <TabBtn
+                  active={tab === "feature-access"}
+                  onClick={() => setTab("feature-access")}
+                  icon={<LineChart className="h-3.5 w-3.5" />}
+                >
+                  Feature Access
+                </TabBtn>
+                <TabBtn
                   active={tab === "docs"}
                   onClick={() => setTab("docs")}
                   icon={<BookOpen className="h-3.5 w-3.5" />}
@@ -211,6 +229,7 @@ function Page() {
           {isAdmin && tab === "general" && <GeneralTab />}
           {isAdmin && tab === "updates" && <UpdatesTab />}
           {tab === "users" && <UsersTab managerRole={auth.primaryRole as UserManagerRole} />}
+          {isAdmin && tab === "feature-access" && <FeatureAccessTab />}
           {isAdmin && tab === "docs" && <DocumentationTab />}
           {isAdmin && tab === "crm-updates" && <CrmUpdatesTab />}
           {isAdmin && tab === "crisp" && <CrispSettingsTab />}
@@ -519,6 +538,159 @@ function UsersTab({ managerRole }: { managerRole: UserManagerRole }) {
         />
       )}
     </div>
+  );
+}
+
+const FEATURE_META: Array<{ key: ManagedFeature; label: string; description: string }> = [
+  {
+    key: "analytics",
+    label: "Analytics",
+    description: "Show the Analytics dashboard in this user's sidebar.",
+  },
+];
+
+function FeatureAccessTab() {
+  const qc = useQueryClient();
+  const getRows = useServerFn(listFeatureAccess);
+  const [search, setSearch] = useState("");
+  const featureQueryKey = ["feature-access"] as const;
+
+  const rowsQuery = useQuery({
+    queryKey: featureQueryKey,
+    queryFn: async (): Promise<FeatureAccessUserRow[]> => await getRows(),
+  });
+
+  const rows = rowsQuery.data ?? [];
+  const term = search.trim().toLowerCase();
+  const filtered = term
+    ? rows.filter(
+        (u) =>
+          u.full_name.toLowerCase().includes(term) ||
+          u.email.toLowerCase().includes(term) ||
+          (u.username ?? "").toLowerCase().includes(term) ||
+          roleLabel(u.role).toLowerCase().includes(term),
+      )
+    : rows;
+
+  const colSpan = FEATURE_META.length + 1;
+
+  return (
+    <div className="space-y-4">
+      <div className="crm-section-panel">
+        <div className="crm-surface-card p-5">
+          <h3 className="text-sm font-semibold mb-1">Feature Access</h3>
+          <p className="text-xs text-muted-foreground">
+            Grant optional features to individual users on top of their role. Toggle a feature on
+            and it appears in that user's sidebar the next time they load the app.
+          </p>
+        </div>
+      </div>
+
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by name, email, or role..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
+      <div className="bg-card border rounded-lg overflow-hidden">
+        <table className="crm-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              {FEATURE_META.map((feature) => (
+                <th key={feature.key} className="text-center">
+                  {feature.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rowsQuery.isLoading && (
+              <tr>
+                <td colSpan={colSpan} className="text-center text-muted-foreground py-6">
+                  Loading...
+                </td>
+              </tr>
+            )}
+            {rowsQuery.isError && (
+              <tr>
+                <td colSpan={colSpan} className="text-center text-destructive py-6">
+                  {friendlyError(rowsQuery.error)}
+                </td>
+              </tr>
+            )}
+            {!rowsQuery.isLoading &&
+              !rowsQuery.isError &&
+              filtered.map((u) => (
+                <FeatureAccessRow
+                  key={u.user_id}
+                  user={u}
+                  onChange={() => qc.invalidateQueries({ queryKey: featureQueryKey })}
+                />
+              ))}
+            {!rowsQuery.isLoading && !rowsQuery.isError && filtered.length === 0 && (
+              <tr>
+                <td colSpan={colSpan} className="text-center text-muted-foreground py-6">
+                  {rows.length === 0 ? "No users yet." : "No users match your search."}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function FeatureAccessRow({
+  user,
+  onChange,
+}: {
+  user: FeatureAccessUserRow;
+  onChange: () => void;
+}) {
+  const setAccess = useServerFn(setFeatureAccess);
+  const [busyFeature, setBusyFeature] = useState<ManagedFeature | null>(null);
+
+  async function toggle(feature: ManagedFeature, enabled: boolean, label: string) {
+    setBusyFeature(feature);
+    try {
+      await setAccess({ data: { userId: user.user_id, feature, enabled } });
+      toast.success(`${label} ${enabled ? "enabled" : "disabled"} for ${user.full_name}`);
+      onChange();
+    } catch (e) {
+      toast.error(friendlyError(e));
+    } finally {
+      setBusyFeature(null);
+    }
+  }
+
+  return (
+    <tr>
+      <td>
+        <div className="font-medium">{user.full_name}</div>
+        <div className="text-xs text-muted-foreground capitalize">{roleLabel(user.role)}</div>
+      </td>
+      {FEATURE_META.map((feature) => {
+        const enabled = user.features.includes(feature.key);
+        return (
+          <td key={feature.key} className="text-center">
+            <div className="flex items-center justify-center">
+              <Switch
+                checked={enabled}
+                disabled={busyFeature !== null}
+                onCheckedChange={(checked) => toggle(feature.key, checked, feature.label)}
+                aria-label={`${feature.label} access for ${user.full_name}`}
+              />
+            </div>
+          </td>
+        );
+      })}
+    </tr>
   );
 }
 
