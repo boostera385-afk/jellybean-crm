@@ -197,7 +197,11 @@ function Page() {
     <div>
       <PageHeader title="Reports" description="Operational counts across the pipeline." />
       <PageBody>
-        <RoleGate allow={["admin", "sub_admin"]} current={auth.primaryRole}>
+        <RoleGate
+          allow={["admin", "sub_admin"]}
+          current={auth.primaryRole}
+          allowOverride={auth.features.includes("reports")}
+        >
           <Inner />
         </RoleGate>
       </PageBody>

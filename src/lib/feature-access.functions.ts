@@ -7,7 +7,7 @@ import { logActivity } from "@/lib/activity-log";
 // Optional, role-independent features an admin can grant to individual users.
 // Adding a new feature here is all that's needed to expose it in the
 // Settings -> Feature Access matrix.
-export const MANAGED_FEATURES = ["analytics"] as const;
+export const MANAGED_FEATURES = ["analytics", "reports"] as const;
 export type ManagedFeature = (typeof MANAGED_FEATURES)[number];
 
 const MANAGED_FEATURE_SET = new Set<string>(MANAGED_FEATURES);

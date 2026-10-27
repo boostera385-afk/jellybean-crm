@@ -547,6 +547,11 @@ const FEATURE_META: Array<{ key: ManagedFeature; label: string; description: str
     label: "Analytics",
     description: "Show the Analytics dashboard in this user's sidebar.",
   },
+  {
+    key: "reports",
+    label: "Reports",
+    description: "Show the Reports page in this user's sidebar.",
+  },
 ];
 
 function FeatureAccessTab() {
