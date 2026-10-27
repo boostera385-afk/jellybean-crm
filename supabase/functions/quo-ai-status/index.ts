@@ -60,7 +60,20 @@ export async function handleAiStatus(req: Request): Promise<Response> {
       .eq("user_id", auth.user.id)
       .in("role", ["admin", "sub_admin", "cs_admin"]);
     if (roleError) return json({ error: "Could not verify permissions" }, 503);
-    if (!roles?.length) return json({ error: "AI reporting access required" }, 403);
+    let allowed = Boolean(roles?.length);
+    // Users granted the Analytics / Reports feature may VIEW configuration
+    // status, but never trigger refresh/work/enqueue of Quo processing.
+    if (!allowed && body.action === "configuration") {
+      const { data: feats, error: featError } = await db
+        .from("user_feature_access")
+        .select("feature")
+        .eq("user_id", auth.user.id)
+        .eq("enabled", true)
+        .in("feature", ["analytics", "reports"]);
+      if (featError) return json({ error: "Could not verify permissions" }, 503);
+      allowed = Boolean(feats?.length);
+    }
+    if (!allowed) return json({ error: "AI reporting access required" }, 403);
     actorId = auth.user.id;
   }
   if (!["configuration", "refresh", "work", "enqueue"].includes(String(body.action)))

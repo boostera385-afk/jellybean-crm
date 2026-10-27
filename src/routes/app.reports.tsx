@@ -214,13 +214,18 @@ function Inner() {
   const auth = useAuth();
   const queryClient = useQueryClient();
   const isAdmin = auth.primaryRole === "admin";
-  // The AI/Quo beta comparison is backed by Quo-integration endpoints that
-  // only admin, sub-admin and CS admin may call. Users granted Reports via
-  // Feature Access see the manual report sections without this admin-only block.
-  const canSeeAiReporting =
+  // Refresh/sync of the Quo AI comparison stays with the admin roles only —
+  // they're the ones that may trigger Quo processing.
+  const canManageAiReporting =
     auth.primaryRole === "admin" ||
     auth.primaryRole === "sub_admin" ||
     auth.primaryRole === "cs_admin";
+  // Users granted the Analytics/Reports feature may VIEW the Quo/AI status and
+  // comparison counts (the backend opens the same read access to these grants).
+  const canSeeAiReporting =
+    canManageAiReporting ||
+    auth.features.includes("analytics") ||
+    auth.features.includes("reports");
   // Per-user forwarding breakdown is restricted to admin / sub-admin server-side.
   const canSeeForwardedByUser = auth.primaryRole === "admin" || auth.primaryRole === "sub_admin";
   const today = toIsoDay(new Date());
@@ -284,7 +289,7 @@ function Inner() {
   });
   const progress = useQuery({
     queryKey: ["quo-ai-progress", range.from, range.to],
-    enabled: Boolean(aiConfiguration.data?.configured),
+    enabled: canManageAiReporting && Boolean(aiConfiguration.data?.configured),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("report_quo_ai_progress", {
         p_from: range.from ?? null,
@@ -573,27 +578,29 @@ function Inner() {
                 </p>
               )}
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={
-                refreshAi.isPending ||
-                Boolean(progress.data?.pending) ||
-                !aiConfiguration.data?.configured ||
-                ai.isError
-              }
-              onClick={() => {
-                void ai.refetch();
-                void cs.refetch();
-                refreshAi.mutate({ ...range });
-              }}
-              title="Check every eligible lead in the selected range; each lead is checked at most once every 15 minutes"
-            >
-              <RefreshCw
-                className={cn("mr-1.5 h-3.5 w-3.5", refreshAi.isPending && "animate-spin")}
-              />
-              {refreshAi.isPending ? "Checking Quo…" : "Refresh AI · next 5 leads"}
-            </Button>
+            {canManageAiReporting && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  refreshAi.isPending ||
+                  Boolean(progress.data?.pending) ||
+                  !aiConfiguration.data?.configured ||
+                  ai.isError
+                }
+                onClick={() => {
+                  void ai.refetch();
+                  void cs.refetch();
+                  refreshAi.mutate({ ...range });
+                }}
+                title="Check every eligible lead in the selected range; each lead is checked at most once every 15 minutes"
+              >
+                <RefreshCw
+                  className={cn("mr-1.5 h-3.5 w-3.5", refreshAi.isPending && "animate-spin")}
+                />
+                {refreshAi.isPending ? "Checking Quo…" : "Refresh AI · next 5 leads"}
+              </Button>
+            )}
           </div>
         )}
         <Grid>
