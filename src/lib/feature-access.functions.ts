@@ -13,6 +13,23 @@ export type ManagedFeature = (typeof MANAGED_FEATURES)[number];
 const MANAGED_FEATURE_SET = new Set<string>(MANAGED_FEATURES);
 const featureSchema = z.enum(MANAGED_FEATURES);
 
+// Features a role already includes without an explicit grant. Mirrors the
+// sidebar in app-shell.tsx: admin and sub-admin see Analytics and Reports by
+// default. Users whose roles already cover every managed feature are left out
+// of the Feature Access list entirely (nothing to grant).
+const ROLE_FEATURE_DEFAULTS: Record<string, ManagedFeature[]> = {
+  admin: ["analytics", "reports"],
+  sub_admin: ["analytics", "reports"],
+};
+
+function roleFeaturesFor(roles: string[]): ManagedFeature[] {
+  const set = new Set<ManagedFeature>();
+  for (const role of roles) {
+    for (const feature of ROLE_FEATURE_DEFAULTS[role] ?? []) set.add(feature);
+  }
+  return MANAGED_FEATURES.filter((feature) => set.has(feature));
+}
+
 async function requireAdmin(userId: string): Promise<void> {
   const { data, error } = await supabaseAdmin
     .from("user_roles")
@@ -42,7 +59,10 @@ export type FeatureAccessUserRow = {
   username: string | null;
   email: string;
   role: string | null;
+  /** Features explicitly granted via Feature Access. */
   features: ManagedFeature[];
+  /** Features the user already has from their role (shown on + locked). */
+  roleFeatures: ManagedFeature[];
 };
 
 // Admin-only: every user plus the set of managed features currently granted.
@@ -83,17 +103,26 @@ export const listFeatureAccess = createServerFn({ method: "GET" })
       featuresByUser.set(row.user_id, set);
     }
 
-    return (profiles ?? []).map((profile) => {
-      const granted = featuresByUser.get(profile.user_id) ?? new Set<string>();
-      return {
-        user_id: profile.user_id,
-        full_name: profile.full_name,
-        username: profile.username,
-        email: profile.email,
-        role: rolesByUser.get(profile.user_id)?.[0] ?? null,
-        features: MANAGED_FEATURES.filter((feature) => granted.has(feature)),
-      } satisfies FeatureAccessUserRow;
-    });
+    return (
+      (profiles ?? [])
+        .map((profile) => {
+          const roles = rolesByUser.get(profile.user_id) ?? [];
+          const granted = featuresByUser.get(profile.user_id) ?? new Set<string>();
+          const roleFeatures = roleFeaturesFor(roles);
+          return {
+            user_id: profile.user_id,
+            full_name: profile.full_name,
+            username: profile.username,
+            email: profile.email,
+            role: roles[0] ?? null,
+            features: MANAGED_FEATURES.filter((feature) => granted.has(feature)),
+            roleFeatures,
+          } satisfies FeatureAccessUserRow;
+        })
+        // Drop users whose role already covers every managed feature (admins);
+        // there is nothing to grant them here.
+        .filter((row) => row.roleFeatures.length < MANAGED_FEATURES.length)
+    );
   });
 
 // Admin-only: grant (enabled=true, upsert) or revoke (enabled=false, delete)

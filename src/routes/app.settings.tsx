@@ -681,16 +681,20 @@ function FeatureAccessRow({
         <div className="text-xs text-muted-foreground capitalize">{roleLabel(user.role)}</div>
       </td>
       {FEATURE_META.map((feature) => {
-        const enabled = user.features.includes(feature.key);
+        const byRole = user.roleFeatures.includes(feature.key);
+        const enabled = byRole || user.features.includes(feature.key);
         return (
           <td key={feature.key} className="text-center">
-            <div className="flex items-center justify-center">
+            <div className="flex flex-col items-center justify-center gap-0.5">
               <Switch
                 checked={enabled}
-                disabled={busyFeature !== null}
+                disabled={busyFeature !== null || byRole}
                 onCheckedChange={(checked) => toggle(feature.key, checked, feature.label)}
                 aria-label={`${feature.label} access for ${user.full_name}`}
               />
+              {byRole && (
+                <span className="text-[10px] text-muted-foreground">Included with role</span>
+              )}
             </div>
           </td>
         );
