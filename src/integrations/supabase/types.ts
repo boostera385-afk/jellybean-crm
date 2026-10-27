@@ -2416,7 +2416,7 @@ export type Database = {
       }
       refresh_mv_raw_lead_cache_counts: { Args: never; Returns: undefined }
       report_lead_ai_status: {
-        Args: { p_from?: string; p_to?: string }
+        Args: { p_from?: string | null; p_to?: string | null }
         Returns: Json
       }
       report_leads_by_account:
@@ -2450,7 +2450,7 @@ export type Database = {
         }[]
       }
       report_not_found_by_user: {
-        Args: { _from?: string; _to?: string }
+        Args: { _from?: string | null; _to?: string | null }
         Returns: {
           not_found_count: number
           user_email: string
@@ -2459,7 +2459,7 @@ export type Database = {
         }[]
       }
       report_quo_ai_progress: {
-        Args: { p_from?: string; p_to?: string }
+        Args: { p_from?: string | null; p_to?: string | null }
         Returns: Json
       }
       send_lead_reminder: {
