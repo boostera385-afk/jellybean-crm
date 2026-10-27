@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadCsv } from "@/lib/crm-lite";
 import { isCsUser } from "@/lib/cs-filter";
+import { friendlyError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import { parseAiStatusReport } from "@/lib/ai-status-report";
 import { toast } from "sonner";
@@ -922,12 +923,38 @@ function ForwardedByUserSection({
             name.startsWith("unknown user")
           )
             return false;
-          return !isCsUser({ user_id: u.user_id, full_name: u.user_name, email: u.user_email });
+          return true;
         });
     },
   });
 
-  const rawUsers = useMemo(() => byUserQuery.data ?? [], [byUserQuery.data]);
+  // Exclude Customer Service accounts by their actual role rather than by
+  // guessing from names/emails — name heuristics were dropping legitimate
+  // forwarders (operations staff) whose names happened to contain "cs".
+  const csIdsQuery = useQuery({
+    queryKey: ["forwarded-cs-user-ids"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("user_id, role")
+        .in("role", ["cs", "cs_admin"]);
+      if (error) throw error;
+      return new Set((data ?? []).map((r) => r.user_id));
+    },
+    staleTime: 10 * 60_000,
+  });
+
+  const rawUsers = useMemo(() => {
+    const csIds = csIdsQuery.data;
+    const rows = byUserQuery.data ?? [];
+    // Until the role list loads, exclude only clearly CS-named accounts so we
+    // never leak CS rows; once it loads, filter authoritatively by role.
+    return rows.filter((u) =>
+      csIds
+        ? !(u.user_id && csIds.has(u.user_id))
+        : !isCsUser({ user_id: u.user_id, full_name: u.user_name, email: u.user_email }),
+    );
+  }, [byUserQuery.data, csIdsQuery.data]);
   const totalForwardedAll = useMemo(
     () => rawUsers.reduce((sum, u) => sum + u.forwarded_count, 0),
     [rawUsers],
@@ -1191,7 +1218,14 @@ function ForwardedByUserSection({
                   </td>
                 </tr>
               )}
-              {!byUserQuery.isLoading && filteredUsers.length === 0 && (
+              {!byUserQuery.isLoading && byUserQuery.isError && (
+                <tr>
+                  <td colSpan={3} className="px-4 py-10 text-center text-destructive text-xs">
+                    Couldn't load forwarded leads: {friendlyError(byUserQuery.error)}
+                  </td>
+                </tr>
+              )}
+              {!byUserQuery.isLoading && !byUserQuery.isError && filteredUsers.length === 0 && (
                 <tr>
                   <td colSpan={3} className="px-4 py-10 text-center text-muted-foreground text-xs">
                     {searchUser ? "No matching users found." : "No leads forwarded in this range."}
