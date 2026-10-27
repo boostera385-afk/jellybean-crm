@@ -213,6 +213,15 @@ function Inner() {
   const auth = useAuth();
   const queryClient = useQueryClient();
   const isAdmin = auth.primaryRole === "admin";
+  // The AI/Quo beta comparison is backed by Quo-integration endpoints that
+  // only admin, sub-admin and CS admin may call. Users granted Reports via
+  // Feature Access see the manual report sections without this admin-only block.
+  const canSeeAiReporting =
+    auth.primaryRole === "admin" ||
+    auth.primaryRole === "sub_admin" ||
+    auth.primaryRole === "cs_admin";
+  // Per-user forwarding breakdown is restricted to admin / sub-admin server-side.
+  const canSeeForwardedByUser = auth.primaryRole === "admin" || auth.primaryRole === "sub_admin";
   const today = toIsoDay(new Date());
   const [preset, setPreset] = useState<DatePreset>("all");
   const [fromDate, setFromDate] = useState<string>(today);
@@ -229,11 +238,13 @@ function Inner() {
       if (error) throw error;
       return parseAiStatusReport(data);
     },
+    enabled: canSeeAiReporting,
     staleTime: 30_000,
     retry: false,
   });
   const aiConfiguration = useQuery({
     queryKey: ["ai-status-configuration"],
+    enabled: canSeeAiReporting,
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke("quo-ai-status", {
         body: { action: "configuration" },
@@ -506,82 +517,84 @@ function Inner() {
         title="CS pipeline by status"
         subtitle={`Qualified leads across customer service stages (${csTotal.toLocaleString()} total)`}
       >
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3">
-          <div className="min-w-0 text-xs">
-            <p className="font-semibold text-sky-700 dark:text-sky-300">
-              AI status · Beta · Comparison only
-            </p>
-            <p className="mt-1 text-muted-foreground">
-              Large totals are manual. AI counts use complete Quo SMS history; calls and attachment
-              contents are not analyzed.
-            </p>
-            {ai.data?.scopeStart && (
-              <p className="mt-1 text-muted-foreground">
-                Applies to leads created since{" "}
-                {new Date(ai.data.scopeStart).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                })}
-                . Leads not contacted yet get no AI status.
+        {canSeeAiReporting && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3">
+            <div className="min-w-0 text-xs">
+              <p className="font-semibold text-sky-700 dark:text-sky-300">
+                AI status · Beta · Comparison only
               </p>
-            )}
-            <p className="mt-1 text-muted-foreground" role="status">
-              {ai.isError
-                ? "AI reporting is unavailable. Manual totals are unaffected."
-                : ai.isPending
-                  ? "Loading AI coverage…"
-                  : `${ai.data.classified.toLocaleString()} / ${ai.data.total.toLocaleString()} classified · ${ai.data.disagreements.toLocaleString()} differ from manual · ${ai.data.review.toLocaleString()} need review${ai.data.untouched ? ` · ${ai.data.untouched.toLocaleString()} not contacted yet` : ""} · ${ai.data.stale.toLocaleString()} outdated`}
-            </p>
-            {ai.data?.lastAnalyzedAt && (
               <p className="mt-1 text-muted-foreground">
-                Last checked: {new Date(ai.data.lastAnalyzedAt).toLocaleString()}
+                Large totals are manual. AI counts use complete Quo SMS history; calls and
+                attachment contents are not analyzed.
               </p>
-            )}
-            {(!aiConfiguration.data?.configured || aiConfiguration.isError) &&
-              !aiConfiguration.isPending && (
-                <p className="mt-1 font-medium text-amber-700 dark:text-amber-400">
-                  {aiConfiguration.data?.message ??
-                    "Quo setup required or service unavailable. No AI outcomes have been assumed."}
+              {ai.data?.scopeStart && (
+                <p className="mt-1 text-muted-foreground">
+                  Applies to leads created since{" "}
+                  {new Date(ai.data.scopeStart).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                  })}
+                  . Leads not contacted yet get no AI status.
                 </p>
               )}
-            {aiConfiguration.data?.configured && (
-              <p className="mt-1 text-muted-foreground">
-                Quo connected · {aiConfiguration.data.phoneNumberCount} inboxes ·{" "}
-                {aiConfiguration.data.phoneNumberSource === "discovered"
-                  ? "IDs discovered automatically"
-                  : "Inbox allowlist active"}
+              <p className="mt-1 text-muted-foreground" role="status">
+                {ai.isError
+                  ? "AI reporting is unavailable. Manual totals are unaffected."
+                  : ai.isPending
+                    ? "Loading AI coverage…"
+                    : `${ai.data.classified.toLocaleString()} / ${ai.data.total.toLocaleString()} classified · ${ai.data.disagreements.toLocaleString()} differ from manual · ${ai.data.review.toLocaleString()} need review${ai.data.untouched ? ` · ${ai.data.untouched.toLocaleString()} not contacted yet` : ""} · ${ai.data.stale.toLocaleString()} outdated`}
               </p>
-            )}
-            {Boolean(progress.data?.pending) && (
-              <p className="mt-1 font-medium text-sky-700 dark:text-sky-300" role="status">
-                {progress.data!.pending} leads syncing · {progress.data!.workDone}/
-                {progress.data!.workTotal} inbox checks for pending leads. Sync resumes
-                automatically; partial history is never counted.
-              </p>
-            )}
+              {ai.data?.lastAnalyzedAt && (
+                <p className="mt-1 text-muted-foreground">
+                  Last checked: {new Date(ai.data.lastAnalyzedAt).toLocaleString()}
+                </p>
+              )}
+              {(!aiConfiguration.data?.configured || aiConfiguration.isError) &&
+                !aiConfiguration.isPending && (
+                  <p className="mt-1 font-medium text-amber-700 dark:text-amber-400">
+                    {aiConfiguration.data?.message ??
+                      "Quo setup required or service unavailable. No AI outcomes have been assumed."}
+                  </p>
+                )}
+              {aiConfiguration.data?.configured && (
+                <p className="mt-1 text-muted-foreground">
+                  Quo connected · {aiConfiguration.data.phoneNumberCount} inboxes ·{" "}
+                  {aiConfiguration.data.phoneNumberSource === "discovered"
+                    ? "IDs discovered automatically"
+                    : "Inbox allowlist active"}
+                </p>
+              )}
+              {Boolean(progress.data?.pending) && (
+                <p className="mt-1 font-medium text-sky-700 dark:text-sky-300" role="status">
+                  {progress.data!.pending} leads syncing · {progress.data!.workDone}/
+                  {progress.data!.workTotal} inbox checks for pending leads. Sync resumes
+                  automatically; partial history is never counted.
+                </p>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={
+                refreshAi.isPending ||
+                Boolean(progress.data?.pending) ||
+                !aiConfiguration.data?.configured ||
+                ai.isError
+              }
+              onClick={() => {
+                void ai.refetch();
+                void cs.refetch();
+                refreshAi.mutate({ ...range });
+              }}
+              title="Check every eligible lead in the selected range; each lead is checked at most once every 15 minutes"
+            >
+              <RefreshCw
+                className={cn("mr-1.5 h-3.5 w-3.5", refreshAi.isPending && "animate-spin")}
+              />
+              {refreshAi.isPending ? "Checking Quo…" : "Refresh AI · next 5 leads"}
+            </Button>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={
-              refreshAi.isPending ||
-              Boolean(progress.data?.pending) ||
-              !aiConfiguration.data?.configured ||
-              ai.isError
-            }
-            onClick={() => {
-              void ai.refetch();
-              void cs.refetch();
-              refreshAi.mutate({ ...range });
-            }}
-            title="Check every eligible lead in the selected range; each lead is checked at most once every 15 minutes"
-          >
-            <RefreshCw
-              className={cn("mr-1.5 h-3.5 w-3.5", refreshAi.isPending && "animate-spin")}
-            />
-            {refreshAi.isPending ? "Checking Quo…" : "Refresh AI · next 5 leads"}
-          </Button>
-        </div>
+        )}
         <Grid>
           {CS_STATUSES.map((k) => (
             <StatCard
@@ -591,7 +604,7 @@ function Inner() {
               total={csTotal}
               color={CS_STATUS_COLORS[k]}
               aiValue={
-                k === "need_follow_up"
+                !canSeeAiReporting || k === "need_follow_up"
                   ? undefined
                   : ai.data && !ai.isError
                     ? (ai.data.counts[k] ?? 0)
@@ -648,7 +661,9 @@ function Inner() {
       </Section>
 
       {/* ─── Leads Forwarded Per User ─── */}
-      <ForwardedByUserSection range={range} preset={preset} csCounts={cs.data} />
+      {canSeeForwardedByUser && (
+        <ForwardedByUserSection range={range} preset={preset} csCounts={cs.data} />
+      )}
 
       {/* ─── Number-Not-Found Checks Per User ─── */}
       <Section
