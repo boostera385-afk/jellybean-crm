@@ -126,7 +126,11 @@ function Page() {
         description="Pipeline health, throughput, and top performers."
       />
       <PageBody>
-        <RoleGate allow={["admin", "sub_admin"]} current={auth.primaryRole}>
+        <RoleGate
+          allow={["admin", "sub_admin"]}
+          current={auth.primaryRole}
+          allowOverride={auth.features.includes("analytics")}
+        >
           <Inner isAdmin={auth.primaryRole === "admin" || auth.primaryRole === "sub_admin"} />
         </RoleGate>
       </PageBody>
