@@ -68,6 +68,7 @@ const SERVICE_AREA_BASE_ITEM: Item = {
 // Settings -> Feature Access. Keyed by the feature flag name.
 const FEATURE_NAV_ITEMS: Record<string, Item> = {
   analytics: { to: "/app/analytics", label: "Analytics", icon: LineChart },
+  reports: { to: "/app/reports", label: "Reports", icon: BarChart3 },
 };
 
 const ADMIN: Item[] = [
