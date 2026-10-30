@@ -10,9 +10,11 @@ import {
 } from "./cs-ask-policy.ts";
 import { applyFit, CS_FIT_PROMPT, FIT_SCHEMA, fitMenuIds } from "./cs-question-fit.ts";
 import {
+  distinctiveServiceWords,
   fallbackServiceContext,
   GROUNDING_PROMPT_WORDS,
   namesObject,
+  phraseUsesAny,
   refersToObject,
   ungroundedWords,
 } from "./cs-context-grounding.ts";
@@ -450,6 +452,18 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
     if (!fallback) throw new Error("Composer could not ground the service context");
     serviceContext = fallback;
     checks.push("context_fallback");
+  }
+  // A branded or product-specific service (e.g. "Govee permanent lights") must
+  // not be collapsed to a generic in-vocabulary opening ("a light fixture").
+  // When the Service field carries a distinctive word the phrase uses none of,
+  // name the work from the Service field, which is grounded by construction.
+  const distinctive = distinctiveServiceWords(input.service);
+  if (distinctive.length && !phraseUsesAny(serviceContext, distinctive)) {
+    const fromService = fallbackServiceContext(input.service);
+    if (fromService) {
+      serviceContext = fromService;
+      checks.push("service_field_opening");
+    }
   }
   if (
     refersToObject(fragmentsOf(selection), targetObject) &&
