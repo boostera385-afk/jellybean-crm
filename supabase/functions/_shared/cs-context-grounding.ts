@@ -134,5 +134,28 @@ export function fallbackServiceContext(service: string | null | undefined): stri
   return `${an ? "an" : "a"} ${named.join(" ")}`;
 }
 
+/**
+ * Words in the Service field that are the lead's own rather than the team's
+ * generic vocabulary - a brand or product name such as "Govee" or "Samsung".
+ * A branded job must not be collapsed to a generic opening ("a light fixture"
+ * for "Govee permanent lights"), so these have to survive into the phrase.
+ * Bare numbers and very short tokens are excluded: too noisy to force.
+ */
+export function distinctiveServiceWords(service: string | null | undefined): string[] {
+  return [
+    ...new Set(
+      tokens(service).filter(
+        (word) => word.length >= 4 && !/^\d+$/.test(word) && !VOCABULARY.has(stem(word)),
+      ),
+    ),
+  ];
+}
+
+/** Whether the phrase contains any of these words, matched by stem. */
+export function phraseUsesAny(phrase: string, words: string[]): boolean {
+  const present = new Set(tokens(phrase).map(stem));
+  return words.some((word) => present.has(stem(word)));
+}
+
 /** Hints for the prompt; the checks above enforce the full list. */
 export const GROUNDING_PROMPT_WORDS: readonly string[] = CS_CONTEXT_VOCABULARY.promptWords;

@@ -368,6 +368,47 @@ describe("the exact shared generation pipeline", () => {
     expect(result.plan.questions.map((question) => question.key)).not.toContain("BRAND/MODEL");
   });
 
+  it("keeps a branded service's own words instead of a generic in-vocab opening", async () => {
+    // The model collapses "Govee permanent lights" to the generic, in-vocabulary
+    // "a light fixture"; that name reads as a different product. The opening
+    // must fall back to the Service field, which keeps the brand.
+    const fetcher = vi.fn().mockResolvedValue(targeting("the installation of a light fixture"));
+    const result = await composeAnswerAware(
+      lead({
+        customerName: "Bradley",
+        postText: "Hi, is this available?",
+        context: "Customer needs a Govee lights installation.",
+        service: "Govee permanent lights",
+      }),
+      { apiKey: "test-key", fetcher },
+    );
+    expect(result.plan.serviceContext).toMatch(/govee/i);
+    expect(result.plan.serviceContext).not.toMatch(/fixture/i);
+    expect(result.warnings).toContain("service_field_opening");
+    const message = renderComposePlan(
+      {
+        customerName: "Bradley",
+        service: "Govee permanent lights",
+        reference: "Had a conversation on FB",
+      },
+      result.plan,
+      "Alex",
+    );
+    expect(message).toMatch(/we had a conversation on Facebook regarding govee permanent lights/i);
+  });
+
+  it("leaves a generic service's opening to the model (no false brand fallback)", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(targeting("a refrigerator repair service", "refrigerator"));
+    const result = await composeAnswerAware(
+      lead({ postText: "My fridge stopped working", service: "Appliance Repair" }),
+      { apiKey: "test-key", fetcher },
+    );
+    expect(result.plan.serviceContext).toBe("a refrigerator repair service");
+    expect(result.warnings).not.toContain("service_field_opening");
+  });
+
   it("falls back to the first detected object when the model picks an unknown one", async () => {
     const fetcher = vi.fn().mockResolvedValue(targeting("a repair service", "spaceship"));
     const result = await composeAnswerAware(lead({ postText: "My fridge is broken" }), {
