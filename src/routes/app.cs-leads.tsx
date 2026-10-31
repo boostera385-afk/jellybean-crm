@@ -55,6 +55,7 @@ import {
   Table2,
   X,
   Sparkles,
+  Send,
   Copy,
   Check,
   Pin,
@@ -235,6 +236,11 @@ type Lead = {
   reference: string | null;
   is_landline: boolean;
   out_of_base: boolean;
+  // Reach-out tally from the Quo webhook: outbound tries before the customer's
+  // first reply. Zero for leads contacted before this was switched on.
+  quo_outbound_messages: number;
+  quo_outbound_calls: number;
+  quo_first_reply_at: string | null;
 };
 
 // CS pipeline statuses surfaced in the UI (subset of the DB enum).
@@ -594,7 +600,9 @@ function Inner() {
     // Status filter — pushed to DB (cs_status+created_at is indexed)
     if (dbStatus) q = q.eq("cs_status", dbStatus);
 
-    if (notCalledOnly) q = q.is("called_at", null);
+    // "Not called yet" means no call at all — neither a manually logged call
+    // nor a Quo call counted by the webhook.
+    if (notCalledOnly) q = q.is("called_at", null).eq("quo_outbound_calls", 0);
 
     // Search text filter — pushed to DB across all pages
     if (dbSearch) {
@@ -625,7 +633,7 @@ function Inner() {
         supabase
           .from("qualified_leads")
           .select(
-            "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at",
+            "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at",
           )
           .order("pinned_important", { ascending: false })
           .order("assigned_at", { ascending: false })
@@ -700,7 +708,7 @@ function Inner() {
       const { data, error } = await supabase
         .from("qualified_leads")
         .select(
-          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at",
+          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at",
         )
         .eq("id", deepLinkLeadId)
         .maybeSingle();
@@ -1962,7 +1970,7 @@ type LeadFilterQuery<Q> = {
   gte(column: string, value: string): Q;
   lt(column: string, value: string): Q;
   is(column: string, value: null): Q;
-  eq(column: string, value: string | boolean): Q;
+  eq(column: string, value: string | boolean | number): Q;
   or(filters: string): Q;
 };
 
@@ -2068,21 +2076,24 @@ function CsLeadsTable({
                   </td>
                 )}
                 <td className="px-3 py-2">
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-semibold",
-                      lead.contact_method === "called"
-                        ? "border-primary/25 bg-primary/10 text-primary"
-                        : "border-border bg-surface text-muted-foreground",
-                    )}
-                  >
-                    {lead.contact_method === "called" ? (
-                      <Phone className="h-3 w-3" />
-                    ) : (
-                      <MessageSquareText className="h-3 w-3" />
-                    )}
-                    {lead.contact_method === "called" ? "Called" : "Texted"}
-                  </span>
+                  <div className="flex flex-col items-start gap-1">
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-semibold",
+                        lead.contact_method === "called"
+                          ? "border-primary/25 bg-primary/10 text-primary"
+                          : "border-border bg-surface text-muted-foreground",
+                      )}
+                    >
+                      {lead.contact_method === "called" ? (
+                        <Phone className="h-3 w-3" />
+                      ) : (
+                        <MessageSquareText className="h-3 w-3" />
+                      )}
+                      {lead.contact_method === "called" ? "Called" : "Texted"}
+                    </span>
+                    <ReachOutBadge lead={lead} />
+                  </div>
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-muted-foreground tabular-nums">
                   {lead.called_at ? formatCsPipelineDateTime(lead.called_at) : "—"}
@@ -2519,6 +2530,7 @@ function LeadCard({
                 Landline
               </span>
             )}
+            <ReachOutBadge lead={lead} />
           </div>
           {lead.customer_number_2 && (
             <div className="mt-1.5 flex flex-wrap gap-2">
@@ -2905,7 +2917,9 @@ const AI_REASON_LABEL: Record<string, string> = {
   delivery_confirmed: "Confirmed by Quo delivery receipt",
   delivery_failed: "Quo reports the message failed delivery",
   no_reply_after_6h: "Delivered, and no reply within 6 hours",
+  no_reply_after_24h: "Delivered, and no reply within 24 hours",
   contacted_before_lead: "This number was texting with us before the lead was created",
+  media_reply_interested: "Customer replied with a photo — read as interest",
   media_requires_review: "An image reply needs human review",
   phone_shared_between_leads: "Phone number is shared with other leads",
   invalid_or_excess_customer_numbers: "Customer numbers are invalid or too many",
@@ -2934,22 +2948,66 @@ function aiSuggestionTitle(ai: AiSuggestion): string {
   return `Admin and CS admin · Comparison only, not saved · ${parts.join(" · ")}`;
 }
 
-/** Compact management chip for lead cards and table rows: a dashed outline separates the AI
- * guess from manual pipeline tags so agents never confuse the two. */
+/** Compact management chip for lead cards and table rows: a dashed outline and a
+ * filled, higher-contrast pill separate the AI guess from manual pipeline tags so
+ * agents read it at a glance and never confuse the two. "Needs review" is amber,
+ * a confident suggestion is violet. */
 function AiTagChip({ ai }: { ai: AiSuggestion }) {
   if (isUntouched(ai)) return null;
   const suggested = ai.state === "classified" ? ai.ai_status : null;
   const prefix = AI_TRANSPORT_REASONS.has(ai.reason_code) ? "Quo" : "AI";
   const label = suggested ? (STATUS_LABEL[suggested] ?? suggested) : "Needs review";
-  const pct = suggested && ai.confidence != null ? ` ${Math.round(ai.confidence * 100)}%` : "";
+  const pct = suggested && ai.confidence != null ? `${Math.round(ai.confidence * 100)}%` : null;
+  const needsReview = suggested == null;
   return (
     <span
       title={aiSuggestionTitle(ai)}
-      className="inline-flex items-center gap-1 rounded-full border border-dashed border-violet-400/70 bg-violet-500/5 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:text-violet-300 whitespace-nowrap"
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md border border-dashed px-2 py-0.5 text-[11px] font-semibold leading-tight whitespace-nowrap",
+        needsReview
+          ? "border-amber-400/80 bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100"
+          : "border-violet-400/80 bg-violet-100 text-violet-900 dark:bg-violet-500/25 dark:text-violet-50",
+      )}
     >
-      <Sparkles className="h-2.5 w-2.5" />
-      {prefix}: {label}
-      {pct}
+      <Sparkles className="h-3 w-3 shrink-0 opacity-80" />
+      <span className="opacity-70">{prefix}</span>
+      <span>{label}</span>
+      {pct && <span className="tabular-nums opacity-70">{pct}</span>}
+    </span>
+  );
+}
+
+/** How many times we've reached out (messages + calls, from the Quo webhook)
+ * before the customer's first reply. Shows "not called yet" when no call has
+ * been placed, as the pipeline team asked, and "replied" once they respond. */
+function ReachOutBadge({ lead }: { lead: Lead }) {
+  const msgs = lead.quo_outbound_messages ?? 0;
+  const calls = lead.quo_outbound_calls ?? 0;
+  const manuallyCalled = lead.contact_method === "called" || Boolean(lead.called_at);
+  const replied = Boolean(lead.quo_first_reply_at);
+  const parts: string[] = [];
+  if (msgs > 0) parts.push(`${msgs} message${msgs === 1 ? "" : "s"}`);
+  if (calls > 0) parts.push(`${calls} call${calls === 1 ? "" : "s"}`);
+  const notCalled = calls === 0 && !manuallyCalled;
+  const title = `Reach-outs ${
+    replied ? "before the customer's first reply" : "so far, until the customer replies"
+  }, tracked from Quo${manuallyCalled && calls === 0 ? " (call logged manually)" : ""}.`;
+  return (
+    <span
+      title={title}
+      className="inline-flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/5 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:text-sky-200 whitespace-nowrap"
+    >
+      <Send className="h-3 w-3 shrink-0 opacity-80" />
+      {parts.length ? `Reached out: ${parts.join(" · ")}` : "No outreach logged yet"}
+      {notCalled && (
+        <span className="font-semibold text-amber-600 dark:text-amber-400">· not called yet</span>
+      )}
+      {replied && (
+        <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
+          <Check className="h-3 w-3" />
+          replied
+        </span>
+      )}
     </span>
   );
 }

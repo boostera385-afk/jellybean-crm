@@ -58,6 +58,7 @@ const CHAIN = [
   "quo_ai_lead_inbox",
   "quo_ai_inbox_keys",
   "quo_ai_no_caps",
+  "quo_reachout_counts",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -555,5 +556,88 @@ describe("the inbox name key is the same in TypeScript and SQL", () => {
       expect(await call<string>(`public.quo_name_key('${name.replace(/'/g, "''")}')`)).toBe(
         quoNameKey(name),
       );
+  });
+});
+
+describe("Quo reach-out counting", () => {
+  const acceptFull = (
+    id: string,
+    type: string,
+    phone: string,
+    direction: string,
+    category: string,
+  ) =>
+    call<{ duplicate: boolean; matched: number; reason?: string }>(
+      `public.accept_quo_webhook_event('${id}','${type}','${phone}','${direction}','${category}')`,
+    );
+  const counts = async (id: string) =>
+    (
+      await db.query<{
+        quo_outbound_messages: number;
+        quo_outbound_calls: number;
+        quo_first_reply_at: string | null;
+      }>(
+        `SELECT quo_outbound_messages, quo_outbound_calls, quo_first_reply_at
+           FROM public.qualified_leads WHERE id = '${id}'`,
+      )
+    ).rows[0];
+
+  it("counts delivered messages and completed calls, then freezes once the customer replies", async () => {
+    await acceptFull("wh_m1", "message.delivered", "+19105551234", "outbound", "message");
+    expect(await counts(lead(1))).toMatchObject({
+      quo_outbound_messages: 1,
+      quo_outbound_calls: 0,
+      quo_first_reply_at: null,
+    });
+
+    const call1 = await acceptFull("wh_c1", "call.completed", "+19105551234", "outbound", "call");
+    // A call is counted but never queued for AI recheck.
+    expect(call1).toMatchObject({ matched: 0, reason: "call_counted" });
+    expect(await counts(lead(1))).toMatchObject({
+      quo_outbound_messages: 1,
+      quo_outbound_calls: 1,
+    });
+
+    await acceptFull("wh_m2", "message.delivered", "+19105551234", "outbound", "message");
+    expect((await counts(lead(1))).quo_outbound_messages).toBe(2);
+
+    // The customer replies: the tally freezes.
+    await acceptFull("wh_r1", "message.received", "+19105551234", "inbound", "message");
+    expect((await counts(lead(1))).quo_first_reply_at).not.toBeNull();
+
+    await acceptFull("wh_m3", "message.delivered", "+19105551234", "outbound", "message");
+    await acceptFull("wh_c2", "call.completed", "+19105551234", "outbound", "call");
+    const frozen = await counts(lead(1));
+    expect(frozen.quo_outbound_messages).toBe(2);
+    expect(frozen.quo_outbound_calls).toBe(1);
+  });
+
+  it("does not count an undelivered message as a reach-out that reached the customer", async () => {
+    await acceptFull("wh_u1", "message.undelivered", "+19105551234", "outbound", "message");
+    expect((await counts(lead(1))).quo_outbound_messages).toBe(0);
+  });
+
+  it("a call event never parks the lead for AI recheck", async () => {
+    await acceptFull("wh_c3", "call.completed", "+19105551234", "outbound", "call");
+    const queued = await db.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM private.lead_ai_recheck_queue",
+    );
+    expect(queued.rows[0].n).toBe(0);
+  });
+
+  it("still counts a reach-out from a legacy three-argument delivery", async () => {
+    await accept("wh_legacy", "message.delivered", "+19105551234");
+    expect((await counts(lead(1))).quo_outbound_messages).toBe(1);
+  });
+
+  it("splits called vs not-called per status in the report counter", async () => {
+    // lead(1): a counted call -> called. lead(2): manual called_at -> called.
+    // lead(3): neither -> not called.
+    await acceptFull("wh_rc", "call.completed", "+19105551234", "outbound", "call");
+    await db.exec(`UPDATE public.qualified_leads SET called_at = now() WHERE id = '${lead(2)}';`);
+    const report = await call<Record<string, { called: number; not_called: number }>>(
+      "public.report_cs_reachout_counts(NULL, NULL)",
+    );
+    expect(report.new).toMatchObject({ called: 2, not_called: 1 });
   });
 });

@@ -389,17 +389,21 @@ export async function classifyQuoHistory(options: {
     options.checkPriorContact ?? true,
   );
   if (transport) return withMeta(transport);
-  // An inbound media-only reply needs a human, not a guessed image meaning.
-  if (
-    messages.some(
-      (m) =>
-        m.direction === "incoming" &&
-        m.media?.length &&
-        !m.text.trim() &&
-        Date.parse(m.createdAt) >= Date.parse(assignedAt),
-    )
-  )
-    return withMeta(emptyResult("review", "media_requires_review"));
+  // A customer who replies with only a photo (no text) is engaging with us, not
+  // sending noise: read it as interest rather than parking it for human review.
+  // Only when the whole reply is media -- if they also sent text, the model
+  // reads that text (it already receives a hasMedia flag for context).
+  const incomingAfterAssign = messages.filter(
+    (m) => m.direction === "incoming" && Date.parse(m.createdAt) >= Date.parse(assignedAt),
+  );
+  const mediaOnlyReplies = incomingAfterAssign.filter((m) => m.media?.length && !m.text.trim());
+  if (mediaOnlyReplies.length && !incomingAfterAssign.some((m) => m.text.trim()))
+    return withMeta({
+      ...emptyResult("classified", "media_reply_interested"),
+      status: "cx_interested",
+      confidence: 1,
+      evidenceIds: [mediaOnlyReplies[mediaOnlyReplies.length - 1].id],
+    });
   const previous = options.previous;
   if (
     previous?.state === "classified" &&

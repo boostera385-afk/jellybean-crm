@@ -720,11 +720,11 @@ export const DOC_SECTIONS: DocSection[] = [
       },
       {
         kind: "p",
-        text: "The beta reads all pages of Quo SMS history, not call transcripts or attachment contents. Partial history is never classified. In-flight checkpoints are encrypted, backend-only, removed on completion, and expire after 24 hours. Shared phone numbers, incomplete history, missing delivery receipts and uncertain intent require review. No messages are sent and AI never changes manual lead statuses. Compare disagreements against the source chat during the initial week; agreement with manual status is not an accuracy guarantee.",
+        text: "The beta reads all pages of Quo SMS history, not call transcripts or attachment contents. Partial history is never classified. In-flight checkpoints are encrypted, backend-only, removed on completion, and expire after 24 hours. Incomplete history, missing delivery receipts and uncertain intent require review. A photo-only reply (an inbound message with media and no text) is read as CX interested rather than held for review. A number shared across leads is classified from the lead's own inbox when its number name maps to one Quo inbox, because that history is one unambiguous conversation; it is only held for review when the history has to be read across every inbox. No messages are sent and AI never changes manual lead statuses. Compare disagreements against the source chat during the initial week; agreement with manual status is not an accuracy guarantee.",
       },
       {
         kind: "p",
-        text: "Analysis now runs unattended as well as on demand. A signed Quo webhook (message.received, message.delivered, message.undelivered) records that something happened to a phone number and parks the matching leads for a recheck; set QUO_WEBHOOK_SECRET to the whsec_ key Quo returns when the webhook is created, and create it on the current API version, because the legacy OpenPhone signature scheme is not interchangeable. The webhook sends no message and calls neither Quo nor a model: it is one indexed lookup per event.",
+        text: "Analysis now runs unattended as well as on demand. A signed Quo webhook (message.received, message.delivered, message.undelivered) records that something happened to a phone number and parks the matching leads for a recheck; set QUO_WEBHOOK_SECRET to the whsec_ key Quo returns when the webhook is created, and create it on the current API version, because the legacy OpenPhone signature scheme is not interchangeable. The webhook sends no message and calls neither Quo nor a model: it is one indexed lookup per event. The same webhook also keeps a reach-out tally per lead — how many delivered messages and completed calls we made before the customer's first reply — which freezes the moment they respond. Subscribe call.completed alongside the message events to count calls; the tally starts at zero for leads contacted before it was switched on.",
       },
       {
         kind: "p",
@@ -737,6 +737,10 @@ export const DOC_SECTIONS: DocSection[] = [
       {
         kind: "p",
         text: "AI status applies to leads created from five days before it was switched on, and every lead after; older leads have none. It is a separate tag, shown to administrators only, and never changes the manual status. A lead nothing has been sent to has no AI status, so New stays untouched. From Quo's own records, with no model: a number that was texting with us before the lead was created is Already received before; an undelivered message is Undeliver; a delivered one is Delivered, and becomes CX didn't replied after 6 hours with nothing back. When the customer replies, the model reads the chat for CX interested, CX not interested, Wrong number, Already got someone or Service provider himself. A later reply re-queues the lead, so Delivered and CX didn't replied update when the customer answers.",
+      },
+      {
+        kind: "p",
+        text: "Reach-outs are shown on every lead card and row: how many messages and calls we made, with \"not called yet\" when no call has been placed (manually or via a counted Quo call). Reports carries this through — the CS pipeline section now has a filter-aware Total leads box, and the Delivered and CX didn't replied cards split into reached-with-a-call versus message-only / not-called-yet. The pipeline's Not-called filter counts a lead as called once it has either a manual call or a counted Quo call.",
       },
     ],
   },

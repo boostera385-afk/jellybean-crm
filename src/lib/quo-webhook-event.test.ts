@@ -18,7 +18,13 @@ describe("reading a Quo webhook delivery", () => {
           },
         ),
       ),
-    ).toEqual({ kind: "message", type: "message.received", participant: "+19105551234" });
+    ).toEqual({
+      kind: "event",
+      category: "message",
+      type: "message.received",
+      direction: "inbound",
+      participant: "+19105551234",
+    });
   });
 
   it.each(["message.delivered", "message.undelivered"])(
@@ -35,7 +41,13 @@ describe("reading a Quo webhook delivery", () => {
             },
           ),
         ),
-      ).toEqual({ kind: "message", type, participant: "+19105551234" });
+      ).toEqual({
+        kind: "event",
+        category: "message",
+        type,
+        direction: "outbound",
+        participant: "+19105551234",
+      });
     },
   );
 
@@ -72,7 +84,13 @@ describe("reading a Quo webhook delivery", () => {
           to: ["+19105559999"],
         }),
       ),
-    ).toEqual({ kind: "message", type: "message.received", participant: "+19105551234" });
+    ).toEqual({
+      kind: "event",
+      category: "message",
+      type: "message.received",
+      direction: "inbound",
+      participant: "+19105551234",
+    });
   });
 
   it.each(["message.delivered", "message.undelivered"])(
@@ -89,9 +107,58 @@ describe("reading a Quo webhook delivery", () => {
             to: ["+19105551234"],
           }),
         ),
-      ).toEqual({ kind: "message", type, participant: "+19105551234" });
+      ).toEqual({
+        kind: "event",
+        category: "message",
+        type,
+        direction: "outbound",
+        participant: "+19105551234",
+      });
     },
   );
+
+  it("counts an outbound call as a reach-out to the recipient", () => {
+    expect(
+      readQuoMessageEvent(
+        envelope("call.completed", {
+          direction: "outgoing",
+          from: "+19105559999",
+          to: ["+19105551234"],
+        }),
+      ),
+    ).toEqual({
+      kind: "event",
+      category: "call",
+      type: "call.completed",
+      direction: "outbound",
+      participant: "+19105551234",
+    });
+  });
+
+  it("reads an inbound call as the customer responding", () => {
+    expect(
+      readQuoMessageEvent(
+        currentEnvelope(
+          "call.completed",
+          { direction: "incoming", status: "completed" },
+          { senderIdentifier: "+19105551234", recipientIdentifiers: ["+19105559999"] },
+        ),
+      ),
+    ).toEqual({
+      kind: "event",
+      category: "call",
+      type: "call.completed",
+      direction: "inbound",
+      participant: "+19105551234",
+    });
+  });
+
+  it("drops a call with no stated direction rather than miscounting it", () => {
+    expect(readQuoMessageEvent(envelope("call.completed", { from: "+19105551234" }))).toEqual({
+      kind: "ignored",
+      reason: "missing_direction",
+    });
+  });
 
   it("trusts direction over the event name when the two could disagree", () => {
     // A delivery receipt for an inbound message is not something Quo sends,
@@ -104,16 +171,16 @@ describe("reading a Quo webhook delivery", () => {
           to: ["+19105559999"],
         }),
       ),
-    ).toMatchObject({ participant: "+19105551234" });
+    ).toMatchObject({ participant: "+19105551234", direction: "inbound" });
   });
 
   it("falls back to the event name when direction is absent", () => {
     expect(
       readQuoMessageEvent(envelope("message.received", { from: "+19105551234" })),
-    ).toMatchObject({ participant: "+19105551234" });
+    ).toMatchObject({ participant: "+19105551234", direction: "inbound" });
     expect(
       readQuoMessageEvent(envelope("message.delivered", { to: ["+19105551234"] })),
-    ).toMatchObject({ participant: "+19105551234" });
+    ).toMatchObject({ participant: "+19105551234", direction: "outbound" });
   });
 
   it("accepts a recipient sent as an object rather than a bare string", () => {
@@ -139,7 +206,6 @@ describe("reading a Quo webhook delivery", () => {
   });
 
   it.each([
-    ["a call event", envelope("call.completed", { from: "+19105551234" }), "unhandled_event_type"],
     ["a contact event", envelope("contact.updated", { id: "CTx" }), "unhandled_event_type"],
     ["no type at all", JSON.stringify({ data: { object: {} } }), "missing_event_type"],
     ["no data", JSON.stringify({ type: "message.received" }), "missing_event_data"],

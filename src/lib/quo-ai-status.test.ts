@@ -336,9 +336,11 @@ describe("evidence-based shadow status", () => {
         now,
       });
     expect((await classify([outgoing()])).status).toBe("converted");
-    expect((await classify([message({ text: "", media: [{}] })])).reasonCode).toBe(
-      "media_requires_review",
-    );
+    // A photo-only reply is read as interest, with no model call.
+    const mediaOnly = await classify([message({ text: "", media: [{}] })]);
+    expect(mediaOnly.state).toBe("classified");
+    expect(mediaOnly.status).toBe("cx_interested");
+    expect(mediaOnly.reasonCode).toBe("media_reply_interested");
     expect((await classify([message({ text: "x".repeat(180_001) })])).reasonCode).toBe(
       "history_too_large",
     );

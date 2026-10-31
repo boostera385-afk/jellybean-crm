@@ -376,6 +376,22 @@ function Inner() {
     },
     staleTime: 60_000,
   });
+  // Called vs not-called split per status, for the Delivered and CX-didn't-reply
+  // cards: how many leads we reached with a call versus message-only / not
+  // called yet.
+  const reachout = useQuery({
+    queryKey: ["report-cs-reachout", range.from, range.to],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc(
+        "report_cs_reachout_counts" as never,
+        { p_from: range.from, p_to: range.to } as never,
+      );
+      if (error) throw error;
+      return (data ?? {}) as Record<string, { called: number; not_called: number }>;
+    },
+    staleTime: 60_000,
+    retry: false,
+  });
   const notFoundByUser = useQuery({
     queryKey: ["report-not-found-by-user", range.from, range.to],
     queryFn: async () => {
@@ -604,6 +620,13 @@ function Inner() {
           </div>
         )}
         <Grid>
+          <StatCard
+            key="__total__"
+            label="Total leads"
+            value={csTotal}
+            color="var(--color-primary)"
+            emphasis
+          />
           {CS_STATUSES.map((k) => (
             <StatCard
               key={k}
@@ -617,6 +640,11 @@ function Inner() {
                   : ai.data && !ai.isError
                     ? (ai.data.counts[k] ?? 0)
                     : null
+              }
+              reachout={
+                k === "converted" || k === "cx_didnt_replied"
+                  ? (reachout.data?.[k] ?? { called: 0, not_called: 0 })
+                  : undefined
               }
             />
           ))}
@@ -808,19 +836,37 @@ function StatCard({
   total,
   color,
   aiValue,
+  reachout,
+  emphasis,
 }: {
   label: string;
   value: number;
   total?: number;
   color?: string;
   aiValue?: number | null;
+  /** Called vs not-called split, shown for the Delivered / CX-didn't-reply cards. */
+  reachout?: { called: number; not_called: number };
+  /** The filter-aware Total card: stands out from the per-status cards. */
+  emphasis?: boolean;
 }) {
   const pct = total && total > 0 ? ((value / total) * 100).toFixed(1) : null;
   return (
-    <div className="crm-surface-card p-4 hover:border-primary/40 transition-colors flex flex-col justify-between">
+    <div
+      className={cn(
+        "crm-surface-card p-4 hover:border-primary/40 transition-colors flex flex-col justify-between",
+        emphasis && "border-primary/40 bg-primary/5 ring-1 ring-primary/20",
+      )}
+    >
       <div>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-medium text-muted-foreground truncate">{label}</span>
+          <span
+            className={cn(
+              "text-xs font-medium truncate",
+              emphasis ? "text-foreground font-semibold" : "text-muted-foreground",
+            )}
+          >
+            {label}
+          </span>
           {color && (
             <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
           )}
@@ -858,6 +904,31 @@ function StatCard({
           <strong className="tabular-nums">
             {aiValue === null ? "—" : aiValue.toLocaleString()}
           </strong>
+        </div>
+      )}
+      {reachout && (
+        <div
+          className="mt-3 border-t border-border/60 pt-2 text-[11px]"
+          title="Reached with a call (manual or a Quo call) vs message-only / not called yet, in the same assigned-date range"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1 text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Message + call
+            </span>
+            <strong className="tabular-nums text-foreground">
+              {reachout.called.toLocaleString()}
+            </strong>
+          </div>
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1 text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Message only · not called yet
+            </span>
+            <strong className="tabular-nums text-amber-600 dark:text-amber-400">
+              {reachout.not_called.toLocaleString()}
+            </strong>
+          </div>
         </div>
       )}
     </div>

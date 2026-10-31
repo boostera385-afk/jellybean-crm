@@ -73,15 +73,25 @@ export async function processQuoJob(
           job.customerNumber2,
           ...(job.extraNumbers ?? []),
         ]);
-    for (const phone of checkpoint.phones) {
-      const { data: unique, error } = await db.rpc("lead_ai_phone_is_unique", {
-        p_lead_id: job.leadId,
-        p_phone: phone,
-      });
-      if (error) throw new Error("identity_check_unavailable");
-      if (unique !== true) {
-        result = emptyResult("review", "phone_shared_between_leads");
-        break;
+    // When the job reads exactly the lead's own inbox -- its number_name maps to
+    // a single Quo inbox (inboxMatched) -- the history is confined to THAT inbox.
+    // A customer dealt with on one inbox and then messaged again from a different
+    // inbox is two separate conversations, so a number shared across leads on
+    // different inboxes cannot be confused here: classify this lead from its own
+    // inbox (delivered, didn't reply, ...) instead of parking it for review. The
+    // shared-phone guard still applies when the history is read across every
+    // inbox, where a shared number genuinely cannot be attributed to one lead.
+    if (job.inboxMatched !== true) {
+      for (const phone of checkpoint.phones) {
+        const { data: unique, error } = await db.rpc("lead_ai_phone_is_unique", {
+          p_lead_id: job.leadId,
+          p_phone: phone,
+        });
+        if (error) throw new Error("identity_check_unavailable");
+        if (unique !== true) {
+          result = emptyResult("review", "phone_shared_between_leads");
+          break;
+        }
       }
     }
     if (!result) {

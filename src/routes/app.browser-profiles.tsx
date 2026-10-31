@@ -35,6 +35,10 @@ import {
   Pencil,
   RefreshCw,
   Star,
+  Layers,
+  FolderPlus,
+  X,
+  Check,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -69,7 +73,8 @@ export const Route = createFileRoute("/app/browser-profiles")({
 
 type LaunchHistoryEntry = { at: string; by: string | null };
 type ProfilePriority = "none" | "first" | "second";
-type ProfileView = "all" | "first" | "second" | "other" | "launched_today" | "performance";
+type ProfileView =
+  "all" | "first" | "second" | "other" | "launched_today" | "groups" | "performance";
 type PerformancePreset = "today" | "week" | "month" | "custom";
 type ProfilePerformanceRow = {
   profile_id: string;
@@ -115,13 +120,7 @@ type Profile = {
 
 type SortDirection = "asc" | "desc";
 type ProfileSortKey =
-  | "profile_name"
-  | "profile_id"
-  | "group"
-  | "account_area"
-  | "geo"
-  | "added_date"
-  | "last_launched";
+  "profile_name" | "profile_id" | "group" | "account_area" | "geo" | "added_date" | "last_launched";
 type ProfileSort = { key: ProfileSortKey; direction: SortDirection };
 
 function compareText(a: string, b: string) {
@@ -540,7 +539,7 @@ function Inner() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {profileView !== "performance" && (
+        {profileView !== "performance" && profileView !== "groups" && (
           <>
             <div className="relative flex-1 min-w-[220px] max-w-md">
               <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
@@ -646,6 +645,13 @@ function Inner() {
               {profileCounts.launchedToday}
             </span>
           </TabsTrigger>
+          <TabsTrigger value="groups" className="gap-2">
+            <Layers className="h-3.5 w-3.5 text-primary" />
+            Groups
+            <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] tabular-nums text-primary">
+              {groups.length}
+            </span>
+          </TabsTrigger>
           <TabsTrigger value="performance" className="gap-2">
             <BarChart3 className="h-3.5 w-3.5 text-primary" />
             Profile Performance
@@ -655,6 +661,12 @@ function Inner() {
 
       {profileView === "performance" ? (
         <ProfilePerformance todayKey={todayKey} />
+      ) : profileView === "groups" ? (
+        <GroupsManager
+          profiles={profiles.data ?? []}
+          dbGroups={groups}
+          onChanged={() => qc.invalidateQueries({ queryKey: ["incog_profiles"] })}
+        />
       ) : (
         <div className="bg-card border rounded-lg overflow-x-auto">
           <table className="crm-table min-w-[1220px]">
@@ -1808,6 +1820,472 @@ function ImportDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Groups: create, assign, rename, and launch a whole group at once ─────────
+const GROUP_LAUNCH_ATTEMPTS = 3; // first try + 2 retries per profile
+const DRAFT_GROUPS_KEY = "incog_draft_groups";
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function readDraftGroups(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DRAFT_GROUPS_KEY) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function writeDraftGroups(names: string[]) {
+  try {
+    localStorage.setItem(DRAFT_GROUPS_KEY, JSON.stringify([...new Set(names)]));
+  } catch {
+    /* localStorage unavailable — empty groups just won't persist across reloads */
+  }
+}
+
+function GroupsManager({
+  profiles,
+  dbGroups,
+  onChanged,
+}: {
+  profiles: Profile[];
+  dbGroups: string[];
+  onChanged: () => void;
+}) {
+  const auth = useAuth();
+  // Empty groups have nowhere to live in the schema (group is a column on the
+  // profile), so a freshly created group with no profiles yet is remembered in
+  // localStorage until something is assigned to it.
+  const [draftGroups, setDraftGroups] = useState<string[]>(() => readDraftGroups());
+  const [newGroup, setNewGroup] = useState("");
+  const [launchingGroup, setLaunchingGroup] = useState<string | null>(null);
+  const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const groupNames = useMemo(
+    () => Array.from(new Set([...dbGroups, ...draftGroups])).sort((a, b) => a.localeCompare(b)),
+    [dbGroups, draftGroups],
+  );
+  const profilesByGroup = useMemo(() => {
+    const map = new Map<string, Profile[]>();
+    for (const name of groupNames) map.set(name, []);
+    for (const p of profiles)
+      if (p.group_name) {
+        if (!map.has(p.group_name)) map.set(p.group_name, []);
+        map.get(p.group_name)!.push(p);
+      }
+    return map;
+  }, [profiles, groupNames]);
+  const ungroupedCount = useMemo(() => profiles.filter((p) => !p.group_name).length, [profiles]);
+
+  function persistDrafts(next: string[]) {
+    setDraftGroups(next);
+    writeDraftGroups(next);
+  }
+
+  function createGroup() {
+    const name = newGroup.trim();
+    if (!name) return;
+    if (groupNames.some((g) => g.toLowerCase() === name.toLowerCase())) {
+      toast.error("A group with that name already exists");
+      return;
+    }
+    persistDrafts([...draftGroups, name]);
+    setNewGroup("");
+    toast.success(`Group "${name}" created — now assign profiles to it below.`);
+  }
+
+  async function assignProfiles(groupName: string, ids: string[]) {
+    if (ids.length === 0) return;
+    setBusy(true);
+    const { error } = await supabase
+      .from("incogniton_profiles")
+      .update({ group_name: groupName })
+      .in("id", ids);
+    setBusy(false);
+    if (error) return toast.error(error.message);
+    toast.success(`Added ${ids.length} profile${ids.length === 1 ? "" : "s"} to "${groupName}"`);
+    onChanged();
+  }
+
+  async function removeProfile(id: string) {
+    setBusy(true);
+    const { error } = await supabase
+      .from("incogniton_profiles")
+      .update({ group_name: null })
+      .eq("id", id);
+    setBusy(false);
+    if (error) return toast.error(error.message);
+    onChanged();
+  }
+
+  async function renameGroup(oldName: string) {
+    const name = renameValue.trim();
+    setRenamingGroup(null);
+    if (!name || name === oldName) return;
+    if (groupNames.some((g) => g.toLowerCase() === name.toLowerCase() && g !== oldName)) {
+      toast.error("A group with that name already exists");
+      return;
+    }
+    setBusy(true);
+    const { error } = await supabase
+      .from("incogniton_profiles")
+      .update({ group_name: name })
+      .eq("group_name", oldName);
+    setBusy(false);
+    if (error) return toast.error(error.message);
+    persistDrafts([...draftGroups.filter((g) => g !== oldName), name]);
+    toast.success(`Renamed "${oldName}" → "${name}"`);
+    onChanged();
+  }
+
+  async function deleteGroup(groupName: string, members: Profile[]) {
+    if (
+      !confirm(
+        `Delete group "${groupName}"? Its ${members.length} profile${
+          members.length === 1 ? "" : "s"
+        } will be unassigned. The profiles themselves are not deleted.`,
+      )
+    )
+      return;
+    if (members.length) {
+      setBusy(true);
+      const { error } = await supabase
+        .from("incogniton_profiles")
+        .update({ group_name: null })
+        .eq("group_name", groupName);
+      setBusy(false);
+      if (error) return toast.error(error.message);
+    }
+    persistDrafts(draftGroups.filter((g) => g !== groupName));
+    toast.success(`Group "${groupName}" deleted`);
+    onChanged();
+  }
+
+  async function launchGroup(groupName: string, members: Profile[]) {
+    const launchable = members.filter((p) => p.is_active !== false);
+    if (launchable.length === 0) {
+      toast.error("No active profiles in this group to launch.");
+      return;
+    }
+    setLaunchingGroup(groupName);
+    const user = auth.user;
+    const who = user?.user_metadata?.full_name ?? user?.email?.split("@")[0] ?? "Unknown";
+    let success = 0;
+    const failed: string[] = [];
+    for (let i = 0; i < launchable.length; i++) {
+      const p = launchable[i];
+      let ok = false;
+      // First attempt plus two retries, so a flaky profile gets three tries.
+      for (let attempt = 1; attempt <= GROUP_LAUNCH_ATTEMPTS && !ok; attempt++) {
+        toast.loading(
+          `Launching "${groupName}" — ${p.profile_name} (${i + 1}/${launchable.length})${
+            attempt > 1 ? ` · retry ${attempt - 1}` : ""
+          }…`,
+          { id: "group-launch" },
+        );
+        try {
+          await launchIncognitonProfile(p.incogniton_profile_id);
+          ok = true;
+        } catch {
+          if (attempt < GROUP_LAUNCH_ATTEMPTS) await sleep(1500);
+        }
+      }
+      if (ok) {
+        success++;
+        const nowIso = new Date().toISOString();
+        const prevHistory = Array.isArray(p.launch_history) ? p.launch_history : [];
+        const nextHistory = [{ at: nowIso, by: who }, ...prevHistory].slice(0, 100);
+        await supabase
+          .from("incogniton_profiles")
+          .update({
+            last_launched_at: nowIso,
+            launched_by_name: who,
+            launched_by_email: user?.email ?? null,
+            launch_history: nextHistory as Json,
+          })
+          .eq("id", p.id);
+      } else {
+        failed.push(p.profile_name);
+      }
+      // A small gap so the bridge/Incogniton isn't hammered all at once.
+      await sleep(700);
+    }
+    onChanged();
+    setLaunchingGroup(null);
+    if (failed.length === 0)
+      toast.success(
+        `Launched all ${success} profile${success === 1 ? "" : "s"} in "${groupName}" ✓`,
+        {
+          id: "group-launch",
+        },
+      );
+    else
+      toast.error(
+        `"${groupName}": launched ${success}/${launchable.length}. Failed after 3 tries: ${failed.join(
+          ", ",
+        )}`,
+        { id: "group-launch", duration: 9000 },
+      );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
+        <FolderPlus className="h-4 w-4 text-primary shrink-0" />
+        <Input
+          value={newGroup}
+          onChange={(e) => setNewGroup(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && createGroup()}
+          placeholder="New group name…"
+          className="h-9 flex-1 min-w-[200px] max-w-sm"
+        />
+        <Button onClick={createGroup} disabled={!newGroup.trim()}>
+          <Plus className="h-3.5 w-3.5 mr-1.5" /> Create group
+        </Button>
+        <span className="ml-auto text-[12px] text-muted-foreground">
+          {groupNames.length} group{groupNames.length === 1 ? "" : "s"} · {ungroupedCount} ungrouped
+          profile{ungroupedCount === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {groupNames.length === 0 ? (
+        <div className="rounded-lg border border-dashed p-10 text-center text-[13px] text-muted-foreground">
+          <Layers className="mx-auto mb-2 h-6 w-6 opacity-50" />
+          No groups yet. Create one above, then assign profiles and launch them all with one click.
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {groupNames.map((name) => {
+            const members = profilesByGroup.get(name) ?? [];
+            const activeCount = members.filter((p) => p.is_active !== false).length;
+            const isRenaming = renamingGroup === name;
+            return (
+              <div key={name} className="rounded-lg border bg-card p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  {isRenaming ? (
+                    <>
+                      <Input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") renameGroup(name);
+                          if (e.key === "Escape") setRenamingGroup(null);
+                        }}
+                        className="h-8 flex-1"
+                      />
+                      <Button size="sm" variant="ghost" onClick={() => renameGroup(name)}>
+                        <Check className="h-4 w-4 text-success" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setRenamingGroup(null)}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Layers className="h-4 w-4 text-primary shrink-0" />
+                      <h3 className="font-semibold truncate flex-1">{name}</h3>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">
+                        {members.length} profile{members.length === 1 ? "" : "s"}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Rename group"
+                        onClick={() => {
+                          setRenamingGroup(name);
+                          setRenameValue(name);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Delete group"
+                        className="text-destructive"
+                        onClick={() => deleteGroup(name, members)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+
+                <Button
+                  className="w-full"
+                  disabled={launchingGroup !== null || activeCount === 0}
+                  onClick={() => launchGroup(name, members)}
+                  title={
+                    activeCount === 0
+                      ? "No active profiles to launch"
+                      : `Launch all ${activeCount} active profile${
+                          activeCount === 1 ? "" : "s"
+                        } (3 tries each on error)`
+                  }
+                >
+                  {launchingGroup === name ? (
+                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <Rocket className="h-4 w-4 mr-1.5" />
+                  )}
+                  {launchingGroup === name ? "Launching…" : `Launch group (${activeCount} active)`}
+                </Button>
+
+                {members.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {members.map((p) => (
+                      <span
+                        key={p.id}
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11.5px]",
+                          p.is_active === false
+                            ? "border-border bg-muted/40 text-muted-foreground line-through"
+                            : "border-primary/25 bg-primary/5 text-foreground",
+                        )}
+                        title={
+                          p.is_active === false
+                            ? `${p.profile_name} (inactive — skipped on launch)`
+                            : p.profile_name
+                        }
+                      >
+                        {p.profile_name}
+                        <button
+                          type="button"
+                          onClick={() => removeProfile(p.id)}
+                          disabled={busy}
+                          className="text-muted-foreground hover:text-destructive"
+                          aria-label={`Remove ${p.profile_name} from ${name}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-muted-foreground">
+                    No profiles assigned yet. Add some below.
+                  </p>
+                )}
+
+                <AddProfilesPanel
+                  groupName={name}
+                  candidates={profiles.filter((p) => p.group_name !== name)}
+                  busy={busy}
+                  onAdd={(ids) => assignProfiles(name, ids)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Per-group multi-select to assign profiles. Candidates include profiles from
+ * other groups (assigning moves them), each showing its current group. */
+function AddProfilesPanel({
+  groupName,
+  candidates,
+  busy,
+  onAdd,
+}: {
+  groupName: string;
+  candidates: Profile[];
+  busy: boolean;
+  onAdd: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = q
+      ? candidates.filter(
+          (p) =>
+            p.profile_name.toLowerCase().includes(q) ||
+            p.incogniton_profile_id.toLowerCase().includes(q),
+        )
+      : candidates;
+    return [...list].sort((a, b) => a.profile_name.localeCompare(b.profile_name));
+  }, [candidates, query]);
+
+  function toggle(id: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  if (!open)
+    return (
+      <Button variant="outline" size="sm" className="w-full" onClick={() => setOpen(true)}>
+        <Plus className="h-3.5 w-3.5 mr-1.5" /> Add profiles
+      </Button>
+    );
+
+  return (
+    <div className="rounded-md border bg-background p-2 space-y-2">
+      <div className="relative">
+        <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search profiles to add…"
+          className="h-8 pl-8"
+        />
+      </div>
+      <div className="max-h-48 overflow-auto rounded border divide-y">
+        {filtered.length === 0 ? (
+          <p className="p-3 text-center text-[12px] text-muted-foreground">No profiles found.</p>
+        ) : (
+          filtered.map((p) => (
+            <label
+              key={p.id}
+              className="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] cursor-pointer hover:bg-muted/40"
+            >
+              <Checkbox checked={picked.has(p.id)} onCheckedChange={() => toggle(p.id)} />
+              <span className="truncate flex-1">{p.profile_name}</span>
+              {p.group_name && (
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground shrink-0">
+                  in {p.group_name}
+                </span>
+              )}
+            </label>
+          ))
+        )}
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setOpen(false);
+            setPicked(new Set());
+            setQuery("");
+          }}
+        >
+          Done
+        </Button>
+        <Button
+          size="sm"
+          disabled={busy || picked.size === 0}
+          onClick={() => {
+            onAdd([...picked]);
+            setPicked(new Set());
+          }}
+        >
+          Add {picked.size > 0 ? picked.size : ""} to {groupName}
+        </Button>
+      </div>
+    </div>
   );
 }
 

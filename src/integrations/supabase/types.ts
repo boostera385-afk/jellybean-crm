@@ -1306,6 +1306,10 @@ export type Database = {
           pass_it_to: string | null
           pinned_important: boolean
           post_text: string | null
+          quo_first_reply_at: string | null
+          quo_outbound_calls: number
+          quo_outbound_messages: number
+          quo_reach_out_updated_at: string | null
           raw_lead_cache_id: string | null
           raw_lead_id: string | null
           reference: string | null
@@ -1349,6 +1353,10 @@ export type Database = {
           pass_it_to?: string | null
           pinned_important?: boolean
           post_text?: string | null
+          quo_first_reply_at?: string | null
+          quo_outbound_calls?: number
+          quo_outbound_messages?: number
+          quo_reach_out_updated_at?: string | null
           raw_lead_cache_id?: string | null
           raw_lead_id?: string | null
           reference?: string | null
@@ -1392,6 +1400,10 @@ export type Database = {
           pass_it_to?: string | null
           pinned_important?: boolean
           post_text?: string | null
+          quo_first_reply_at?: string | null
+          quo_outbound_calls?: number
+          quo_outbound_messages?: number
+          quo_reach_out_updated_at?: string | null
           raw_lead_cache_id?: string | null
           raw_lead_id?: string | null
           reference?: string | null
