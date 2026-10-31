@@ -2295,7 +2295,12 @@ function GroupsManager({
 
                 <AddProfilesPanel
                   groupName={name}
-                  candidates={profiles.filter((p) => p.group_name !== name)}
+                  // Only ungrouped profiles that have a priority: a profile
+                  // already in a group is moved via its own row's dropdown, and
+                  // no-priority accounts are left out of the assign list.
+                  candidates={profiles.filter(
+                    (p) => !p.group_name && p.profile_priority !== "none",
+                  )}
                   busy={busy}
                   onAdd={(ids) => assignProfiles(name, ids)}
                 />
@@ -2308,8 +2313,8 @@ function GroupsManager({
   );
 }
 
-/** Per-group multi-select to assign profiles. Candidates include profiles from
- * other groups (assigning moves them), each showing its current group. */
+/** Per-group multi-select to assign profiles. Candidates are the ungrouped,
+ * prioritised profiles (a profile already in a group is moved via its row). */
 function AddProfilesPanel({
   groupName,
   candidates,
@@ -2389,11 +2394,6 @@ function AddProfilesPanel({
                   {p.account_area ? ` · ${p.account_area}` : ""}
                 </span>
               </div>
-              {p.group_name && (
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground shrink-0">
-                  in {p.group_name}
-                </span>
-              )}
             </label>
           ))
         )}
