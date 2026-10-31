@@ -1826,6 +1826,7 @@ function ImportDialog({
 // ─── Groups: create, assign, rename, and launch a whole group at once ─────────
 const GROUP_LAUNCH_ATTEMPTS = 3; // first try + 2 retries per profile
 const DRAFT_GROUPS_KEY = "incog_draft_groups";
+const UNGROUP_VALUE = "__ungroup__";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function readDraftGroups(): string[] {
@@ -1844,6 +1845,37 @@ function writeDraftGroups(names: string[]) {
   }
 }
 
+/** Records a successful launch (last_launched + history), same as the single
+ * Launch button, so group and per-profile launches stay consistent. */
+async function recordProfileLaunch(p: Profile, who: string, email: string | null) {
+  const nowIso = new Date().toISOString();
+  const prevHistory = Array.isArray(p.launch_history) ? p.launch_history : [];
+  const nextHistory = [{ at: nowIso, by: who }, ...prevHistory].slice(0, 100);
+  await supabase
+    .from("incogniton_profiles")
+    .update({
+      last_launched_at: nowIso,
+      launched_by_name: who,
+      launched_by_email: email,
+      launch_history: nextHistory as Json,
+    })
+    .eq("id", p.id);
+}
+
+/** Launches one profile, retrying up to GROUP_LAUNCH_ATTEMPTS times on error.
+ * Returns true if it eventually succeeded. */
+async function launchWithRetry(p: Profile): Promise<boolean> {
+  for (let attempt = 1; attempt <= GROUP_LAUNCH_ATTEMPTS; attempt++) {
+    try {
+      await launchIncognitonProfile(p.incogniton_profile_id);
+      return true;
+    } catch {
+      if (attempt < GROUP_LAUNCH_ATTEMPTS) await sleep(1500);
+    }
+  }
+  return false;
+}
+
 function GroupsManager({
   profiles,
   dbGroups,
@@ -1860,9 +1892,11 @@ function GroupsManager({
   const [draftGroups, setDraftGroups] = useState<string[]>(() => readDraftGroups());
   const [newGroup, setNewGroup] = useState("");
   const [launchingGroup, setLaunchingGroup] = useState<string | null>(null);
+  const [launchingProfileId, setLaunchingProfileId] = useState<string | null>(null);
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const launchBusy = launchingGroup !== null || launchingProfileId !== null;
 
   const groupNames = useMemo(
     () => Array.from(new Set([...dbGroups, ...draftGroups])).sort((a, b) => a.localeCompare(b)),
@@ -1921,6 +1955,44 @@ function GroupsManager({
     onChanged();
   }
 
+  // Move a profile to another group (or ungroup) straight from the group card.
+  async function moveProfile(id: string, target: string) {
+    const groupName = target === UNGROUP_VALUE ? null : target;
+    setBusy(true);
+    const { error } = await supabase
+      .from("incogniton_profiles")
+      .update({ group_name: groupName })
+      .eq("id", id);
+    setBusy(false);
+    if (error) return toast.error(error.message);
+    toast.success(groupName ? `Moved to "${groupName}"` : "Removed from group");
+    onChanged();
+  }
+
+  // Launch a single profile from the group card, with the same 3-try retry.
+  async function launchOne(p: Profile) {
+    if (launchBusy) return;
+    setLaunchingProfileId(p.id);
+    const user = auth.user;
+    const who = user?.user_metadata?.full_name ?? user?.email?.split("@")[0] ?? "Unknown";
+    toast.loading(`Launching ${p.profile_name}…`, { id: "one-launch" });
+    const ok = await launchWithRetry(p);
+    if (ok) {
+      await recordProfileLaunch(p, who, user?.email ?? null);
+      toast.success(`Launched ${p.profile_name} ✓`, { id: "one-launch" });
+    } else {
+      toast.error(
+        `Could not launch ${p.profile_name} after 3 tries. Is Incogniton/the Bridge up?`,
+        {
+          id: "one-launch",
+          duration: 7000,
+        },
+      );
+    }
+    onChanged();
+    setLaunchingProfileId(null);
+  }
+
   async function renameGroup(oldName: string) {
     const name = renameValue.trim();
     setRenamingGroup(null);
@@ -1977,36 +2049,15 @@ function GroupsManager({
     const failed: string[] = [];
     for (let i = 0; i < launchable.length; i++) {
       const p = launchable[i];
-      let ok = false;
+      toast.loading(
+        `Launching "${groupName}" — ${p.profile_name} (${i + 1}/${launchable.length})…`,
+        { id: "group-launch" },
+      );
       // First attempt plus two retries, so a flaky profile gets three tries.
-      for (let attempt = 1; attempt <= GROUP_LAUNCH_ATTEMPTS && !ok; attempt++) {
-        toast.loading(
-          `Launching "${groupName}" — ${p.profile_name} (${i + 1}/${launchable.length})${
-            attempt > 1 ? ` · retry ${attempt - 1}` : ""
-          }…`,
-          { id: "group-launch" },
-        );
-        try {
-          await launchIncognitonProfile(p.incogniton_profile_id);
-          ok = true;
-        } catch {
-          if (attempt < GROUP_LAUNCH_ATTEMPTS) await sleep(1500);
-        }
-      }
+      const ok = await launchWithRetry(p);
       if (ok) {
         success++;
-        const nowIso = new Date().toISOString();
-        const prevHistory = Array.isArray(p.launch_history) ? p.launch_history : [];
-        const nextHistory = [{ at: nowIso, by: who }, ...prevHistory].slice(0, 100);
-        await supabase
-          .from("incogniton_profiles")
-          .update({
-            last_launched_at: nowIso,
-            launched_by_name: who,
-            launched_by_email: user?.email ?? null,
-            launch_history: nextHistory as Json,
-          })
-          .eq("id", p.id);
+        await recordProfileLaunch(p, who, user?.email ?? null);
       } else {
         failed.push(p.profile_name);
       }
@@ -2117,7 +2168,7 @@ function GroupsManager({
 
                 <Button
                   className="w-full"
-                  disabled={launchingGroup !== null || activeCount === 0}
+                  disabled={launchBusy || activeCount === 0}
                   onClick={() => launchGroup(name, members)}
                   title={
                     activeCount === 0
@@ -2136,33 +2187,71 @@ function GroupsManager({
                 </Button>
 
                 {members.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="space-y-1">
                     {members.map((p) => (
-                      <span
+                      <div
                         key={p.id}
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11.5px]",
-                          p.is_active === false
-                            ? "border-border bg-muted/40 text-muted-foreground line-through"
-                            : "border-primary/25 bg-primary/5 text-foreground",
-                        )}
-                        title={
-                          p.is_active === false
-                            ? `${p.profile_name} (inactive — skipped on launch)`
-                            : p.profile_name
-                        }
+                        className="flex items-center gap-1.5 rounded-md border bg-background px-2 py-1"
                       >
-                        {p.profile_name}
-                        <button
-                          type="button"
-                          onClick={() => removeProfile(p.id)}
-                          disabled={busy}
-                          className="text-muted-foreground hover:text-destructive"
-                          aria-label={`Remove ${p.profile_name} from ${name}`}
+                        <span
+                          className={cn(
+                            "truncate flex-1 text-[12.5px]",
+                            p.is_active === false && "text-muted-foreground line-through",
+                          )}
+                          title={
+                            p.is_active === false
+                              ? `${p.profile_name} (inactive — skipped on group launch)`
+                              : p.profile_name
+                          }
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
+                          {p.profile_name}
+                          {p.is_active === false && (
+                            <span className="ml-1 text-[10px] no-underline">(inactive)</span>
+                          )}
+                        </span>
+                        {/* Move this profile to another group, or ungroup it. */}
+                        <Select value={name} onValueChange={(v) => moveProfile(p.id, v)}>
+                          <SelectTrigger
+                            className="h-7 w-[132px] text-[11px]"
+                            title="Move to another group"
+                            disabled={busy}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {groupNames.map((g) => (
+                              <SelectItem key={g} value={g}>
+                                {g}
+                              </SelectItem>
+                            ))}
+                            <SelectItem value={UNGROUP_VALUE}>— Ungroup —</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0"
+                          title="Launch this profile (3 tries on error)"
+                          disabled={launchBusy || p.is_active === false}
+                          onClick={() => launchOne(p)}
+                        >
+                          {launchingProfileId === p.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Rocket className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                          title={`Remove from ${name}`}
+                          disabled={busy}
+                          onClick={() => removeProfile(p.id)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     ))}
                   </div>
                 ) : (
