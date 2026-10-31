@@ -122,12 +122,16 @@ export function readQuoMessageEvent(raw: string): QuoEventReadResult {
       return { kind: "ignored", reason: "missing_sender" };
     return event(from);
   }
-  // Outbound. Several recipients cannot be attributed to one lead, and the
-  // worker would refuse the thread as ambiguous anyway. Dropping it here saves
-  // that round.
-  if (!Array.isArray(to)) return { kind: "ignored", reason: "missing_recipient" };
-  if (to.length !== 1) return { kind: "ignored", reason: "group_conversation" };
-  const recipient = to[0];
+  // Outbound. Messages carry `to` as an array of recipients; a call carries a
+  // single `to` string. Accept either, so an outbound call we place is counted
+  // and not dropped as "missing_recipient". Several recipients cannot be
+  // attributed to one lead, and the worker would refuse the thread as ambiguous
+  // anyway, so dropping those here saves that round.
+  const recipients = Array.isArray(to) ? to : typeof to === "string" && to.trim() ? [to] : null;
+  if (!recipients || recipients.length === 0)
+    return { kind: "ignored", reason: "missing_recipient" };
+  if (recipients.length !== 1) return { kind: "ignored", reason: "group_conversation" };
+  const recipient = recipients[0];
   // Quo has sent recipients both as bare strings and as objects carrying the
   // number, so accept either rather than silently resolving no lead.
   const number =

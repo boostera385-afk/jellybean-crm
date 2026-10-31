@@ -135,6 +135,26 @@ describe("reading a Quo webhook delivery", () => {
     });
   });
 
+  it("counts an outbound call when `to` is a single string, not an array", () => {
+    // Quo/OpenPhone call objects send `to` as a bare string (messages use an
+    // array). This must still resolve to the customer, not be dropped.
+    expect(
+      readQuoMessageEvent(
+        envelope("call.completed", {
+          direction: "outgoing",
+          from: "+19105559999",
+          to: "+19105551234",
+        }),
+      ),
+    ).toEqual({
+      kind: "event",
+      category: "call",
+      type: "call.completed",
+      direction: "outbound",
+      participant: "+19105551234",
+    });
+  });
+
   it("reads an inbound call as the customer responding", () => {
     expect(
       readQuoMessageEvent(
