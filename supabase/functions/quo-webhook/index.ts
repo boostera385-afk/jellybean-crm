@@ -70,6 +70,10 @@ export async function handleQuoWebhook(req: Request): Promise<Response> {
     // lead_ai_phone() the worker's identity guard uses, so the webhook cannot
     // disagree with it about which lead a number belongs to.
     p_phone: event.participant,
+    // Reach-out counting: an outbound call/message is one attempt; an inbound
+    // event freezes the tally (the customer has responded).
+    p_direction: event.direction,
+    p_category: event.category,
   });
   if (error) {
     // Idempotent on the signed webhook-id, so a redelivery after a partial
