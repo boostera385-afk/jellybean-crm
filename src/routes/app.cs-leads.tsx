@@ -2977,28 +2977,27 @@ function AiTagChip({ ai }: { ai: AiSuggestion }) {
   );
 }
 
-/** How many times we've reached out (messages + calls, from the Quo webhook)
- * before the customer's first reply. Shows "not called yet" when no call has
- * been placed, as the pipeline team asked, and "replied" once they respond. */
+/** How many times the Quo webhook has seen us reach out (delivered messages and
+ * completed calls) before the customer's first reply. Shows "not called yet"
+ * until a call is seen, and "replied" once the customer responds. */
 function ReachOutBadge({ lead }: { lead: Lead }) {
   const msgs = lead.quo_outbound_messages ?? 0;
   const calls = lead.quo_outbound_calls ?? 0;
-  const manuallyCalled = lead.contact_method === "called" || Boolean(lead.called_at);
   const replied = Boolean(lead.quo_first_reply_at);
   const parts: string[] = [];
   if (msgs > 0) parts.push(`${msgs} message${msgs === 1 ? "" : "s"}`);
   if (calls > 0) parts.push(`${calls} call${calls === 1 ? "" : "s"}`);
-  const notCalled = calls === 0 && !manuallyCalled;
+  const notCalled = calls === 0;
   const title = `Reach-outs ${
     replied ? "before the customer's first reply" : "so far, until the customer replies"
-  }, tracked from Quo${manuallyCalled && calls === 0 ? " (call logged manually)" : ""}.`;
+  }, tracked from the Quo webhook (messages & calls).`;
   return (
     <span
       title={title}
       className="inline-flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/5 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:text-sky-200 whitespace-nowrap"
     >
       <Send className="h-3 w-3 shrink-0 opacity-80" />
-      {parts.length ? `Reached out: ${parts.join(" · ")}` : "No outreach logged yet"}
+      {parts.length ? `Reached out: ${parts.join(" · ")}` : "No outreach yet"}
       {notCalled && (
         <span className="font-semibold text-amber-600 dark:text-amber-400">· not called yet</span>
       )}
