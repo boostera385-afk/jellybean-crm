@@ -1827,6 +1827,15 @@ function ImportDialog({
 const GROUP_LAUNCH_ATTEMPTS = 3; // first try + 2 retries per profile
 const DRAFT_GROUPS_KEY = "incog_draft_groups";
 const UNGROUP_VALUE = "__ungroup__";
+
+/** Small priority marker reused in group rows and the assign list. */
+function PriorityStar({ priority }: { priority: ProfilePriority }) {
+  if (priority === "first")
+    return <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-500" aria-hidden />;
+  if (priority === "second")
+    return <Star className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />;
+  return null;
+}
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function readDraftGroups(): string[] {
@@ -2193,22 +2202,46 @@ function GroupsManager({
                         key={p.id}
                         className="flex items-center gap-1.5 rounded-md border bg-background px-2 py-1"
                       >
-                        <span
-                          className={cn(
-                            "truncate flex-1 text-[12.5px]",
-                            p.is_active === false && "text-muted-foreground line-through",
-                          )}
-                          title={
-                            p.is_active === false
-                              ? `${p.profile_name} (inactive — skipped on group launch)`
-                              : p.profile_name
-                          }
-                        >
-                          {p.profile_name}
-                          {p.is_active === false && (
-                            <span className="ml-1 text-[10px] no-underline">(inactive)</span>
-                          )}
-                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1">
+                            <PriorityStar priority={p.profile_priority} />
+                            <span
+                              className={cn(
+                                "truncate text-[12.5px]",
+                                p.is_active === false && "text-muted-foreground line-through",
+                              )}
+                              title={
+                                p.is_active === false
+                                  ? `${p.profile_name} (inactive — skipped on group launch)`
+                                  : p.profile_name
+                              }
+                            >
+                              {p.profile_name}
+                            </span>
+                            {p.is_active === false && (
+                              <span className="text-[10px] text-muted-foreground shrink-0">
+                                (inactive)
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+                            <span className="shrink-0">
+                              {p.profile_priority === "first"
+                                ? "1st priority"
+                                : p.profile_priority === "second"
+                                  ? "2nd priority"
+                                  : "No priority"}
+                            </span>
+                            {p.account_area && (
+                              <>
+                                <span>·</span>
+                                <span className="truncate" title={p.account_area}>
+                                  {p.account_area}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
                         {/* Move this profile to another group, or ungroup it. */}
                         <Select value={name} onValueChange={(v) => moveProfile(p.id, v)}>
                           <SelectTrigger
@@ -2298,7 +2331,8 @@ function AddProfilesPanel({
       ? candidates.filter(
           (p) =>
             p.profile_name.toLowerCase().includes(q) ||
-            p.incogniton_profile_id.toLowerCase().includes(q),
+            p.incogniton_profile_id.toLowerCase().includes(q) ||
+            (p.account_area ?? "").toLowerCase().includes(q),
         )
       : candidates;
     return [...list].sort((a, b) => a.profile_name.localeCompare(b.profile_name));
@@ -2341,7 +2375,20 @@ function AddProfilesPanel({
               className="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] cursor-pointer hover:bg-muted/40"
             >
               <Checkbox checked={picked.has(p.id)} onCheckedChange={() => toggle(p.id)} />
-              <span className="truncate flex-1">{p.profile_name}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1">
+                  <PriorityStar priority={p.profile_priority} />
+                  <span className="truncate">{p.profile_name}</span>
+                </div>
+                <span className="block truncate text-[10.5px] text-muted-foreground">
+                  {p.profile_priority === "first"
+                    ? "1st priority"
+                    : p.profile_priority === "second"
+                      ? "2nd priority"
+                      : "No priority"}
+                  {p.account_area ? ` · ${p.account_area}` : ""}
+                </span>
+              </div>
               {p.group_name && (
                 <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground shrink-0">
                   in {p.group_name}
