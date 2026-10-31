@@ -3,6 +3,7 @@ import { RouteSkeleton } from "@/components/route-skeleton";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
+  CalendarRange,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -421,6 +422,55 @@ function Inner() {
     [cs.data],
   );
 
+  // Human-readable label for the active date range, shown on the Total card so
+  // it is clear whether the number is all-time or a specific range.
+  const rangeLabel = useMemo(() => {
+    const fmt = (d: string) =>
+      new Date(d + "T00:00:00").toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    switch (preset) {
+      case "today":
+        return "Today";
+      case "yesterday":
+        return "Yesterday";
+      case "7d":
+        return "Last 7 days";
+      case "30d":
+        return "Last 30 days";
+      case "custom":
+        if (fromDate && toDate) return `${fmt(fromDate)} – ${fmt(toDate)}`;
+        if (fromDate) return `From ${fmt(fromDate)}`;
+        if (toDate) return `Until ${fmt(toDate)}`;
+        return "Custom range";
+      default:
+        return "All time";
+    }
+  }, [preset, fromDate, toDate]);
+
+  // The earliest moment any reach-out was recorded: reach-out counts only exist
+  // from when Quo webhook tracking was switched on, so this tells users the
+  // counts are forward-looking, not historical.
+  const reachoutSince = useQuery({
+    queryKey: ["report-reachout-since"],
+    enabled: canSeeAiReporting,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("qualified_leads")
+        .select("quo_reach_out_updated_at")
+        .not("quo_reach_out_updated_at", "is", null)
+        .order("quo_reach_out_updated_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return (data?.quo_reach_out_updated_at as string | null) ?? null;
+    },
+    staleTime: 300_000,
+    retry: false,
+  });
+
   const notFoundRows = useMemo(() => {
     const list = notFoundByUser.data ?? [];
     if (!searchNotFound.trim()) return list;
@@ -571,6 +621,19 @@ function Inner() {
                   Last checked: {new Date(ai.data.lastAnalyzedAt).toLocaleString()}
                 </p>
               )}
+              <p className="mt-1 text-muted-foreground">
+                Reach-out counts (messages & calls) are tracked from{" "}
+                <span className="font-medium text-foreground">
+                  {reachoutSince.data
+                    ? new Date(reachoutSince.data).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })
+                    : "today"}
+                </span>{" "}
+                onward — contact made before then isn't counted.
+              </p>
               {(!aiConfiguration.data?.configured || aiConfiguration.isError) &&
                 !aiConfiguration.isPending && (
                   <p className="mt-1 font-medium text-amber-700 dark:text-amber-400">
@@ -625,6 +688,7 @@ function Inner() {
             label="Total leads"
             value={csTotal}
             color="var(--color-primary)"
+            caption={rangeLabel}
             emphasis
           />
           {CS_STATUSES.map((k) => (
@@ -838,6 +902,7 @@ function StatCard({
   aiValue,
   reachout,
   emphasis,
+  caption,
 }: {
   label: string;
   value: number;
@@ -848,6 +913,8 @@ function StatCard({
   reachout?: { called: number; not_called: number };
   /** The filter-aware Total card: stands out from the per-status cards. */
   emphasis?: boolean;
+  /** Small line under the value, e.g. the active date range on the Total card. */
+  caption?: string;
 }) {
   const pct = total && total > 0 ? ((value / total) * 100).toFixed(1) : null;
   return (
@@ -874,6 +941,14 @@ function StatCard({
         <div className="text-2xl font-bold tabular-nums text-foreground mt-2">
           {value.toLocaleString()}
         </div>
+        {caption && (
+          <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+            <CalendarRange className="h-3 w-3 shrink-0" />
+            <span className="truncate" title={caption}>
+              {caption}
+            </span>
+          </div>
+        )}
       </div>
       {pct !== null && (
         <div className="mt-3">
