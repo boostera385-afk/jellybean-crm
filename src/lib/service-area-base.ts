@@ -16,7 +16,7 @@ export const BASE_ROLE_LABEL: Record<BaseRole, string> = {
 
 // Which actual app roles each submitter maps to for base checks.
 export function roleToBaseGroup(role: string | null | undefined): BaseRole | null {
-  if (role === "facebook") return "fb";
+  if (role === "facebook" || role === "fb_admin") return "fb";
   if (role === "seo") return "seo";
   if (role === "maturing" || role === "sub_admin") return "nd";
   return null;

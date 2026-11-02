@@ -112,7 +112,7 @@ type LeadRow = {
 function Dashboard() {
   const auth = useAuth();
   const role = auth.primaryRole ?? "submitter";
-  const isFacebook = role === "facebook";
+  const isFacebook = role === "facebook" || role === "fb_admin";
 
   const getToday = () => (isFacebook ? toPktWallClockDate(new Date()) : new Date());
 
@@ -128,7 +128,7 @@ function Dashboard() {
     };
   });
 
-  // Strict PKT live auto-sync exclusively for the Facebook role:
+  // Keep FB submitters and FB admins on the same PKT reporting day:
   // Automatically advance date range when midnight rolls over in Pakistan (00:00 PKT)
   // and when the browser tab becomes visible/focused.
   useEffect(() => {
@@ -581,7 +581,11 @@ function SubmitForm({
     mode: EnforcementMode;
   } | null>(null);
   const referenceMode: LeadReferenceMode =
-    role === "facebook" ? "auto-fb" : role === "seo" ? "manual-text" : "manual-dropdown";
+    role === "facebook" || role === "fb_admin"
+      ? "auto-fb"
+      : role === "seo"
+        ? "manual-text"
+        : "manual-dropdown";
   const forwardedBy =
     auth.profile?.full_name ?? auth.profile?.username ?? auth.profile?.email ?? "Current user";
 

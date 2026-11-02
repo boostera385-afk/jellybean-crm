@@ -872,7 +872,11 @@ function UnifiedForwardedLeadForm({
   const [saving, setSaving] = useState(false);
   const role = lead.submitted_by_role ?? auth.primaryRole ?? "maturing";
   const referenceMode: LeadReferenceMode =
-    role === "facebook" ? "auto-fb" : role === "seo" ? "manual-text" : "manual-dropdown";
+    role === "facebook" || role === "fb_admin"
+      ? "auto-fb"
+      : role === "seo"
+        ? "manual-text"
+        : "manual-dropdown";
 
   async function save(values: LeadFormValues) {
     const isAdmin = auth.primaryRole === "admin" || auth.primaryRole === "sub_admin";

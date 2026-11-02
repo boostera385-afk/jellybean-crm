@@ -2,6 +2,8 @@ import { normalizePhone } from "@/lib/crm-lite";
 
 const BUCKET = "lead-attachments";
 
+export const FACEBOOK_LEAD_REFERENCE = "Had a conversation on FB";
+
 /** Progressive phone mask for the lead entry fields. */
 export function formatPhoneInput(value: string): string {
   const digits = normalizePhone(value);

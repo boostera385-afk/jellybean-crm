@@ -6,6 +6,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { formatPhone } from "@/lib/crm-lite";
 import { extractNextdoorPostId, canonicalizeLeadLink } from "@/lib/lead-link-canonicalizer";
+import { FACEBOOK_LEAD_REFERENCE } from "@/lib/lead-form-utils";
 import type { LeadDraft } from "@/lib/lead-drafts";
 import { autoRephraseLeadWithAi } from "@/lib/raw-leads-ai.functions";
 
@@ -29,9 +30,8 @@ export type SendDraftContext = {
 // Required fields mirror LeadForm.handleSubmit(). Area is required for
 // every source except manual-seo drafts (matches app.submit-lead's
 // `areaRequired={role !== "seo"}` gate).
-function validateDraft(draft: LeadDraft): void {
+function validateDraft(draft: LeadDraft, role: string | null): void {
   const f = draft.form_data ?? {};
-  const role = (f.role as string | undefined) ?? null;
   const areaRequired = !(draft.source_type === "manual_lead" && role === "seo");
 
   const missing: string[] = [];
@@ -44,13 +44,19 @@ function validateDraft(draft: LeadDraft): void {
   req("Service", f.service);
   req("Context", f.context);
   req("Exact customer text", f.exactCustomerText);
-  req("Reference", f.reference);
+  if (!(draft.source_type === "manual_lead" && (role === "facebook" || role === "fb_admin"))) {
+    req("Reference", f.reference);
+  }
   if (missing.length > 0) throw new DraftValidationError(missing);
 }
 
 export async function sendDraftToCS(draft: LeadDraft, ctx: SendDraftContext): Promise<void> {
-  validateDraft(draft);
   const f = draft.form_data ?? {};
+  const isRaw = draft.source_type === "raw_lead";
+  const role = isRaw
+    ? ((f.role as string | undefined) ?? ctx.actorRole ?? null)
+    : (ctx.actorRole ?? (f.role as string | undefined) ?? null);
+  validateDraft(draft, role);
 
   const customerName = String(f.customerName).trim();
   const customerNumberRaw = String(f.customerNumber).trim();
@@ -59,7 +65,10 @@ export async function sendDraftToCS(draft: LeadDraft, ctx: SendDraftContext): Pr
   const service = String(f.service).trim();
   const context = String(f.context).trim();
   const postText = String(f.exactCustomerText).trim();
-  const reference = String(f.reference).trim();
+  const reference =
+    !isRaw && (role === "facebook" || role === "fb_admin")
+      ? FACEBOOK_LEAD_REFERENCE
+      : String(f.reference).trim();
   const isImportant = Boolean(f.isImportant);
   const extraNumbersRaw = (f.extraNumbers as string[] | undefined) ?? [];
   const cleanedExtras = extraNumbersRaw
@@ -69,11 +78,10 @@ export async function sendDraftToCS(draft: LeadDraft, ctx: SendDraftContext): Pr
 
   // Raw-lead drafts snapshot the underlying raw_lead_cache row so we can
   // preserve original_lead_link and canonical fields.
-  const isRaw = draft.source_type === "raw_lead";
   const snapshot =
     (f.entrySnapshot as
-      | { row_key?: string; id?: string | null; data?: Record<string, string> }
-      | undefined) ?? undefined;
+      { row_key?: string; id?: string | null; data?: Record<string, string> } | undefined) ??
+    undefined;
   const rawRow = snapshot?.data ?? {};
   const rawLeadLink =
     (f.originalLeadLink as string | null | undefined) ?? rawRow["Lead Link"] ?? null;
@@ -81,7 +89,6 @@ export async function sendDraftToCS(draft: LeadDraft, ctx: SendDraftContext): Pr
   // For manual submissions we mirror app.submit-lead: pass_it_to is null for
   // facebook/seo roles; for anyone else it echoes the service. For raw leads
   // pass_it_to always equals service, matching QualifyDialog.send().
-  const role = (f.role as string | undefined) ?? ctx.actorRole ?? null;
   const passItTo = isRaw ? service : role === "facebook" || role === "seo" ? null : service;
 
   const insertPayload: Record<string, unknown> = {

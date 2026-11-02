@@ -21,7 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 import { formatPhone, normalizePhone } from "@/lib/crm-lite";
-import { formatPhoneInput } from "@/lib/lead-form-utils";
+import { FACEBOOK_LEAD_REFERENCE, formatPhoneInput } from "@/lib/lead-form-utils";
 import { checkDuplicatePhone } from "@/lib/raw-leads.functions";
 import {
   compressVideoInBrowser,
@@ -1127,10 +1127,10 @@ export function LeadForm({
 }
 
 function resolveInitialReference(mode: LeadReferenceMode, provided?: string) {
+  if (mode === "auto-fb") return FACEBOOK_LEAD_REFERENCE;
   if (provided?.trim()) return provided;
   if (mode === "manual-dropdown") return "ND";
   if (mode === "auto-scraping") return "ND";
-  if (mode === "auto-fb") return "Had a conversation on FB";
   return "";
 }
 
