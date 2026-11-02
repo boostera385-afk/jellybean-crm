@@ -21,7 +21,7 @@ export type DocSection = {
   blocks: DocBlock[];
 };
 
-export const DOC_VERSION = "1.2";
+export const DOC_VERSION = "1.3";
 export const DOC_DATE = "November 2, 2026";
 export const DOC_TITLE = "JellyBean — Complete System Documentation";
 export const DOC_SUBTITLE = `Version ${DOC_VERSION} · ${DOC_DATE} · Full reference for roles, leads, workflows, permissions, notifications, integrations, and technical architecture.`;
@@ -104,7 +104,7 @@ export const DOC_SECTIONS: DocSection[] = [
             "Facebook team lead",
             "Forwarded Leads, Submit Lead, Reports (forwarded-per-user), Users",
             "Everything else; cannot delete users",
-            "See own + all facebook submitters' leads, submit leads, create/manage facebook users and their login codes (created only by admin)",
+            "See own + all facebook submitters' leads; submit with the same FB form and reference; create/manage facebook users and their login codes (created only by admin)",
           ],
           [
             "cs",
@@ -308,11 +308,14 @@ export const DOC_SECTIONS: DocSection[] = [
         kind: "ul",
         items: [
           "Manual lead form (src/routes/app.submit-lead.tsx) submits qualified leads directly without a raw-lead source",
-          "Required: customer name, customer number, service category, area",
+          "Required: customer name, customer number, service, context, exact customer text, reference, and an important-lead choice; area is required except for SEO",
           "Optional: extra phone numbers, notes, attachments (screenshots)",
           "Customer number is required and duplicate-checked; extra numbers are duplicate-checked but optional",
-          "Available to admin, sub_admin, maturing, acc_handler, facebook, seo",
-          "On send the lead is inserted into qualified_leads with the submitter as forwarded_by",
+          "Facebook and fb_admin use the same form: Reference is automatically set to 'Had a conversation on FB', area and state are required, and the FB Service/Area Base is checked when submitting from the form",
+          "An older fb_admin draft with an ND reference shows the FB reference when reopened and uses it when sent directly from Drafts",
+          "Facebook and fb_admin submission dates and filters use Pakistan time",
+          "Available to admin, sub_admin, fb_admin, maturing, acc_handler, facebook, seo",
+          "On send the lead is inserted into qualified_leads with created_by and assigned_by set to the submitter",
         ],
       },
     ],
@@ -391,7 +394,7 @@ export const DOC_SECTIONS: DocSection[] = [
           "Edit and delete are limited to the owner while the CS status is 'new'",
           "Duplicate number validation runs when editing customer or extra phone numbers",
           "Numbered pagination, global search, and status filtering are supported",
-          "Available to admin, sub_admin, maturing, acc_handler, facebook, seo",
+          "Available to admin, sub_admin, fb_admin, maturing, acc_handler, facebook, seo",
         ],
       },
     ],

@@ -91,7 +91,7 @@ access on its own.
 (`src/hooks/use-auth.ts:158`):
 
 ```
-admin > sub_admin > cs_admin > scraping > maturing > cs > acc_handler > facebook > seo
+admin > sub_admin > cs_admin > fb_admin > scraping > maturing > cs > acc_handler > facebook > seo
 ```
 
 Navigation is derived from `primaryRole` only, in

@@ -111,19 +111,20 @@ account is provisioned by an administrator.
 Access is enforced in **four independent layers**: route guards → render gates → server functions
 → Postgres RLS. A UI change alone can never grant access.
 
-### The nine roles
+### Roles
 
-| Role          | Responsibility                                                                         |
-| ------------- | -------------------------------------------------------------------------------------- |
-| `admin`       | Full access — every page, user management, settings, activity log                      |
-| `sub_admin`   | All of `admin` **except** CS Pipeline, Pending Leads, Crisp Chat, and the Activity log |
-| `scraping`    | Raw Leads, Browser Profiles                                                            |
-| `maturing`    | Raw Leads, Forwarded Leads, Manual Lead submission                                     |
-| `cs`          | CS Pipeline, Pending Leads, Crisp Chat                                                 |
-| `cs_admin`    | CS Pipeline, Pending Leads, Crisp Chat, Lead Assignment, User management (`cs` only)   |
-| `acc_handler` | Map, Browser Profiles, Raw Leads, Forwarded Leads, Manual Lead                         |
-| `facebook`    | Submit Lead, Forwarded Leads                                                           |
-| `seo`         | Submit Lead, Forwarded Leads                                                           |
+| Role          | Responsibility                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------- |
+| `admin`       | Full access — every page, user management, settings, activity log                           |
+| `sub_admin`   | All of `admin` **except** CS Pipeline, Pending Leads, Crisp Chat, and the Activity log      |
+| `scraping`    | Raw Leads, Browser Profiles                                                                 |
+| `maturing`    | Raw Leads, Forwarded Leads, Manual Lead submission                                          |
+| `cs`          | CS Pipeline, Pending Leads, Crisp Chat                                                      |
+| `cs_admin`    | CS Pipeline, Pending Leads, Crisp Chat, Lead Assignment, User management (`cs` only)        |
+| `fb_admin`    | Facebook lead form, Forwarded Leads, FB forwarded-per-user report, Facebook user management |
+| `acc_handler` | Map, Browser Profiles, Raw Leads, Forwarded Leads, Manual Lead                              |
+| `facebook`    | Submit Lead, Forwarded Leads                                                                |
+| `seo`         | Submit Lead, Forwarded Leads                                                                |
 
 Role definitions live in `src/hooks/use-auth.ts:14` (TypeScript) and in the Postgres `app_role`
 enum. Navigation is built in `src/components/app-shell.tsx:59`.
@@ -134,12 +135,18 @@ Managers may only manage users whose role falls under their own:
 
 | Manager     | May manage roles                             |
 | ----------- | -------------------------------------------- |
-| `admin`     | all eight non-admin roles                    |
+| `admin`     | all roles offered in Users                   |
 | `sub_admin` | `maturing`, `facebook`, `seo`, `acc_handler` |
 | `cs_admin`  | `cs`                                         |
+| `fb_admin`  | `facebook`                                   |
 
 Enforced in `src/lib/user-management-permissions.ts` and re-checked server-side by
 `requireUserManager` / `requireTargetAccess`.
+
+`facebook` and `fb_admin` use the same Submit Lead form: Reference is fixed to
+"Had a conversation on FB", area and state are required, and the FB Service/Area
+Base is checked when submitting from the form. Their lead dates and filters use Pakistan time. Existing
+`fb_admin` drafts with an ND reference use the FB reference when reopened or sent.
 
 ### Login is two-factor for non-admins
 

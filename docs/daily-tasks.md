@@ -142,10 +142,24 @@ Everything `cs` does, plus two extras.
 
 ### `facebook` / `seo` — Submit Lead, Forwarded Leads
 
-- **Submit Lead** — enter leads from your channel. Service and `pass it to` are
-  **both mandatory**; the second one drives auto-assignment to the right person.
-  Attach photos where relevant.
+- **Submit Lead** — enter leads from your channel. Facebook's Reference is
+  filled in automatically as **Had a conversation on FB**; SEO types its own
+  reference. Service and context are required. Facebook also needs an area and
+  state, and the FB Service/Area Base is checked when submitting from the form. Attach photos
+  where relevant.
 - **Forwarded Leads** — track leads you have submitted that are now with CS.
+
+---
+
+### `fb_admin` — Facebook team lead
+
+- **Submit Lead** — use the same Facebook form and automatic FB reference as a
+  `facebook` user. The FB Service/Area Base and Pakistan reporting day also
+  apply. Older drafts with an ND reference use the FB reference when reopened
+  or sent.
+- **Forwarded Leads** — see your own submissions and the Facebook team's leads.
+- **Reports / Users** — review forwarded leads by user and manage Facebook
+  submitters and their access codes. A full admin creates `fb_admin` accounts.
 
 ---
 
