@@ -997,6 +997,7 @@ export type Database = {
           confidence: number | null
           evidence_ids: string[]
           history_hash: string | null
+          last_message_at: string | null
           lead_id: string
           message_count: number
           model: string
@@ -1012,6 +1013,7 @@ export type Database = {
           confidence?: number | null
           evidence_ids?: string[]
           history_hash?: string | null
+          last_message_at?: string | null
           lead_id: string
           message_count?: number
           model: string
@@ -1027,6 +1029,7 @@ export type Database = {
           confidence?: number | null
           evidence_ids?: string[]
           history_hash?: string | null
+          last_message_at?: string | null
           lead_id?: string
           message_count?: number
           model?: string
@@ -1785,6 +1788,17 @@ export type Database = {
       }
     }
     Views: {
+      lead_export: {
+        Row: {
+          Context: string | null
+          "Created (NY time)": string | null
+          "Customer Name": string | null
+          "Exact Customer Requirement": string | null
+          "Marketing Notes": string | null
+          Service: string | null
+        }
+        Relationships: []
+      }
       mv_qualified_leads_status_counts: {
         Row: {
           assigned_to: string | null
@@ -1821,6 +1835,16 @@ export type Database = {
       }
     }
     Functions: {
+      accept_quo_webhook_event: {
+        Args: {
+          p_category?: string
+          p_direction?: string
+          p_event_type: string
+          p_phone: string
+          p_webhook_id: string
+        }
+        Returns: Json
+      }
       acknowledge_lead_reminders: {
         Args: { _lead_id: string }
         Returns: number
@@ -1863,6 +1887,10 @@ export type Database = {
           scraped_posts: number
           top_service: string
         }[]
+      }
+      canonical_cs_status: {
+        Args: { p_status: Database["public"]["Enums"]["cs_status"] }
+        Returns: Database["public"]["Enums"]["cs_status"]
       }
       check_qualified_lead_phone_duplicates: {
         Args: { _phone_digits: string; _since: string }
@@ -2072,6 +2100,19 @@ export type Database = {
         Returns: Json
       }
       cs_leads_status_counts: { Args: never; Returns: Json }
+      cs_leads_status_counts_filtered: {
+        Args: {
+          p_date_from?: string
+          p_date_to?: string
+          p_important?: boolean
+          p_not_called?: boolean
+          p_owner?: string
+          p_phone?: string
+          p_search?: string
+          p_unassigned?: boolean
+        }
+        Returns: Json
+      }
       cs_next_compose_sender_tick: { Args: never; Returns: number }
       cs_reserve_compose_run: {
         Args: {
@@ -2096,6 +2137,7 @@ export type Database = {
           total_leads: number
         }[]
       }
+      current_user_has_feature: { Args: { _feature: string }; Returns: boolean }
       current_user_has_role: {
         Args: { _role: Database["public"]["Enums"]["app_role"] }
         Returns: boolean
@@ -2112,6 +2154,14 @@ export type Database = {
         }
         Returns: number
       }
+      enqueue_quo_ai_due: {
+        Args: {
+          p_inbox_ids: string[]
+          p_limit?: number
+          p_policy_version?: string
+        }
+        Returns: number
+      }
       expire_quo_ai_jobs: { Args: never; Returns: undefined }
       finish_lead_ai_run: {
         Args: { p_result: Json; p_run_id: string }
@@ -2121,6 +2171,7 @@ export type Database = {
         Args: { p_lease_token: string; p_result: Json; p_run_id: string }
         Returns: boolean
       }
+      flip_quo_ai_no_reply: { Args: never; Returns: number }
       generate_access_code: { Args: never; Returns: string }
       generate_login_otp: { Args: never; Returns: string }
       get_admin_dashboard_stats: { Args: { _today: string }; Returns: Json }
@@ -2241,6 +2292,7 @@ export type Database = {
       }
       normalize_lead_service: { Args: { _input: string }; Returns: string }
       normalize_us_state: { Args: { _input: string }; Returns: string }
+      purge_quo_webhook_state: { Args: never; Returns: undefined }
       qualified_leads_cursor_page: {
         Args: {
           _assigned_to?: string
@@ -2281,6 +2333,10 @@ export type Database = {
           pass_it_to: string | null
           pinned_important: boolean
           post_text: string | null
+          quo_first_reply_at: string | null
+          quo_outbound_calls: number
+          quo_outbound_messages: number
+          quo_reach_out_updated_at: string | null
           raw_lead_cache_id: string | null
           raw_lead_id: string | null
           reference: string | null
@@ -2306,6 +2362,12 @@ export type Database = {
           total: number
         }[]
       }
+      quo_ai_scope_start: { Args: never; Returns: string }
+      quo_inboxes_for_lead: {
+        Args: { p_inbox_ids: string[]; p_number_name: string }
+        Returns: string[]
+      }
+      quo_name_key: { Args: { p_name: string }; Returns: string }
       raw_lead_cache_category_counts: {
         Args: { _is_admin?: boolean; _user_id: string }
         Returns: {
@@ -2427,8 +2489,24 @@ export type Database = {
         Returns: undefined
       }
       refresh_mv_raw_lead_cache_counts: { Args: never; Returns: undefined }
+      report_cs_department_daily: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_cs_reachout_counts: {
+        Args: { p_from?: string; p_to?: string }
+        Returns: Json
+      }
+      report_cs_service_state_counts: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
+      report_cs_status_counts: {
+        Args: { p_from?: string; p_to?: string }
+        Returns: Json
+      }
       report_lead_ai_status: {
-        Args: { p_from?: string | null; p_to?: string | null }
+        Args: { p_from?: string; p_to?: string }
         Returns: Json
       }
       report_leads_by_account:
@@ -2461,8 +2539,18 @@ export type Database = {
           maturing_name: string
         }[]
       }
+      report_leads_forwarded_by_user: {
+        Args: { _from?: string; _to?: string }
+        Returns: {
+          forwarded_count: number
+          status_counts: Json
+          user_email: string
+          user_id: string
+          user_name: string
+        }[]
+      }
       report_not_found_by_user: {
-        Args: { _from?: string | null; _to?: string | null }
+        Args: { _from?: string; _to?: string }
         Returns: {
           not_found_count: number
           user_email: string
@@ -2471,7 +2559,11 @@ export type Database = {
         }[]
       }
       report_quo_ai_progress: {
-        Args: { p_from?: string | null; p_to?: string | null }
+        Args: { p_from?: string; p_to?: string }
+        Returns: Json
+      }
+      report_raw_status_counts: {
+        Args: { p_from?: string; p_to?: string }
         Returns: Json
       }
       send_lead_reminder: {
@@ -2489,6 +2581,7 @@ export type Database = {
           total_leads: number
         }[]
       }
+      sync_quo_inbox_keys: { Args: { p_keys: Json }; Returns: number }
       verify_my_access_code: { Args: { _code: string }; Returns: boolean }
     }
     Enums: {
