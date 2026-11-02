@@ -2271,6 +2271,25 @@ function GroupsManager({
                               </>
                             )}
                           </div>
+                          <div className="flex items-center gap-1 text-[10.5px] text-muted-foreground">
+                            <CalendarCheck className="h-3 w-3 shrink-0" />
+                            {p.last_launched_at ? (
+                              <>
+                                <span className="font-medium text-success">Launched</span>
+                                <span>
+                                  · last{" "}
+                                  {new Date(p.last_launched_at).toLocaleString(undefined, {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "numeric",
+                                    minute: "2-digit",
+                                  })}
+                                </span>
+                              </>
+                            ) : (
+                              <span>Never launched</span>
+                            )}
+                          </div>
                         </div>
                         {/* Move this profile to another group, or ungroup it. */}
                         <Select value={name} onValueChange={(v) => moveProfile(p.id, v)}>
