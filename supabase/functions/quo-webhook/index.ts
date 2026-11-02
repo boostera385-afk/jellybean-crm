@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { verifyQuoWebhook } from "./quo-webhook-verify.ts";
+import { verifyQuoWebhook, parseQuoWebhookSecrets } from "./quo-webhook-verify.ts";
 import { readQuoMessageEvent } from "./quo-webhook-event.ts";
 
 /**
@@ -35,17 +35,20 @@ export async function handleQuoWebhook(req: Request): Promise<Response> {
   if (req.method === "GET" || req.method === "HEAD") return text("OK", 200);
   if (req.method !== "POST") return text("Method not allowed", 405);
 
-  const secret = Deno.env.get("QUO_WEBHOOK_SECRET");
+  // QUO_WEBHOOK_SECRET may hold more than one whsec_ (comma/space separated):
+  // Quo issues a separate secret per webhook, and message vs call events are
+  // separate webhooks, so running both means verifying against either secret.
+  const secrets = parseQuoWebhookSecrets(Deno.env.get("QUO_WEBHOOK_SECRET"));
   const url = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   // Retryable on purpose: a delivery must not be lost because a secret was
   // momentarily absent during a deploy.
-  if (!secret || !url || !key) return text("Webhook not configured", 503);
+  if (!secrets.length || !url || !key) return text("Webhook not configured", 503);
 
   const raw = await req.text();
   if (raw.length > MAX_BODY_BYTES) return text("Payload too large", 413);
 
-  const verified = await verifyQuoWebhook({ headers: req.headers, body: raw, secret });
+  const verified = await verifyQuoWebhook({ headers: req.headers, body: raw, secret: secrets });
   if (!verified.ok) {
     // The reason goes to our logs only; the response stays opaque so it cannot
     // be used to probe which part of the signature was wrong.
