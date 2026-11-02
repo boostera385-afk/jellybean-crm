@@ -121,7 +121,7 @@ function Page() {
       />
       <PageBody className="!pt-5">
         <RoleGate
-          allow={["admin", "sub_admin", "maturing", "acc_handler", "facebook", "seo"]}
+          allow={["admin", "sub_admin", "fb_admin", "maturing", "acc_handler", "facebook", "seo"]}
           current={auth.primaryRole}
         >
           <Inner />
@@ -135,6 +135,9 @@ function Inner() {
   const auth = useAuth();
   const qc = useQueryClient();
   const isAdmin = auth.primaryRole === "admin" || auth.primaryRole === "sub_admin";
+  // fb_admin sees its own leads plus every FB submitter's lead (enforced by RLS),
+  // so it is not restricted to created_by like the individual submitter roles.
+  const isFbAdmin = auth.primaryRole === "fb_admin";
   const [query, setQuery] = useState("");
   const [outcomeFilter, setOutcomeFilter] = useState<"all" | "pending" | ForwardedStatus>("all");
   const [forwardedByFilter, setForwardedByFilter] = useState("all");
@@ -188,7 +191,7 @@ function Inner() {
         .from("qualified_leads")
         .select("id", { count: "exact", head: true })
         .gte("assigned_at", todayStart);
-      if (!isAdmin) q = q.eq("created_by", auth.user!.id);
+      if (!isAdmin && !isFbAdmin) q = q.eq("created_by", auth.user!.id);
       const { count, error } = await q;
       if (error) throw error;
       return count ?? 0;

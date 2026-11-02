@@ -200,13 +200,73 @@ function Page() {
       <PageHeader title="Reports" description="Operational counts across the pipeline." />
       <PageBody>
         <RoleGate
-          allow={["admin", "sub_admin"]}
+          allow={["admin", "sub_admin", "fb_admin"]}
           current={auth.primaryRole}
           allowOverride={auth.features.includes("reports")}
         >
-          <Inner />
+          {auth.primaryRole === "fb_admin" ? <FbAdminReports /> : <Inner />}
         </RoleGate>
       </PageBody>
+    </div>
+  );
+}
+
+/**
+ * FB admin's reports: only the "Leads forwarded per user" report, scoped
+ * server-side to FB submitters + self, with the same custom date-range toolbar.
+ */
+function FbAdminReports() {
+  const today = toIsoDay(new Date());
+  const [preset, setPreset] = useState<DatePreset>("all");
+  const [fromDate, setFromDate] = useState<string>(today);
+  const [toDate, setToDate] = useState<string>(today);
+  const range = useMemo(() => computeRange(preset, fromDate, toDate), [preset, fromDate, toDate]);
+
+  return (
+    <div className="space-y-8">
+      <div className="crm-toolbar-panel">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(
+            [
+              ["all", "All time"],
+              ["today", "Today"],
+              ["yesterday", "Yesterday"],
+              ["7d", "Weekly"],
+              ["30d", "Monthly"],
+              ["custom", "Custom"],
+            ] as Array<[DatePreset, string]>
+          ).map(([key, label]) => (
+            <Button
+              key={key}
+              size="sm"
+              variant={preset === key ? "default" : "outline"}
+              className={cn("h-8 px-3 text-xs transition-all", preset === key && "font-semibold")}
+              onClick={() => setPreset(key)}
+            >
+              {label}
+            </Button>
+          ))}
+          {preset === "custom" && (
+            <div className="flex items-center gap-1.5 ml-1">
+              <Input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="h-8 w-[140px] text-xs"
+              />
+              <span className="text-xs text-muted-foreground">→</span>
+              <Input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="h-8 w-[140px] text-xs"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <ForwardedByUserSection range={range} preset={preset} />
     </div>
   );
 }

@@ -49,6 +49,7 @@ type Role =
   | "maturing"
   | "cs"
   | "cs_admin"
+  | "fb_admin"
   | "acc_handler"
   | "facebook"
   | "seo";

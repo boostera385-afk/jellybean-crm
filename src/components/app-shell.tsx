@@ -127,6 +127,15 @@ const SUBMITTER: Item[] = [
   { to: "/app/forwarded-leads", label: "Forwarded Leads", icon: Headphones },
 ];
 
+// FB admin: sees FB submitters' forwarded leads, can submit leads, runs the
+// forwarded-per-user report, and manages FB users under Users.
+const FB_ADMIN_ITEMS: Item[] = [
+  { to: "/app/forwarded-leads", label: "Forwarded Leads", icon: Headphones },
+  { to: "/app/submit-lead", label: "Submit Lead", icon: Send },
+  { to: "/app/reports", label: "Reports", icon: BarChart3 },
+  { to: "/app/settings", label: "Users", icon: Users },
+];
+
 const ADMIN_FULL: Item[] = [
   ...ADMIN.slice(0, 3),
   { to: "/app/forwarded-leads", label: "Forwarded Leads", icon: Headphones },
@@ -150,6 +159,7 @@ function itemsForRole(role: AppRole | null): Item[] {
   if (role === "maturing") return MATURING;
   if (role === "cs") return CS;
   if (role === "cs_admin") return CS_ADMIN_ITEMS;
+  if (role === "fb_admin") return FB_ADMIN_ITEMS;
   if (role === "acc_handler") return ACC_HANDLER;
   if (role === "facebook" || role === "seo") return SUBMITTER;
   return [];
@@ -209,6 +219,7 @@ function initials(name?: string | null, email?: string | null) {
 
 function roleLabel(role: AppRole | null) {
   if (role === "sub_admin") return "Sub-admin";
+  if (role === "fb_admin") return "FB Admin";
   return role?.replace(/_/g, " ") ?? "no role";
 }
 

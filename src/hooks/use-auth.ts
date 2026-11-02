@@ -18,6 +18,7 @@ export type AppRole =
   | "maturing"
   | "cs"
   | "cs_admin"
+  | "fb_admin"
   | "acc_handler"
   | "facebook"
   | "seo";
@@ -173,19 +174,21 @@ export function useAuthState(): AuthState {
       ? "sub_admin"
       : roles.includes("cs_admin")
         ? "cs_admin"
-        : roles.includes("scraping")
-          ? "scraping"
-          : roles.includes("maturing")
-            ? "maturing"
-            : roles.includes("cs")
-              ? "cs"
-              : roles.includes("acc_handler")
-                ? "acc_handler"
-                : roles.includes("facebook")
-                  ? "facebook"
-                  : roles.includes("seo")
-                    ? "seo"
-                    : null;
+        : roles.includes("fb_admin")
+          ? "fb_admin"
+          : roles.includes("scraping")
+            ? "scraping"
+            : roles.includes("maturing")
+              ? "maturing"
+              : roles.includes("cs")
+                ? "cs"
+                : roles.includes("acc_handler")
+                  ? "acc_handler"
+                  : roles.includes("facebook")
+                    ? "facebook"
+                    : roles.includes("seo")
+                      ? "seo"
+                      : null;
 
   return {
     loading,
