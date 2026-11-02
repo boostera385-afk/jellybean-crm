@@ -2195,6 +2195,36 @@ function GroupsManager({
                   {launchingGroup === name ? "Launching…" : `Launch group (${activeCount} active)`}
                 </Button>
 
+                {(() => {
+                  const times = members
+                    .map((m) => m.last_launched_at)
+                    .filter((t): t is string => Boolean(t));
+                  const last = times.length ? times.reduce((a, b) => (a > b ? a : b)) : null;
+                  return (
+                    <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                      <CalendarCheck className="h-3 w-3 shrink-0" />
+                      {launchingGroup === name ? (
+                        "Launching now…"
+                      ) : last ? (
+                        <>
+                          <span className="font-medium text-success">Launched</span>
+                          <span>
+                            · last{" "}
+                            {new Date(last).toLocaleString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "numeric",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </>
+                      ) : (
+                        "Never launched"
+                      )}
+                    </p>
+                  );
+                })()}
+
                 {members.length > 0 ? (
                   <div className="space-y-1">
                     {members.map((p) => (

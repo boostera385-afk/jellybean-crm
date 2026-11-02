@@ -170,7 +170,7 @@ function Page() {
         }
       />
       <PageBody>
-        <RoleGate allow={["admin", "sub_admin", "cs_admin"]} current={auth.primaryRole}>
+        <RoleGate allow={["admin", "sub_admin", "cs_admin", "fb_admin"]} current={auth.primaryRole}>
           {isAdmin && (
             <div className="crm-toolbar-panel inline-flex mb-5">
               <div className="flex gap-1 flex-wrap">
@@ -507,6 +507,7 @@ function UsersTab({ managerRole }: { managerRole: UserManagerRole }) {
                 key={u.user_id}
                 user={u}
                 roleOptions={roleOptions}
+                canDelete={managerRole !== "fb_admin"}
                 onChange={() => qc.invalidateQueries({ queryKey: usersQueryKey })}
               />
             ))}
@@ -706,10 +707,12 @@ function FeatureAccessRow({
 function UserRowItem({
   user,
   roleOptions,
+  canDelete = true,
   onChange,
 }: {
   user: UserRow;
   roleOptions: readonly UserManagementRole[];
+  canDelete?: boolean;
   onChange: () => void;
 }) {
   const setActive = useServerFn(adminSetActive);
@@ -824,15 +827,17 @@ function UserRowItem({
         >
           <Power className="h-3.5 w-3.5 mr-1" /> {user.is_active ? "Deactivate" : "Activate"}
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setShowDeleteConfirm(true)}
-          disabled={busy}
-          className="text-destructive hover:text-destructive"
-        >
-          <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
-        </Button>
+        {canDelete && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowDeleteConfirm(true)}
+            disabled={busy}
+            className="text-destructive hover:text-destructive"
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+          </Button>
+        )}
 
         <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
           <AlertDialogContent>

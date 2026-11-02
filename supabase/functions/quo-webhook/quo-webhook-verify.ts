@@ -33,8 +33,7 @@ export type QuoVerifyFailure =
   | "signature_mismatch";
 
 export type QuoVerifyResult =
-  | { ok: true; webhookId: string; timestamp: number }
-  | { ok: false; reason: QuoVerifyFailure };
+  { ok: true; webhookId: string; timestamp: number } | { ok: false; reason: QuoVerifyFailure };
 
 function decodeBase64(value: string) {
   const binary = atob(value);
@@ -64,10 +63,24 @@ function constantTimeEqual(a: string, b: string): boolean {
  * received: re-serializing parsed JSON reorders keys and changes whitespace,
  * and the signature is over bytes, so it would never match again.
  */
+/**
+ * Split a configured secret value into individual `whsec_` secrets. Quo issues a
+ * SEPARATE signing secret per webhook, and message vs call events are separate
+ * webhooks, so running both means verifying against more than one secret. They
+ * are held in QUO_WEBHOOK_SECRET separated by commas or whitespace.
+ */
+export function parseQuoWebhookSecrets(value: string | null | undefined): string[] {
+  return (value ?? "")
+    .split(/[\s,]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 export async function verifyQuoWebhook(options: {
   headers: QuoWebhookHeaders;
   body: string;
-  secret: string;
+  /** One secret, or several (e.g. a message webhook's and a call webhook's). */
+  secret: string | string[];
   now?: number;
 }): Promise<QuoVerifyResult> {
   const { headers } = options;
@@ -89,41 +102,44 @@ export async function verifyQuoWebhook(options: {
   if (Math.abs(nowSeconds - timestamp) > MAX_SKEW_SECONDS)
     return { ok: false, reason: "timestamp_out_of_range" };
 
-  // The secret is stored exactly as Quo returns it, prefix included.
-  const secretPayload = options.secret.startsWith("whsec_")
-    ? options.secret.slice("whsec_".length)
-    : options.secret;
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(secretPayload))
-    return { ok: false, reason: "malformed_secret" };
-  let key: CryptoKey;
-  try {
-    key = await crypto.subtle.importKey(
-      "raw",
-      decodeBase64(secretPayload),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"],
-    );
-  } catch {
-    return { ok: false, reason: "malformed_secret" };
-  }
-
-  const signed = `${webhookId}.${rawTimestamp}.${options.body}`;
-  const expected = encodeBase64(
-    new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(signed))),
-  );
-
   // Only v1 entries are HMAC-SHA256 over this content; any other version is a
-  // scheme this code has not been written against.
+  // scheme this code has not been written against. Independent of the secret.
   const offered = signatureList
     .split(" ")
     .filter(Boolean)
     .filter((entry) => entry.startsWith("v1,"))
     .map((entry) => entry.slice("v1,".length));
   if (!offered.length) return { ok: false, reason: "no_supported_signature" };
-  // Compare every entry rather than stopping at the first match, so the work
-  // does not depend on which key signed the delivery.
+
+  const signed = `${webhookId}.${rawTimestamp}.${options.body}`;
+  const secrets = Array.isArray(options.secret) ? options.secret : [options.secret];
+  let sawValidSecret = false;
   let matched = false;
-  for (const candidate of offered) matched = constantTimeEqual(candidate, expected) || matched;
-  return matched ? { ok: true, webhookId, timestamp } : { ok: false, reason: "signature_mismatch" };
+  for (const secret of secrets) {
+    // The secret is stored exactly as Quo returns it, prefix included.
+    const secretPayload = secret.startsWith("whsec_") ? secret.slice("whsec_".length) : secret;
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(secretPayload)) continue;
+    let key: CryptoKey;
+    try {
+      key = await crypto.subtle.importKey(
+        "raw",
+        decodeBase64(secretPayload),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"],
+      );
+    } catch {
+      continue;
+    }
+    sawValidSecret = true;
+    const expected = encodeBase64(
+      new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(signed))),
+    );
+    // Compare every entry rather than stopping at the first, so the work does
+    // not depend on which key signed the delivery.
+    for (const candidate of offered) matched = constantTimeEqual(candidate, expected) || matched;
+    if (matched) return { ok: true, webhookId, timestamp };
+  }
+  if (!sawValidSecret) return { ok: false, reason: "malformed_secret" };
+  return { ok: false, reason: "signature_mismatch" };
 }

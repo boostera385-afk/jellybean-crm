@@ -21,8 +21,8 @@ export type DocSection = {
   blocks: DocBlock[];
 };
 
-export const DOC_VERSION = "1.1";
-export const DOC_DATE = "July 14, 2026";
+export const DOC_VERSION = "1.2";
+export const DOC_DATE = "November 2, 2026";
 export const DOC_TITLE = "JellyBean — Complete System Documentation";
 export const DOC_SUBTITLE = `Version ${DOC_VERSION} · ${DOC_DATE} · Full reference for roles, leads, workflows, permissions, notifications, integrations, and technical architecture.`;
 
@@ -100,6 +100,13 @@ export const DOC_SECTIONS: DocSection[] = [
             "Full CRUD in CS Pipeline, bulk important-lead assignment (no CSV export)",
           ],
           [
+            "fb_admin",
+            "Facebook team lead",
+            "Forwarded Leads, Submit Lead, Reports (forwarded-per-user), Users",
+            "Everything else; cannot delete users",
+            "See own + all facebook submitters' leads, submit leads, create/manage facebook users and their login codes (created only by admin)",
+          ],
+          [
             "cs",
             "Customer Success operator",
             "CS Pipeline",
@@ -171,19 +178,24 @@ export const DOC_SECTIONS: DocSection[] = [
           [
             "Forwarded Leads",
             "Leads the user forwarded",
-            "admin, sub_admin, maturing, acc_handler, facebook, seo",
-            "Owner-only edit while status is 'new'",
+            "admin, sub_admin, fb_admin, maturing, acc_handler, facebook, seo",
+            "Owner-only edit while 'new'; fb_admin sees own + all facebook leads",
           ],
           [
             "Manual Lead",
             "Manual lead entry form",
-            "admin, sub_admin, maturing, acc_handler, facebook, seo",
+            "admin, sub_admin, fb_admin, maturing, acc_handler, facebook, seo",
             "—",
           ],
           ["Browser Profiles", "Incogniton profile records", "admin, sub_admin, acc_handler", "—"],
           ["Map", "Geographic lead view", "admin, sub_admin, acc_handler", "—"],
           ["Analytics", "Trend charts", "admin, sub_admin", "—"],
-          ["Reports", "Operational reports", "admin, sub_admin", "CSV export admin-only"],
+          [
+            "Reports",
+            "Operational reports",
+            "admin, sub_admin, fb_admin",
+            "fb_admin sees only 'leads forwarded per user' (facebook + self); CSV export admin-only",
+          ],
           [
             "Lead Assignment",
             "State-based routing + CS analytics",
@@ -201,8 +213,8 @@ export const DOC_SECTIONS: DocSection[] = [
           [
             "Settings",
             "System settings + user management",
-            "admin only",
-            "Non-admins see 'Restricted'",
+            "admin (full); sub_admin, cs_admin, fb_admin (Users tab only)",
+            "fb_admin manages only facebook users and their login codes, and cannot delete users",
           ],
         ],
       },
@@ -591,7 +603,9 @@ export const DOC_SECTIONS: DocSection[] = [
           "Users are created through adminCreateUser (server function) with role assignment inserted into user_roles",
           "Activate/deactivate flips profiles.is_active; inactive users are blocked at login",
           "Delete removes the user from auth.users via a SECURITY DEFINER RPC (hard delete, not a soft flag)",
-          "Password reset is handled through adminResetPassword",
+          "Password reset is handled through adminResetPassword; a user's 6-digit login code is viewed/regenerated via regenerateManagedUserAccessCode",
+          "Manager hierarchy (src/lib/user-management-permissions.ts): admin manages every role; sub_admin manages maturing, facebook, seo and acc_handler; cs_admin manages cs; fb_admin manages facebook only. The Users tab shows each manager only the users in their scope.",
+          "fb_admin and cs_admin cannot delete users (the Delete button is hidden and adminDeleteUser refuses fb_admin); only admin/sub_admin delete. fb_admin itself is created only by a full admin.",
         ],
       },
     ],
@@ -724,7 +738,7 @@ export const DOC_SECTIONS: DocSection[] = [
       },
       {
         kind: "p",
-        text: "Analysis now runs unattended as well as on demand. A signed Quo webhook (message.received, message.delivered, message.undelivered) records that something happened to a phone number and parks the matching leads for a recheck; set QUO_WEBHOOK_SECRET to the whsec_ key Quo returns when the webhook is created, and create it on the current API version, because the legacy OpenPhone signature scheme is not interchangeable. The webhook sends no message and calls neither Quo nor a model: it is one indexed lookup per event. The same webhook also keeps a reach-out tally per lead — how many delivered messages and completed calls we made before the customer's first reply — which freezes the moment they respond. Subscribe call.completed alongside the message events to count calls; the tally starts at zero for leads contacted before it was switched on.",
+        text: "Analysis now runs unattended as well as on demand. A signed Quo webhook (message.received, message.delivered, message.undelivered) records that something happened to a phone number and parks the matching leads for a recheck; set QUO_WEBHOOK_SECRET to the whsec_ key Quo returns when the webhook is created, and create it on the current API version, because the legacy OpenPhone signature scheme is not interchangeable. The webhook sends no message and calls neither Quo nor a model: it is one indexed lookup per event. The same webhook also keeps a reach-out tally per lead — how many delivered messages and completed calls we made before the customer's first reply — which freezes the moment they respond. Calls are a SEPARATE Quo webhook from messages (call events and message events cannot share one subscription), and each Quo webhook has its own whsec_ secret, so to count completed calls create a call webhook pointing at the same URL and add its secret to QUO_WEBHOOK_SECRET alongside the message one — the value accepts several secrets separated by commas or spaces, and a delivery is accepted if it matches any of them. The tally starts at zero for leads contacted before it was switched on.",
       },
       {
         kind: "p",

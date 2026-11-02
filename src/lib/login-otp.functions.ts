@@ -10,6 +10,10 @@ export const adminDeleteUser = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ userId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const actorRole = await requireUserManager(context.userId);
+    // fb_admin may create and manage FB submitters but never delete anyone.
+    if (actorRole === "fb_admin") {
+      throw new Error("Forbidden: fb_admin cannot delete users");
+    }
     if (data.userId === context.userId) throw new Error("You cannot delete your own account.");
     await requireTargetAccess(actorRole, data.userId);
 

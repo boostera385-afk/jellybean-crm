@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_SKEW_SECONDS,
   verifyQuoWebhook,
+  parseQuoWebhookSecrets,
 } from "../../supabase/functions/quo-webhook/quo-webhook-verify";
 
 const SECRET = "whsec_c2VjcmV0LWtleS1mb3ItdGVzdGluZy1vbmx5";
+// A second webhook's secret (e.g. a call webhook alongside the message one).
+const CALL_SECRET = "whsec_Y2FsbC13ZWJob29rLXNlY3JldC1mb3ItdGVzdHM=";
 const BODY = JSON.stringify({ type: "message.delivered", data: { object: { id: "ACtest" } } });
 const ID = "msg_2abcdefghijklmnop";
 const NOW = Date.UTC(2026, 9, 22, 12, 0, 0);
@@ -55,6 +58,47 @@ describe("Quo webhook signature verification", () => {
       "webhook-signature": `v1,${btoa("an-older-key")} v1,${await sign(BODY)}`,
     });
     expect(result.ok).toBe(true);
+  });
+
+  it("accepts a delivery signed by a second webhook's secret (call alongside message)", async () => {
+    // Signed with the call webhook's secret; verified against both secrets.
+    const result = await verifyQuoWebhook({
+      headers: headers({
+        "webhook-id": ID,
+        "webhook-timestamp": TS,
+        "webhook-signature": `v1,${await sign(BODY, ID, TS, CALL_SECRET)}`,
+      }),
+      body: BODY,
+      secret: [SECRET, CALL_SECRET],
+      now: NOW,
+    });
+    expect(result).toEqual({ ok: true, webhookId: ID, timestamp: Number(TS) });
+  });
+
+  it("rejects when the signature matches none of the configured secrets", async () => {
+    const result = await verifyQuoWebhook({
+      headers: headers({
+        "webhook-id": ID,
+        "webhook-timestamp": TS,
+        "webhook-signature": `v1,${await sign(BODY, ID, TS, "whsec_dW5rbm93bi1zZWNyZXQ=")}`,
+      }),
+      body: BODY,
+      secret: [SECRET, CALL_SECRET],
+      now: NOW,
+    });
+    expect(result).toEqual({ ok: false, reason: "signature_mismatch" });
+  });
+
+  it("parses one or several configured secrets", () => {
+    expect(parseQuoWebhookSecrets("whsec_a")).toEqual(["whsec_a"]);
+    expect(parseQuoWebhookSecrets("whsec_a, whsec_b")).toEqual(["whsec_a", "whsec_b"]);
+    expect(parseQuoWebhookSecrets("whsec_a\n whsec_b  whsec_c")).toEqual([
+      "whsec_a",
+      "whsec_b",
+      "whsec_c",
+    ]);
+    expect(parseQuoWebhookSecrets("")).toEqual([]);
+    expect(parseQuoWebhookSecrets(null)).toEqual([]);
   });
 
   it("rejects a body altered in transit", async () => {

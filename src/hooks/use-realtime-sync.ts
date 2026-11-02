@@ -23,6 +23,7 @@ const ROLE_TABLES: Record<AppRole, string[]> = {
   maturing: ["qualified_leads", "incogniton_profiles", "shared_state"],
   cs: ["qualified_leads", "shared_state"],
   cs_admin: ["qualified_leads", "shared_state"],
+  fb_admin: ["qualified_leads", "shared_state"],
   acc_handler: ["incogniton_profiles", "shared_state"],
   facebook: ["qualified_leads", "shared_state"],
   seo: ["qualified_leads", "shared_state"],
@@ -82,8 +83,7 @@ export function useRealtimeSync(role: AppRole | null) {
           (payload: { eventType: string; new?: { key?: string; value?: unknown } }) => {
             if (payload.new?.key === GOOGLE_SHEETS_SHARED_STATE_KEY) {
               const cfg = payload.new.value as
-                | { webhookUrl?: string; autoSync?: boolean }
-                | undefined;
+                { webhookUrl?: string; autoSync?: boolean } | undefined;
               if (cfg && typeof cfg === "object") {
                 setGoogleSheetsConfigInMemory(cfg.webhookUrl, cfg.autoSync);
               }
