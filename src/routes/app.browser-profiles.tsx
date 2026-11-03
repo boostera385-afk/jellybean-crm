@@ -1907,9 +1907,30 @@ function GroupsManager({
   const [busy, setBusy] = useState(false);
   const launchBusy = launchingGroup !== null || launchingProfileId !== null;
 
+  // The most recent launch time across each group's profiles. Groups never
+  // launched count as 0 (oldest), so they stay at the top.
+  const lastLaunchedByGroup = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of profiles) {
+      if (!p.group_name || !p.last_launched_at) continue;
+      const t = new Date(p.last_launched_at).getTime();
+      if (!Number.isFinite(t)) continue;
+      m.set(p.group_name, Math.max(m.get(p.group_name) ?? 0, t));
+    }
+    return m;
+  }, [profiles]);
+
+  // Order groups by when they were last launched: least-recently-launched (and
+  // never-launched) on top, most-recently-launched sinks to the bottom, so a
+  // group drops down the moment you launch it. Alphabetical as a tiebreak.
   const groupNames = useMemo(
-    () => Array.from(new Set([...dbGroups, ...draftGroups])).sort((a, b) => a.localeCompare(b)),
-    [dbGroups, draftGroups],
+    () =>
+      Array.from(new Set([...dbGroups, ...draftGroups])).sort((a, b) => {
+        const ta = lastLaunchedByGroup.get(a) ?? 0;
+        const tb = lastLaunchedByGroup.get(b) ?? 0;
+        return ta - tb || a.localeCompare(b);
+      }),
+    [dbGroups, draftGroups, lastLaunchedByGroup],
   );
   const profilesByGroup = useMemo(() => {
     const map = new Map<string, Profile[]>();
