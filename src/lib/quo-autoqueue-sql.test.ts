@@ -61,6 +61,7 @@ const CHAIN = [
   "quo_ai_no_caps",
   "quo_reachout_counts",
   "cs_pipeline_ai_status_automation",
+  "need_review_excludes_manual",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -301,6 +302,39 @@ describe("guarded CS pipeline automation", () => {
     expect(row.cs_status_ai_updated_at).toBeNull();
     expect(row.cs_status_human_updated_at).toBeInstanceOf(Date);
     expect(row.ai_status_automation_started_at).toBeInstanceOf(Date);
+  });
+
+  it("never opens Needs Review on a lead a human already set", async () => {
+    // A person gives the lead a manual status first (human-owned).
+    await db.exec(
+      `SET ROLE postgres; UPDATE public.qualified_leads SET cs_status='cx_interested'
+         WHERE id='${lead(1)}'; SET ROLE service_role;`,
+    );
+    // A later uncertain AI verdict must leave it out of Need Review entirely.
+    expect(
+      await finish(lead(1), {
+        ...classified("cx_interested"),
+        state: "review",
+        status: null,
+        confidence: null,
+        reasonCode: "ambiguous_conversation",
+      }),
+    ).toBe(true);
+    const row = (
+      await db.query<{
+        cs_status: string;
+        ai_review_required: boolean;
+        cs_status_updated_by_ai: boolean;
+      }>(
+        `SELECT cs_status::text,ai_review_required,cs_status_updated_by_ai
+         FROM public.qualified_leads WHERE id='${lead(1)}'`,
+      )
+    ).rows[0];
+    expect(row).toMatchObject({
+      cs_status: "cx_interested",
+      ai_review_required: false,
+      cs_status_updated_by_ai: false,
+    });
   });
 });
 
