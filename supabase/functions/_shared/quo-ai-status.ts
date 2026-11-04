@@ -1,5 +1,5 @@
-/** Read-only Quo integration and shadow classification. Never sends messages. */
-export const AI_STATUS_VERSION = "quo-shadow-v5";
+/** Read-only Quo history analysis. Never sends messages. */
+export const AI_STATUS_VERSION = "quo-auto-v6";
 /** A delivered message with nothing back for this long is "didn't reply". */
 export const NO_REPLY_MS = 6 * 60 * 60 * 1000;
 export const AI_STATUS_MODEL = "gpt-4.1-mini-2025-04-14";

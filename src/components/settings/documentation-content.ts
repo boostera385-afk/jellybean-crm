@@ -733,11 +733,11 @@ export const DOC_SECTIONS: DocSection[] = [
     blocks: [
       {
         kind: "p",
-        text: "Quo AI status is a comparison-only beta in Reports. Manual totals stay unchanged; each CS status card shows a separate AI status count. Refresh queues up to five eligible leads in the selected assigned-date range. Administrators configure QUO_API_KEY and OPENAI_API_KEY in Supabase Edge Function secrets. Inbox IDs are discovered automatically (up to 100); QUO_PHONE_NUMBER_IDS is only an optional allowlist. All 39 current inboxes are supported without manual IDs. Background work resumes in bounded chunks, including when the Reports tab is closed.",
+        text: "Quo AI status now drives guarded CS Pipeline automation as well as Reports. A person must put a lead in Delivered once before automation begins. After that, eligible AI decisions update the existing CS status and show an AI marker beside it; a human status change removes the marker. Inconclusive results keep the current status and appear in the Needs Review section. Administrators configure QUO_API_KEY and OPENAI_API_KEY in Supabase Edge Function secrets. Inbox IDs are discovered automatically (up to 100); QUO_PHONE_NUMBER_IDS is only an optional allowlist. Background work resumes in bounded chunks even when Reports is closed.",
       },
       {
         kind: "p",
-        text: "The beta reads all pages of Quo SMS history, not call transcripts or attachment contents. Partial history is never classified. In-flight checkpoints are encrypted, backend-only, removed on completion, and expire after 24 hours. Incomplete history, missing delivery receipts and uncertain intent require review. A photo-only reply (an inbound message with media and no text) is read as CX interested rather than held for review. A number shared across leads is classified from the lead's own inbox when its number name maps to one Quo inbox, because that history is one unambiguous conversation; it is only held for review when the history has to be read across every inbox. No messages are sent and AI never changes manual lead statuses. Compare disagreements against the source chat during the initial week; agreement with manual status is not an accuracy guarantee.",
+        text: "The automation reads all pages of Quo SMS history, not call transcripts or attachment contents. Partial history is never classified. In-flight checkpoints are encrypted, backend-only, removed on completion, and expire after 24 hours. Incomplete history, missing delivery receipts and uncertain intent require review. A photo-only reply (an inbound message with media and no text) is read as CX interested rather than held for review. A number shared across leads is classified from the lead's own inbox when its number name maps to one Quo inbox; it is held for review when the history has to be read across every inbox. No messages are sent. A human decision made while analysis is running makes that AI result stale, so it cannot overwrite the newer human status.",
       },
       {
         kind: "p",
@@ -745,7 +745,7 @@ export const DOC_SECTIONS: DocSection[] = [
       },
       {
         kind: "p",
-        text: "A five-minute sweep then enqueues only leads with a reason to be looked at, in that order: an event arrived, never classified, a delivery that had not confirmed yet, the lead itself was edited. A lead nothing happened to is not queued at all, which is the saving over re-scanning the catalogue in rotation at up to one paged Quo request per inbox per customer number. The sweep stops at 400 of the 500 daily runs so Refresh always still works, and only tops up an empty queue, never a backlog.",
+        text: "An every-minute sweep enqueues only automation-enabled leads with a reason to be looked at: a Quo event arrived, Delivered just enabled automation, the lead has never been classified, delivery had not confirmed, the lead itself changed, or the rules version changed. A lead with no reason is not queued, which avoids re-scanning the catalogue in rotation. One paced worker drains the queue without a daily AI-run cap.",
       },
       {
         kind: "p",
@@ -753,7 +753,7 @@ export const DOC_SECTIONS: DocSection[] = [
       },
       {
         kind: "p",
-        text: "AI status applies to leads created from five days before it was switched on, and every lead after; older leads have none. It is a separate tag, shown to administrators only, and never changes the manual status. A lead nothing has been sent to has no AI status, so New stays untouched. From Quo's own records, with no model: a number that was texting with us before the lead was created is Already received before; an undelivered message is Undeliver; a delivered one is Delivered, and becomes CX didn't replied after 6 hours with nothing back. When the customer replies, the model reads the chat for CX interested, CX not interested, Wrong number, Already got someone or Service provider himself. A later reply re-queues the lead, so Delivered and CX didn't replied update when the customer answers.",
+        text: "AI analysis applies to leads created from five days before it was switched on and every lead after; older leads have none. New stays untouched until a person first selects Delivered. From Quo's own records, with no model: an undelivered message becomes Undeliver; a delivered message is Delivered and becomes CX didn't replied after 6 hours without a reply. When the customer replies, the model reads the chat for CX interested, CX not interested, Wrong number, Wrong lead, Already got someone, Already received before, Service provider himself or Out of base. A later Quo event re-queues the lead. The current pipeline status shows AI when automation set it; a human change removes that marker.",
       },
       {
         kind: "p",

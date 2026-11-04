@@ -197,6 +197,6 @@ export async function processQuoJob(
         reasonCode: saved && !error ? result!.reasonCode : "result_not_published",
       },
     ],
-    message: "Manual statuses unchanged.",
+    message: "AI status automation completed.",
   };
 }

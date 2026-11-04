@@ -120,7 +120,7 @@ export async function handleAiStatus(req: Request): Promise<Response> {
         processed += last.processed;
         results.push(...last.results);
       }
-      return json({ mode: "shadow", ...last, processed, results });
+      return json({ mode: "automation", ...last, processed, results });
     } catch {
       return json({ error: "Queued worker unavailable; retry shortly." }, 503);
     }
@@ -157,7 +157,7 @@ export async function handleAiStatus(req: Request): Promise<Response> {
   if (body.action === "configuration")
     return json({
       configured: true,
-      mode: "shadow",
+      mode: "automation",
       batchSize: 5,
       phoneNumberCount: inboxes.ids.length,
       phoneNumberSource: inboxes.source,
@@ -183,7 +183,7 @@ export async function handleAiStatus(req: Request): Promise<Response> {
     });
     if (sweepError || typeof queued !== "number")
       return json({ error: "Could not reserve analysis batch" }, 503);
-    return json({ mode: "shadow", queued, inboxes: inboxes.ids.length });
+    return json({ mode: "automation", queued, inboxes: inboxes.ids.length });
   }
   if (!actorId) return json({ error: "User identity required for refresh" }, 403);
   const { data: queued, error: claimError } = await db.rpc("enqueue_quo_ai_batch", {
@@ -196,7 +196,7 @@ export async function handleAiStatus(req: Request): Promise<Response> {
   if (claimError || typeof queued !== "number")
     return json({ error: "Could not reserve analysis batch" }, 503);
   return json({
-    mode: "shadow",
+    mode: "automation",
     queued,
     processed: 0,
     results: [],

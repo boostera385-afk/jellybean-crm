@@ -65,6 +65,7 @@ import {
   ChevronsRight,
   Paperclip,
   ExternalLink,
+  AlertTriangle,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -103,6 +104,7 @@ import { confirmDiscardUnsaved } from "@/components/confirm-dialog-store";
 
 type ContactMethod = "texted" | "called";
 type NotCalledFilter = "__off__" | "__all__" | CsStatus;
+type PipelineView = CsStatus | "__all__" | "__needs_review__" | "templates";
 
 function formatLeadServiceLabel(service: string | null): string | null {
   if (!service) return null;
@@ -220,6 +222,12 @@ type Lead = {
   number_name: string | null;
   original_lead_link: string | null;
   cs_status: CsStatus;
+  ai_status_automation_started_at: string | null;
+  cs_status_updated_by_ai: boolean;
+  cs_status_ai_updated_at: string | null;
+  cs_status_human_updated_at: string | null;
+  ai_review_required: boolean;
+  ai_review_reason: string | null;
   contact_method: ContactMethod | null;
   called_at: string | null;
   cs_notes: LeadNote[];
@@ -479,7 +487,7 @@ function Inner() {
   const [activeDatePreset, setActiveDatePreset] = useState<CsPipelineRelativePreset | null>(null);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
-  const [activeStatus, setActiveStatus] = useState<CsStatus | "__all__" | "templates">("__all__");
+  const [activeStatus, setActiveStatus] = useState<PipelineView>("__all__");
   const [opened, setOpened] = useState<Lead | null>(null);
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const [notCalledOnly, setNotCalledOnly] = useState(false);
@@ -572,16 +580,29 @@ function Inner() {
   // ── Status filter for DB (cs_status indexed via idx_qualified_leads_status_created) ──
   const dbStatus = useMemo(
     () =>
-      activeStatus === "__all__" || activeStatus === "templates"
+      activeStatus === "__all__" ||
+      activeStatus === "__needs_review__" ||
+      activeStatus === "templates"
         ? null
         : (activeStatus as CsStatus),
     [activeStatus],
   );
+  const needsReviewOnly = activeStatus === "__needs_review__";
 
   // ── Reset page to 1 whenever any server-side filter changes ──────────────
   useEffect(() => {
     setPage(1);
-  }, [dbDateFrom, dbDateTo, dbOwner, dbStatus, areaFilter, dbSearch, importantOnly, notCalledOnly]);
+  }, [
+    dbDateFrom,
+    dbDateTo,
+    dbOwner,
+    dbStatus,
+    needsReviewOnly,
+    areaFilter,
+    dbSearch,
+    importantOnly,
+    notCalledOnly,
+  ]);
 
   // The list's server-side filters, shared by the rows and by CS agents' page
   // count, so the two cannot drift apart.
@@ -599,6 +620,7 @@ function Inner() {
 
     // Status filter — pushed to DB (cs_status+created_at is indexed)
     if (dbStatus) q = q.eq("cs_status", dbStatus);
+    if (needsReviewOnly) q = q.eq("ai_review_required", true);
 
     // "Not called yet" means no call at all — neither a manually logged call
     // nor a Quo call counted by the webhook.
@@ -623,7 +645,17 @@ function Inner() {
   const list = useQuery({
     queryKey: [
       "cs_leads",
-      { page, dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, importantOnly, notCalledOnly },
+      {
+        page,
+        dbDateFrom,
+        dbDateTo,
+        dbOwner,
+        dbStatus,
+        needsReviewOnly,
+        dbSearch,
+        importantOnly,
+        notCalledOnly,
+      },
     ],
     queryFn: async () => {
       const from = (page - 1) * PAGE_SIZE;
@@ -633,7 +665,7 @@ function Inner() {
         supabase
           .from("qualified_leads")
           .select(
-            "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at",
+            "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, ai_status_automation_started_at, cs_status_updated_by_ai, cs_status_ai_updated_at, cs_status_human_updated_at, ai_review_required, ai_review_reason, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at",
           )
           .order("pinned_important", { ascending: false })
           .order("assigned_at", { ascending: false })
@@ -708,7 +740,7 @@ function Inner() {
       const { data, error } = await supabase
         .from("qualified_leads")
         .select(
-          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at",
+          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, ai_status_automation_started_at, cs_status_updated_by_ai, cs_status_ai_updated_at, cs_status_human_updated_at, ai_review_required, ai_review_reason, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at",
         )
         .eq("id", deepLinkLeadId)
         .maybeSingle();
@@ -798,7 +830,11 @@ function Inner() {
         ({ data, error } = await unfiltered());
       }
       if (error) throw error;
-      const payload = (data ?? {}) as { all?: number; statuses?: Record<string, number> };
+      const payload = (data ?? {}) as {
+        all?: number;
+        needsReview?: number;
+        statuses?: Record<string, number>;
+      };
       const countsByStatus: Record<string, number> = {};
       for (const status of PIPELINE_STATUSES) countsByStatus[status] = 0;
       for (const [k, v] of Object.entries(payload.statuses ?? {})) {
@@ -806,6 +842,7 @@ function Inner() {
       }
       return {
         all: Number(payload.all ?? 0),
+        needsReview: Number(payload.needsReview ?? 0),
         statuses: countsByStatus,
         fallbackReason,
       };
@@ -815,9 +852,11 @@ function Inner() {
     placeholderData: keepPreviousData,
   });
 
-  const cachedStatusTotal = dbStatus
-    ? (statusCounts.data?.statuses?.[dbStatus] ?? 0)
-    : (statusCounts.data?.all ?? 0);
+  const cachedStatusTotal = needsReviewOnly
+    ? (statusCounts.data?.needsReview ?? 0)
+    : dbStatus
+      ? (statusCounts.data?.statuses?.[dbStatus] ?? 0)
+      : (statusCounts.data?.all ?? 0);
   // The counts RPC already applies every active filter, so it is the total for
   // every case.
   const effectiveTotalCount = cachedStatusTotal;
@@ -828,7 +867,16 @@ function Inner() {
     queryKey: [
       "cs_leads",
       "visible_count",
-      { dbDateFrom, dbDateTo, dbOwner, dbStatus, dbSearch, importantOnly, notCalledOnly },
+      {
+        dbDateFrom,
+        dbDateTo,
+        dbOwner,
+        dbStatus,
+        needsReviewOnly,
+        dbSearch,
+        importantOnly,
+        notCalledOnly,
+      },
     ],
     enabled: isCs,
     queryFn: async () => {
@@ -1146,6 +1194,7 @@ function Inner() {
 
   const counts = statusCounts.data?.statuses ?? {};
   const allLeadsCount = statusCounts.data?.all ?? 0;
+  const needsReviewCount = statusCounts.data?.needsReview ?? 0;
 
   // All leads on the current page after client-side filtering, sorted with
   // pinned-important leads first (DB also orders pinned first, so this is
@@ -1547,6 +1596,20 @@ function Inner() {
               >
                 {allLeadsCount}
               </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveStatus("__needs_review__")}
+              className={cn(
+                "crm-motion px-3 h-8 text-[12px] font-medium rounded-lg inline-flex items-center gap-1.5",
+                activeStatus === "__needs_review__"
+                  ? "bg-amber-500/20 text-amber-900 ring-1 ring-amber-500/50 shadow-sm dark:text-amber-100"
+                  : "text-amber-700 hover:bg-amber-500/10 dark:text-amber-300",
+              )}
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Needs Review
+              <span className="text-[10.5px] tabular-nums opacity-80">{needsReviewCount}</span>
             </button>
             {PIPELINE_STATUSES.map((s) => (
               <button
@@ -2064,7 +2127,11 @@ function CsLeadsTable({
                   {numberNameLabel(lead.number_name) || "-"}
                 </td>
                 <td className="px-3 py-2">
-                  <StatusBadge status={lead.cs_status} />
+                  <StatusBadge
+                    status={lead.cs_status}
+                    updatedByAi={lead.cs_status_updated_by_ai}
+                    needsReview={lead.ai_review_required}
+                  />
                 </td>
                 {showAiStatus && (
                   <td className="px-3 py-2">
@@ -2143,6 +2210,8 @@ function LeadCard({
   const qc = useQueryClient();
   const auth = useAuth();
   const [status, setStatus] = useState<CsStatus>(lead.cs_status);
+  const [statusUpdatedByAi, setStatusUpdatedByAi] = useState(lead.cs_status_updated_by_ai);
+  const [needsReview, setNeedsReview] = useState(lead.ai_review_required);
   const [contactMethod, setContactMethodState] = useState<ContactMethod>(
     lead.contact_method ?? "texted",
   );
@@ -2173,6 +2242,12 @@ function LeadCard({
       ? "Unknown user"
       : null;
   const serviceLabel = formatLeadServiceLabel(lead.service);
+
+  useEffect(() => {
+    setStatus(lead.cs_status);
+    setStatusUpdatedByAi(lead.cs_status_updated_by_ai);
+    setNeedsReview(lead.ai_review_required);
+  }, [lead.ai_review_required, lead.cs_status, lead.cs_status_updated_by_ai]);
 
   const [rephrasing, setRephrasing] = useState(false);
   const rephraseFn = useServerFn(rephraseLeadTemplateWithAi);
@@ -2273,12 +2348,28 @@ function LeadCard({
 
   async function changeStatus(next: CsStatus) {
     const prev = status;
+    const prevAi = statusUpdatedByAi;
+    const prevReview = needsReview;
+    const changedAt = new Date().toISOString();
     setStatus(next);
+    setStatusUpdatedByAi(false);
+    setNeedsReview(false);
     setSaving(true);
     try {
       const { error } = await supabase
         .from("qualified_leads")
-        .update({ cs_status: next })
+        .update({
+          cs_status: next,
+          cs_status_updated_by_ai: false,
+          cs_status_ai_updated_at: null,
+          cs_status_human_updated_at: changedAt,
+          ai_review_required: false,
+          ai_review_reason: null,
+          ai_status_automation_started_at:
+            next === "converted"
+              ? (lead.ai_status_automation_started_at ?? changedAt)
+              : lead.ai_status_automation_started_at,
+        } as never)
         .eq("id", lead.id);
       if (error) throw error;
       await supabase.from("activity_logs").insert({
@@ -2305,6 +2396,8 @@ function LeadCard({
       qc.invalidateQueries({ queryKey: ["cs_leads"] });
     } catch (e) {
       setStatus(prev);
+      setStatusUpdatedByAi(prevAi);
+      setNeedsReview(prevReview);
       toast.error(friendlyError(e));
     } finally {
       setSaving(false);
@@ -2503,8 +2596,11 @@ function LeadCard({
               </button>
             </div>
             <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-              {ai && canShowAiSuggestion(status, ai.ai_status) && <AiTagChip ai={ai} />}
-              <StatusBadge status={status} />
+              <StatusBadge
+                status={status}
+                updatedByAi={statusUpdatedByAi}
+                needsReview={needsReview}
+              />
               <button
                 type="button"
                 onClick={(event) => {
@@ -2886,16 +2982,39 @@ function LeadCard({
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({
+  status,
+  updatedByAi = false,
+  needsReview = false,
+}: {
+  status: string;
+  updatedByAi?: boolean;
+  needsReview?: boolean;
+}) {
   const tone = STATUS_TONE[status] ?? "bg-muted text-muted-foreground border-border";
   return (
-    <span
-      className={cn(
-        "crm-pill-text px-3 py-1.5 rounded-full border whitespace-nowrap shadow-sm",
-        tone,
+    <span className="inline-flex items-center gap-1.5 flex-wrap">
+      <span
+        className={cn(
+          "crm-pill-text px-3 py-1.5 rounded-full border whitespace-nowrap shadow-sm",
+          tone,
+        )}
+      >
+        {STATUS_LABEL[status] ?? status.replace(/_/g, " ")}
+      </span>
+      {updatedByAi && (
+        <span
+          className="inline-flex items-center gap-1 rounded-full border border-violet-400/60 bg-violet-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-200"
+          title="This status was last updated automatically. A manual status change removes this tag."
+        >
+          <Sparkles className="h-3 w-3" /> AI
+        </span>
       )}
-    >
-      {STATUS_LABEL[status] ?? status.replace(/_/g, " ")}
+      {needsReview && (
+        <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-800 dark:text-amber-200">
+          <AlertTriangle className="h-3 w-3" /> Needs Review
+        </span>
+      )}
     </span>
   );
 }
@@ -2945,7 +3064,7 @@ function aiSuggestionTitle(ai: AiSuggestion): string {
   const parts = [aiReasonLabel(ai)];
   if (ai.confidence != null) parts.push(`${Math.round(ai.confidence * 100)}% confidence`);
   if (ai.message_count != null) parts.push(`${ai.message_count} Quo messages`);
-  return `Admin and CS admin · Comparison only, not saved · ${parts.join(" · ")}`;
+  return `AI decision details · ${parts.join(" · ")}`;
 }
 
 /** Compact management chip for lead cards and table rows: a dashed outline and a
@@ -3011,19 +3130,15 @@ function ReachOutBadge({ lead }: { lead: Lead }) {
   );
 }
 
-/** Drawer card with the suggestion details and the one-click "Use this tag"
- * action. Applying it only pre-fills the status — Save remains the human
- * confirmation, so AI never writes pipeline statuses by itself. */
+/** Admin-only evidence behind the live AI automation. */
 function AiSuggestionPanel({
   ai,
   active,
-  disabled,
-  onUse,
+  automationStarted,
 }: {
   ai: AiSuggestion;
   active: string;
-  disabled?: boolean;
-  onUse: (tag: string) => void;
+  automationStarted: boolean;
 }) {
   if (isUntouched(ai)) return null;
   const isTransport = AI_TRANSPORT_REASONS.has(ai.reason_code);
@@ -3037,9 +3152,11 @@ function AiSuggestionPanel({
     >
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-violet-700 dark:text-violet-300">
-          {isTransport ? "Quo delivery read" : "AI tag suggestion"} · Admin and CS admin
+          {isTransport ? "Quo delivery decision" : "AI decision details"} · Admin and CS admin
         </span>
-        <span className="text-[10px] text-muted-foreground">Comparison only — not saved</span>
+        <span className="text-[10px] text-muted-foreground">
+          {automationStarted ? "Pipeline automation active" : "Starts after Delivered"}
+        </span>
       </div>
       {suggested == null ? (
         <p className="mt-1.5 text-[12.5px] text-foreground">
@@ -3066,30 +3183,20 @@ function AiSuggestionPanel({
                 <span className="text-[10.5px] tabular-nums text-muted-foreground">{pct}%</span>
               </span>
             )}
-            {!matchesSaved && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={disabled}
-                className="h-7 px-2.5 text-[11px] border-violet-400/60 text-violet-700 dark:text-violet-300 hover:bg-violet-500/10"
-                onClick={() => onUse(suggested!)}
-              >
-                Use this tag
-              </Button>
-            )}
           </div>
           <p className="mt-1.5 text-[11px] text-muted-foreground">
             {aiReasonLabel(ai)}
             {ai.message_count != null ? ` · ${ai.message_count} Quo messages` : ""}
             {ai.analyzed_at ? ` · analyzed ${formatCsPipelineDateTime(ai.analyzed_at)}` : ""}
             {ai.model ? ` · ${ai.model}` : ""}
-            {matchesSaved ? " · matches the saved status" : ""}
+            {matchesSaved ? " · applied to the saved status" : ""}
           </p>
         </>
       )}
       <p className="mt-1 text-[10px] text-muted-foreground">
-        AI never changes saved statuses automatically.
+        {automationStarted
+          ? "A human status change removes the AI marker; the next Quo event can be analyzed again."
+          : "Set Delivered manually once to allow future AI status updates."}
       </p>
     </div>
   );
@@ -3460,6 +3567,8 @@ function LeadDrawer({
   async function save() {
     setBusy(true);
     try {
+      const statusReviewedByHuman = status !== lead.cs_status || lead.ai_review_required;
+      const statusChangedAt = statusReviewedByHuman ? new Date().toISOString() : null;
       const newNotes = note.trim()
         ? [
             ...notes,
@@ -3490,6 +3599,19 @@ function LeadDrawer({
           requirement_2: requirement2.trim() || null,
           is_important: isImportant,
           pinned_important: pinnedImportantFor(isImportant && lead.pinned_important, status),
+          ...(statusReviewedByHuman
+            ? {
+                cs_status_updated_by_ai: false,
+                cs_status_ai_updated_at: null,
+                cs_status_human_updated_at: statusChangedAt,
+                ai_review_required: false,
+                ai_review_reason: null,
+                ai_status_automation_started_at:
+                  status === "converted"
+                    ? (lead.ai_status_automation_started_at ?? statusChangedAt)
+                    : lead.ai_status_automation_started_at,
+              }
+            : {}),
         } as never)
         .eq("id", lead.id);
       if (error) throw error;
@@ -3642,15 +3764,20 @@ function LeadDrawer({
                     busy || (!isAdmin && !isCs && (!assignedTo || auth.user?.id !== assignedTo))
                   }
                 />
+                {(lead.cs_status_updated_by_ai || lead.ai_review_required) && (
+                  <div className="mt-2">
+                    <StatusBadge
+                      status={status}
+                      updatedByAi={lead.cs_status_updated_by_ai && status === lead.cs_status}
+                      needsReview={lead.ai_review_required && status === lead.cs_status}
+                    />
+                  </div>
+                )}
                 {ai && canShowAiSuggestion(status, ai.ai_status) && (
                   <AiSuggestionPanel
                     ai={ai}
                     active={status}
-                    disabled={busy}
-                    onUse={(tag) => {
-                      requestStatusChange(tag as CsStatus);
-                      toast.success("AI suggestion selected — press Save to apply");
-                    }}
+                    automationStarted={Boolean(lead.ai_status_automation_started_at)}
                   />
                 )}
                 <div className="mt-3">

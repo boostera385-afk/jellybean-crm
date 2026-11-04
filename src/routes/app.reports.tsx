@@ -342,7 +342,7 @@ function Inner() {
       const classified = data.results.filter((r) => r.state === "classified").length;
       toast.success(
         data.processed
-          ? `${classified} classified / ${data.processed} checked. Manual statuses unchanged.`
+          ? `${classified} classified / ${data.processed} checked. Eligible pipeline statuses updated.`
           : data.message,
       );
     },
@@ -653,11 +653,12 @@ function Inner() {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3">
             <div className="min-w-0 text-xs">
               <p className="font-semibold text-sky-700 dark:text-sky-300">
-                AI status · Beta · Comparison only
+                AI status · Pipeline automation
               </p>
               <p className="mt-1 text-muted-foreground">
-                Large totals are manual. AI counts use complete Quo SMS history; calls and
-                attachment contents are not analyzed.
+                AI counts use complete Quo SMS history. After a person sets Delivered once, eligible
+                results update the pipeline and carry an AI marker; uncertain results go to Needs
+                Review.
               </p>
               {ai.data?.scopeStart && (
                 <p className="mt-1 text-muted-foreground">
@@ -737,7 +738,7 @@ function Inner() {
                 <RefreshCw
                   className={cn("mr-1.5 h-3.5 w-3.5", refreshAi.isPending && "animate-spin")}
                 />
-                {refreshAi.isPending ? "Checking Quo…" : "Refresh AI · next 5 leads"}
+                {refreshAi.isPending ? "Checking Quo…" : "Refresh AI · selected range"}
               </Button>
             )}
           </div>

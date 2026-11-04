@@ -34,6 +34,7 @@ const BASE = `
   CREATE TABLE public.qualified_leads(id uuid PRIMARY KEY, customer_name text, customer_number text,
     customer_number_2 text, extra_numbers text[] NOT NULL DEFAULT '{}',
     assigned_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
     cs_status public.cs_status NOT NULL DEFAULT 'new',
     is_important boolean DEFAULT false, service text, post_text text, context text, created_by uuid,
     number_name text,
@@ -59,6 +60,7 @@ const CHAIN = [
   "quo_ai_inbox_keys",
   "quo_ai_no_caps",
   "quo_reachout_counts",
+  "cs_pipeline_ai_status_automation",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -99,6 +101,8 @@ beforeEach(async () => {
       ('${lead(1)}','Newest','(910) 555-1234','2026-10-22T09:00:00Z','Painting'),
       ('${lead(2)}','Older','9105555678','2026-10-20T09:00:00Z','Drywall'),
       ('${lead(3)}','Oldest','+1 910 555 9012','2026-10-01T09:00:00Z','Roofing');
+    UPDATE public.qualified_leads
+      SET ai_status_automation_started_at = now() - interval '1 day';
     SET ROLE service_role;`);
 });
 
@@ -188,6 +192,115 @@ describe("Quo webhook events", () => {
          WHERE id='${lead(1)}'; SET ROLE service_role;`,
     );
     expect(await accept("wh_f", "message.received", "+19105551234")).toMatchObject({ matched: 0 });
+  });
+});
+
+describe("guarded CS pipeline automation", () => {
+  const finish = async (id: string, result: Record<string, unknown>) => {
+    expect(
+      await call<number>(
+        `public.enqueue_quo_ai_batch(NULL,'${INBOX}'::text[],NULL,NULL,'${id}'::uuid)`,
+      ),
+    ).toBe(1);
+    const job = await call<{ runId: string; leaseToken: string }>("public.claim_quo_ai_job()");
+    return call<boolean>(
+      `public.finish_quo_ai_job('${job.runId}'::uuid,'${job.leaseToken}'::uuid,
+        '${JSON.stringify(result)}'::jsonb)`,
+    );
+  };
+  const classified = (status: string) => ({
+    state: "classified",
+    status,
+    confidence: 0.96,
+    reasonCode: "customer_intent",
+    evidenceIds: ["AC1"],
+    messageCount: 4,
+    historyHash: "hash",
+    model: "test-model",
+    policyVersion: "quo-auto-v6",
+    lastMessageAt: "2026-10-22T10:00:00Z",
+  });
+
+  it("does not change the pipeline before Delivered enables automation", async () => {
+    await db.exec(`SET ROLE postgres;
+      UPDATE public.qualified_leads
+      SET ai_status_automation_started_at=NULL, cs_status='new'
+      WHERE id='${lead(1)}';
+      SET ROLE service_role;`);
+    expect(await finish(lead(1), classified("cx_interested"))).toBe(true);
+    const row = (
+      await db.query<{ cs_status: string; cs_status_updated_by_ai: boolean }>(
+        `SELECT cs_status::text,cs_status_updated_by_ai
+         FROM public.qualified_leads WHERE id='${lead(1)}'`,
+      )
+    ).rows[0];
+    expect(row).toEqual({ cs_status: "new", cs_status_updated_by_ai: false });
+  });
+
+  it("updates an enabled lead and records that AI made the decision", async () => {
+    expect(await finish(lead(1), classified("cx_interested"))).toBe(true);
+    const row = (
+      await db.query<{
+        cs_status: string;
+        cs_status_updated_by_ai: boolean;
+        cs_status_ai_updated_at: Date | null;
+      }>(
+        `SELECT cs_status::text,cs_status_updated_by_ai,cs_status_ai_updated_at
+         FROM public.qualified_leads WHERE id='${lead(1)}'`,
+      )
+    ).rows[0];
+    expect(row.cs_status).toBe("cx_interested");
+    expect(row.cs_status_updated_by_ai).toBe(true);
+    expect(row.cs_status_ai_updated_at).toBeInstanceOf(Date);
+  });
+
+  it("keeps the current status and opens Needs Review when AI is uncertain", async () => {
+    expect(
+      await finish(lead(1), {
+        ...classified("cx_interested"),
+        state: "review",
+        status: null,
+        confidence: null,
+        reasonCode: "ambiguous_conversation",
+      }),
+    ).toBe(true);
+    const row = (
+      await db.query<{ cs_status: string; ai_review_required: boolean; ai_review_reason: string }>(
+        `SELECT cs_status::text,ai_review_required,ai_review_reason
+         FROM public.qualified_leads WHERE id='${lead(1)}'`,
+      )
+    ).rows[0];
+    expect(row).toEqual({
+      cs_status: "new",
+      ai_review_required: true,
+      ai_review_reason: "ambiguous_conversation",
+    });
+  });
+
+  it("a human status decision removes AI provenance and can enable automation", async () => {
+    expect(await finish(lead(1), classified("cx_interested"))).toBe(true);
+    await db.exec(`SET ROLE postgres;
+      UPDATE public.qualified_leads SET ai_status_automation_started_at=NULL WHERE id='${lead(1)}';
+      UPDATE public.qualified_leads SET cs_status='converted' WHERE id='${lead(1)}';
+      SET ROLE service_role;`);
+    const row = (
+      await db.query<{
+        cs_status: string;
+        cs_status_updated_by_ai: boolean;
+        cs_status_ai_updated_at: Date | null;
+        cs_status_human_updated_at: Date | null;
+        ai_status_automation_started_at: Date | null;
+      }>(
+        `SELECT cs_status::text,cs_status_updated_by_ai,cs_status_ai_updated_at,
+          cs_status_human_updated_at,ai_status_automation_started_at
+         FROM public.qualified_leads WHERE id='${lead(1)}'`,
+      )
+    ).rows[0];
+    expect(row.cs_status).toBe("converted");
+    expect(row.cs_status_updated_by_ai).toBe(false);
+    expect(row.cs_status_ai_updated_at).toBeNull();
+    expect(row.cs_status_human_updated_at).toBeInstanceOf(Date);
+    expect(row.ai_status_automation_started_at).toBeInstanceOf(Date);
   });
 });
 

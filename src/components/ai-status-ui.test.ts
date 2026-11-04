@@ -20,36 +20,31 @@ describe("urgent CS/Crisp UI contracts", () => {
     expect(source).toContain("Opening/viewing a chat must NOT clear");
     expect(source).toContain("flex-1 flex flex-col bg-background min-w-0");
   });
-  it("keeps AI counts separate, unavailable counts unknown, and refresh bounded", () => {
+  it("explains AI automation, keeps unavailable counts unknown, and refresh scoped", () => {
     const source = readFileSync("src/routes/app.reports.tsx", "utf8");
-    expect(source).toContain("Comparison only");
-    expect(source).toContain("Refresh AI · next 5 leads");
+    expect(source).toContain("AI status · Pipeline automation");
+    expect(source).toContain("Refresh AI · selected range");
     expect(source).toContain('aiValue === null ? "—"');
     expect(source.replace(/\s+/g, " ")).toContain("A disagreement is not proof that AI is correct");
   });
-  it("shows AI tag suggestions to admins only and applies them through Save", () => {
+  it("shows live AI provenance and a Needs Review queue while keeping evidence admin-only", () => {
     const route = readFileSync("src/routes/app.cs-leads.tsx", "utf8");
-    // Data fetch is skipped for non-admins, not merely hidden in CSS.
+    // Detailed model evidence is skipped for non-admins, not merely hidden in CSS.
     expect(route).toContain("lead_ai_status");
     expect(route).toContain("enabled: isAdmin");
-    // Card chip stays visually distinct from manual status tags.
-    expect(route).toContain("border-dashed border-violet-400/70");
-    // Drawer panel explains itself and never writes statuses directly.
-    expect(route).toContain("AI tag suggestion");
-    expect(route).toContain("Comparison only — not saved");
-    expect(route).toContain("Use this tag");
-    expect(route).toContain("AI suggestion selected — press Save to apply");
-    expect(route).toContain("AI never changes saved statuses automatically.");
-    // Applying a suggestion only pre-fills the drawer status; it must not
-    // call .update({ cs_status ... }) from the AI panel code path.
-    expect(route).not.toContain("onUse={() =>");
+    expect(route).toContain('setActiveStatus("__needs_review__")');
+    expect(route).toContain("cs_status_updated_by_ai");
+    expect(route).toContain("ai_review_required");
+    expect(route).toContain("A manual status change removes this tag");
+    expect(route).toContain("Set Delivered manually once");
+    expect(route).not.toContain("Comparison only — not saved");
     const migration = readFileSync(
-      "supabase/migrations/20261021104500_admin_only_lead_ai_status.sql",
+      "supabase/migrations/20261104092301_cs_pipeline_ai_status_automation.sql",
       "utf8",
     );
-    expect(migration).toContain('DROP POLICY IF EXISTS "AI results follow lead access"');
-    expect(migration).toContain('CREATE POLICY "AI suggestions for reporting administrators"');
-    expect(migration).toContain("current_user_has_role_text('admin')");
-    expect(migration).toContain("FOR SELECT");
+    expect(migration).toContain("ai_status_automation_started_at");
+    expect(migration).toContain("cs_status_updated_by_ai = true");
+    expect(migration).toContain("ai_review_required = true");
+    expect(migration).toContain("q.cs_status_human_updated_at > r.started_at");
   });
 });

@@ -1278,6 +1278,9 @@ export type Database = {
       }
       qualified_leads: {
         Row: {
+          ai_review_reason: string | null
+          ai_review_required: boolean
+          ai_status_automation_started_at: string | null
           assigned_at: string
           assigned_by: string | null
           assigned_to: string | null
@@ -1291,6 +1294,9 @@ export type Database = {
           cs_notes: Json
           cs_outcome: string | null
           cs_status: Database["public"]["Enums"]["cs_status"]
+          cs_status_ai_updated_at: string | null
+          cs_status_human_updated_at: string | null
+          cs_status_updated_by_ai: boolean
           customer_name: string
           customer_number: string
           customer_number_2: string | null
@@ -1325,6 +1331,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ai_review_reason?: string | null
+          ai_review_required?: boolean
+          ai_status_automation_started_at?: string | null
           assigned_at?: string
           assigned_by?: string | null
           assigned_to?: string | null
@@ -1338,6 +1347,9 @@ export type Database = {
           cs_notes?: Json
           cs_outcome?: string | null
           cs_status?: Database["public"]["Enums"]["cs_status"]
+          cs_status_ai_updated_at?: string | null
+          cs_status_human_updated_at?: string | null
+          cs_status_updated_by_ai?: boolean
           customer_name: string
           customer_number: string
           customer_number_2?: string | null
@@ -1372,6 +1384,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ai_review_reason?: string | null
+          ai_review_required?: boolean
+          ai_status_automation_started_at?: string | null
           assigned_at?: string
           assigned_by?: string | null
           assigned_to?: string | null
@@ -1385,6 +1400,9 @@ export type Database = {
           cs_notes?: Json
           cs_outcome?: string | null
           cs_status?: Database["public"]["Enums"]["cs_status"]
+          cs_status_ai_updated_at?: string | null
+          cs_status_human_updated_at?: string | null
+          cs_status_updated_by_ai?: boolean
           customer_name?: string
           customer_number?: string
           customer_number_2?: string | null

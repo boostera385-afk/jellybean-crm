@@ -13,7 +13,24 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nothing pending.
+### Changed
+
+- CS Pipeline AI status is now guarded automation instead of comparison-only:
+  a person must select Delivered once, after which Quo/AI may update the
+  existing status and marks it with an AI badge.
+- Human status changes remove AI provenance; results completed after a newer
+  human decision are rejected as stale.
+- Inconclusive or failed classifications keep the current status and enter the
+  new filter-aware Needs Review section.
+- Updated the Reports wording and in-app Quo documentation to describe the live
+  automation, one-minute sweep, and uncapped queue accurately.
+
+### Database
+
+- Added status provenance, automation-gate, and review columns to
+  `qualified_leads`, plus a partial Needs Review index.
+- Updated the fenced Quo completion, webhook queue, no-reply transition, and CS
+  count functions without changing any existing `cs_status` enum identifier.
 
 ---
 
