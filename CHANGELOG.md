@@ -15,6 +15,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Added a Quo `call.completed` API subscription so completed outbound calls
+  remove the incorrect “not called yet” state on matching CS leads.
+- Reports now states explicitly that automatic AI status updates started on
+  November 4, 2026.
 - CS Pipeline AI status is now guarded automation instead of comparison-only:
   a person must select Delivered once, after which Quo/AI may update the
   existing status and marks it with an AI badge.

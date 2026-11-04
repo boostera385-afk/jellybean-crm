@@ -26,6 +26,8 @@ import { readQuoMessageEvent } from "./quo-webhook-event.ts";
 /** Generous next to a text plus media metadata, far below a memory risk. */
 const MAX_BODY_BYTES = 512 * 1024;
 
+let databaseSecrets: { values: string[]; expiresAt: number } | null = null;
+
 const text = (body: string, status: number) =>
   new Response(body, { status, headers: { "Cache-Control": "no-store" } });
 
@@ -38,12 +40,30 @@ export async function handleQuoWebhook(req: Request): Promise<Response> {
   // QUO_WEBHOOK_SECRET may hold more than one whsec_ (comma/space separated):
   // Quo issues a separate secret per webhook, and message vs call events are
   // separate webhooks, so running both means verifying against either secret.
-  const secrets = parseQuoWebhookSecrets(Deno.env.get("QUO_WEBHOOK_SECRET"));
+  const environmentSecrets = parseQuoWebhookSecrets(Deno.env.get("QUO_WEBHOOK_SECRET"));
   const url = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   // Retryable on purpose: a delivery must not be lost because a secret was
   // momentarily absent during a deploy.
-  if (!secrets.length || !url || !key) return text("Webhook not configured", 503);
+  if (!url || !key) return text("Webhook not configured", 503);
+
+  const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  if (!databaseSecrets || databaseSecrets.expiresAt <= Date.now()) {
+    const { data, error } = await db.rpc("get_quo_webhook_keys");
+    if (error) {
+      console.error("Could not load Quo webhook keys", { message: error.message });
+      if (!environmentSecrets.length) return text("Webhook not configured", 503);
+    } else {
+      databaseSecrets = {
+        values: Array.isArray(data)
+          ? data.filter((value): value is string => typeof value === "string")
+          : [],
+        expiresAt: Date.now() + 60_000,
+      };
+    }
+  }
+  const secrets = [...new Set([...environmentSecrets, ...(databaseSecrets?.values ?? [])])];
+  if (!secrets.length) return text("Webhook not configured", 503);
 
   const raw = await req.text();
   if (raw.length > MAX_BODY_BYTES) return text("Payload too large", 413);
@@ -65,7 +85,6 @@ export async function handleQuoWebhook(req: Request): Promise<Response> {
     return text("Ignored", 200);
   }
 
-  const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data, error } = await db.rpc("accept_quo_webhook_event", {
     p_webhook_id: verified.webhookId,
     p_event_type: event.type,

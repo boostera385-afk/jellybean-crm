@@ -8,6 +8,7 @@ import {
 } from "../_shared/quo-ai-status.ts";
 import { processQuoJob, type QuoWorkerDb } from "../_shared/quo-worker.ts";
 import { inboxKeys } from "../_shared/quo-number-names.ts";
+import { ensureQuoCallWebhook } from "../_shared/quo-webhooks.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -76,14 +77,20 @@ export async function handleAiStatus(req: Request): Promise<Response> {
     if (!allowed) return json({ error: "AI reporting access required" }, 403);
     actorId = auth.user.id;
   }
-  if (!["configuration", "refresh", "work", "enqueue"].includes(String(body.action)))
+  if (
+    !["configuration", "refresh", "work", "enqueue", "ensure-call-webhook"].includes(
+      String(body.action),
+    )
+  )
     return json({ error: "Invalid action" }, 400);
   // The unattended sweep picks its own leads, with no date range and nobody to
   // attribute it to, so it stays the cron's alone. A signed-in administrator
   // asking for the same thing has "refresh", which records who asked.
   if (body.action === "enqueue" && !isWorker)
     return json({ error: "Backend credentials required" }, 403);
-  if (!quoKey || !modelKey)
+  if (body.action === "ensure-call-webhook" && !isWorker)
+    return json({ error: "Backend credentials required" }, 403);
+  if (!quoKey || (!modelKey && body.action !== "ensure-call-webhook"))
     return json(
       {
         message:
@@ -93,6 +100,34 @@ export async function handleAiStatus(req: Request): Promise<Response> {
       },
       body.action === "configuration" ? 200 : 503,
     );
+  if (body.action === "ensure-call-webhook") {
+    try {
+      const result = await ensureQuoCallWebhook({
+        apiKey: quoKey,
+        webhookUrl: `${url.replace(/\/$/, "")}/functions/v1/quo-webhook`,
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (result.created) {
+        const { error: storeError } = await db.rpc("store_quo_webhook_key", {
+          p_webhook_id: result.webhookId,
+          p_signing_key: result.signingKey,
+          p_event_types: result.events,
+        });
+        if (storeError) throw new Error("webhook_key_store_failed");
+      }
+      return json({
+        configured: true,
+        created: result.created,
+        webhookId: result.webhookId,
+        events: result.events,
+      });
+    } catch (error) {
+      console.error("Could not ensure Quo call webhook", {
+        reason: safeAiError(error),
+      });
+      return json({ configured: false, error: "Could not configure completed-call events" }, 503);
+    }
+  }
   for (const name of ["from", "to"])
     if (
       body[name] != null &&

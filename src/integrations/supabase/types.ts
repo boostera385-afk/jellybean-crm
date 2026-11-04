@@ -2203,6 +2203,7 @@ export type Database = {
           wrong_count: number
         }[]
       }
+      get_quo_webhook_keys: { Args: never; Returns: string[] }
       get_crisp_conversations_page: {
         Args: {
           p_limit?: number
@@ -2598,6 +2599,14 @@ export type Database = {
           state_name: string
           total_leads: number
         }[]
+      }
+      store_quo_webhook_key: {
+        Args: {
+          p_event_types?: string[]
+          p_signing_key: string
+          p_webhook_id: string
+        }
+        Returns: undefined
       }
       sync_quo_inbox_keys: { Args: { p_keys: Json }; Returns: number }
       verify_my_access_code: { Args: { _code: string }; Returns: boolean }

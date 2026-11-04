@@ -660,6 +660,10 @@ function Inner() {
                 results update the pipeline and carry an AI marker; uncertain results go to Needs
                 Review.
               </p>
+              <p className="mt-1 font-medium text-sky-700 dark:text-sky-300">
+                AI has been automatically updating eligible CS Pipeline statuses since November 4,
+                2026.
+              </p>
               {ai.data?.scopeStart && (
                 <p className="mt-1 text-muted-foreground">
                   Applies to leads created since{" "}

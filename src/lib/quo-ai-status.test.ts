@@ -48,6 +48,7 @@ describe("automatic Quo inbox discovery", () => {
     // The unattended sweep is the cron's alone: it picks its own leads, with no
     // date range and nobody to attribute it to.
     expect(isQuoWorker("backend-secret", "backend-secret", "enqueue")).toBe(true);
+    expect(isQuoWorker("backend-secret", "backend-secret", "ensure-call-webhook")).toBe(true);
     // "refresh" carries a person's chosen range and must stay theirs.
     expect(isQuoWorker("backend-secret", "backend-secret", "refresh")).toBe(false);
     expect(isQuoWorker("forged", "backend-secret", "work")).toBe(false);
