@@ -266,6 +266,7 @@ type Lead = {
 // CS pipeline statuses surfaced in the UI (subset of the DB enum).
 const PIPELINE_STATUSES = [
   "new",
+  "old_lead",
   "out_of_base",
   "undeliver",
   "wrong_number",

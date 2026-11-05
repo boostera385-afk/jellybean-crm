@@ -1,6 +1,7 @@
 // JellyBean CS Pipeline Status Definitions
 export const STATUS_LABEL: Record<string, string> = {
   new: "New to contact",
+  old_lead: "Old Leads",
   undeliver: "Undeliver",
   wrong_number: "Wrong Number",
   wrong_lead: "Wrong Lead",
@@ -34,6 +35,7 @@ export const STATUS_TONE: Record<string, string> = {
   cx_not_interested: "bg-destructive/10 text-destructive border-destructive/30 shadow-sm",
   cx_didnt_replied: "bg-warning/10 text-warning border-warning/30 shadow-sm",
   new: "bg-[#e8edf3] text-[#1e3a5f] border-[#d7dee7] shadow-sm",
+  old_lead: "bg-[#f1f0ee] text-[#6b6358] border-[#dcd8d2] shadow-sm",
   undeliver: "bg-[#f8e4e5] text-[#C1292E] border-[#e7b1b3] shadow-sm",
   wrong_number: "bg-[#f8e4e5] text-[#C1292E] border-[#e7b1b3] shadow-sm",
   wrong_lead: "bg-[#f8e4e5] text-[#C1292E] border-[#e7b1b3] shadow-sm",
