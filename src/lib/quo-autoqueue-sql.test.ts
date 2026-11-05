@@ -39,6 +39,10 @@ const BASE = `
     is_important boolean DEFAULT false, service text, post_text text, context text, created_by uuid,
     number_name text,
     assigned_to uuid, called_at timestamptz);
+  CREATE TABLE public.profiles(user_id uuid, full_name text, email text);
+  CREATE TABLE public.activity_logs(id bigserial PRIMARY KEY, actor_id uuid, actor_name text,
+    action text, entity_type text, entity_id uuid, metadata jsonb,
+    created_at timestamptz NOT NULL DEFAULT now());
   ALTER TABLE public.qualified_leads ENABLE ROW LEVEL SECURITY;
   GRANT USAGE ON SCHEMA public,auth TO authenticated,service_role;
   GRANT SELECT ON public.qualified_leads, public.user_roles TO authenticated,service_role;
@@ -63,6 +67,7 @@ const CHAIN = [
   "cs_pipeline_ai_status_automation",
   "need_review_excludes_manual",
   "quo_calls_mark_lead_called",
+  "cs_status_history_and_attribution",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -806,5 +811,183 @@ describe("Quo reach-out counting", () => {
       "public.report_cs_reachout_counts(NULL, NULL)",
     );
     expect(report.new).toMatchObject({ called: 2, not_called: 1 });
+  });
+});
+
+describe("CS status attribution and history", () => {
+  const OLD_LEAD = "30000000-0000-4000-8000-000000000001";
+  const asUser = (id: string) =>
+    db.exec(`RESET ROLE; SELECT set_config('request.jwt.claim.sub', '${id}', false);`);
+  const asWorker = () =>
+    db.exec(`SELECT set_config('request.jwt.claim.sub', '', false); SET ROLE service_role;`);
+  const row = async (id: string) =>
+    (
+      await db.query<{
+        cs_status: string;
+        cs_status_updated_by: string | null;
+        cs_status_updated_by_name: string | null;
+        cs_status_updated_by_ai: boolean;
+        ai_status_automation_started_at: string | null;
+      }>(
+        `SELECT cs_status, cs_status_updated_by, cs_status_updated_by_name,
+                cs_status_updated_by_ai, ai_status_automation_started_at
+           FROM public.qualified_leads WHERE id = '${id}'`,
+      )
+    ).rows[0];
+  const history = async (id: string) =>
+    (
+      await db.query<{
+        from_status: string | null;
+        to_status: string;
+        source: string;
+        changed_by_name: string | null;
+      }>(
+        `SELECT from_status, to_status, source, changed_by_name
+           FROM public.lead_status_history WHERE lead_id = '${id}' ORDER BY changed_at, id`,
+      )
+    ).rows;
+
+  beforeEach(async () => {
+    await db.exec(`RESET ROLE;
+      INSERT INTO public.profiles VALUES ('${ADMIN}', 'Sara CS', 'sara@example.com');`);
+  });
+
+  it("names the person who set a status and records it in history", async () => {
+    await asUser(ADMIN);
+    await db.exec(
+      `UPDATE public.qualified_leads SET cs_status = 'converted' WHERE id = '${lead(1)}';`,
+    );
+    expect(await row(lead(1))).toMatchObject({
+      cs_status: "converted",
+      cs_status_updated_by: ADMIN,
+      cs_status_updated_by_name: "Sara CS",
+      cs_status_updated_by_ai: false,
+    });
+    expect((await history(lead(1))).at(-1)).toEqual({
+      from_status: "new",
+      to_status: "converted",
+      source: "user",
+      changed_by_name: "Sara CS",
+    });
+  });
+
+  it("records an AI change as AI and clears the person", async () => {
+    await asUser(ADMIN);
+    await db.exec(
+      `UPDATE public.qualified_leads SET cs_status = 'converted' WHERE id = '${lead(1)}';`,
+    );
+    await asWorker();
+    await db.exec(`UPDATE public.qualified_leads
+      SET cs_status = 'cx_interested', cs_status_updated_by_ai = true,
+          cs_status_ai_updated_at = now() WHERE id = '${lead(1)}';`);
+    expect(await row(lead(1))).toMatchObject({
+      cs_status: "cx_interested",
+      cs_status_updated_by: null,
+      cs_status_updated_by_ai: true,
+    });
+    expect((await history(lead(1))).at(-1)).toMatchObject({
+      from_status: "converted",
+      to_status: "cx_interested",
+      source: "ai",
+    });
+  });
+
+  it("does not relabel a status the AI merely re-confirmed", async () => {
+    await asUser(ADMIN);
+    await db.exec(
+      `UPDATE public.qualified_leads SET cs_status = 'converted' WHERE id = '${lead(1)}';`,
+    );
+    const before = (await history(lead(1))).length;
+    await asWorker();
+    await db.exec(`UPDATE public.qualified_leads
+      SET cs_status = 'converted', cs_status_updated_by_ai = true,
+          cs_status_ai_updated_at = now() WHERE id = '${lead(1)}';`);
+    expect(await row(lead(1))).toMatchObject({
+      cs_status_updated_by_ai: false,
+      cs_status_updated_by_name: "Sara CS",
+    });
+    expect(await history(lead(1))).toHaveLength(before);
+  });
+
+  it("never starts automation on a lead created before the cutoff", async () => {
+    await db.exec(`RESET ROLE;
+      INSERT INTO public.qualified_leads(id, customer_name, customer_number, created_at)
+      VALUES ('${OLD_LEAD}', 'Old', '9105550000', '2026-11-01T09:00:00Z');`);
+    await asUser(ADMIN);
+    await db.exec(`UPDATE public.qualified_leads
+      SET cs_status = 'converted', ai_status_automation_started_at = now()
+      WHERE id = '${OLD_LEAD}';`);
+    expect((await row(OLD_LEAD)).ai_status_automation_started_at).toBeNull();
+    expect((await history(OLD_LEAD)).map((h) => h.to_status)).toEqual(["new", "converted"]);
+  });
+});
+
+describe("restoring pre-cutoff leads the AI changed", () => {
+  const OLD_LEAD = "30000000-0000-4000-8000-000000000002";
+  const NEW_LEAD = "30000000-0000-4000-8000-000000000003";
+
+  it("puts the human status back, keeps the AI change in history, and leaves new leads alone", async () => {
+    const restore = new PGlite();
+    try {
+      await restore.exec(BASE);
+      for (const name of CHAIN.slice(0, -1)) {
+        const files = readdirSync("supabase/migrations").filter((f) => f.endsWith(`_${name}.sql`));
+        await restore.exec(readFileSync(`supabase/migrations/${files[0]}`, "utf8"));
+      }
+      await restore.exec(`
+        INSERT INTO public.qualified_leads(id, customer_name, customer_number, created_at,
+          cs_status, cs_status_updated_by_ai, ai_status_automation_started_at)
+        VALUES
+          ('${OLD_LEAD}', 'Old', '9105550001', '2026-11-01T09:00:00Z',
+           'cx_didnt_replied', true, '2026-11-04T09:44:42Z'),
+          ('${NEW_LEAD}', 'New', '9105550002', '2026-11-04T12:00:00Z',
+           'cx_didnt_replied', true, '2026-11-04T12:30:00Z');
+        INSERT INTO public.activity_logs(actor_id, actor_name, action, entity_type, entity_id,
+          metadata, created_at)
+        VALUES ('${ADMIN}', 'Sara CS', 'cs.status_changed', 'qualified_lead', '${OLD_LEAD}',
+          '{"status":"converted"}', '2026-11-02T10:00:00Z');`);
+      const last = CHAIN.at(-1);
+      const files = readdirSync("supabase/migrations").filter((f) => f.endsWith(`_${last}.sql`));
+      await restore.exec(readFileSync(`supabase/migrations/${files[0]}`, "utf8"));
+
+      const leads = (
+        await restore.query<{
+          id: string;
+          cs_status: string;
+          cs_status_updated_by_ai: boolean;
+          cs_status_updated_by_name: string | null;
+          ai_status_automation_started_at: string | null;
+        }>(
+          `SELECT id, cs_status, cs_status_updated_by_ai, cs_status_updated_by_name,
+                  ai_status_automation_started_at FROM public.qualified_leads
+            WHERE id IN ('${OLD_LEAD}', '${NEW_LEAD}') ORDER BY id`,
+        )
+      ).rows;
+      expect(leads[0]).toMatchObject({
+        cs_status: "converted",
+        cs_status_updated_by_ai: false,
+        cs_status_updated_by_name: "Sara CS",
+        ai_status_automation_started_at: null,
+      });
+      expect(leads[1]).toMatchObject({
+        cs_status: "cx_didnt_replied",
+        cs_status_updated_by_ai: true,
+      });
+
+      const trail = (
+        await restore.query<{ to_status: string; source: string }>(
+          `SELECT to_status, source FROM public.lead_status_history
+            WHERE lead_id = '${OLD_LEAD}' ORDER BY changed_at, id`,
+        )
+      ).rows;
+      expect(trail).toEqual([
+        { to_status: "new", source: "system" },
+        { to_status: "converted", source: "user" },
+        { to_status: "cx_didnt_replied", source: "system" },
+        { to_status: "converted", source: "system" },
+      ]);
+    } finally {
+      await restore.close();
+    }
   });
 });

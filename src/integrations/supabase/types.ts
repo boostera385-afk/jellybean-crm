@@ -1276,6 +1276,50 @@ export type Database = {
         }
         Relationships: []
       }
+      lead_status_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          changed_by_name: string | null
+          from_status: string | null
+          id: number
+          lead_id: string
+          note: string | null
+          source: string
+          to_status: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          changed_by_name?: string | null
+          from_status?: string | null
+          id?: never
+          lead_id: string
+          note?: string | null
+          source: string
+          to_status: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          changed_by_name?: string | null
+          from_status?: string | null
+          id?: never
+          lead_id?: string
+          note?: string | null
+          source?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_status_history_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "qualified_leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       qualified_leads: {
         Row: {
           ai_review_reason: string | null
@@ -1297,6 +1341,8 @@ export type Database = {
           cs_status_ai_updated_at: string | null
           cs_status_human_updated_at: string | null
           cs_status_updated_by_ai: boolean
+          cs_status_updated_by: string | null
+          cs_status_updated_by_name: string | null
           customer_name: string
           customer_number: string
           customer_number_2: string | null
@@ -1351,6 +1397,8 @@ export type Database = {
           cs_status_ai_updated_at?: string | null
           cs_status_human_updated_at?: string | null
           cs_status_updated_by_ai?: boolean
+          cs_status_updated_by?: string | null
+          cs_status_updated_by_name?: string | null
           customer_name: string
           customer_number: string
           customer_number_2?: string | null
@@ -1405,6 +1453,8 @@ export type Database = {
           cs_status_ai_updated_at?: string | null
           cs_status_human_updated_at?: string | null
           cs_status_updated_by_ai?: boolean
+          cs_status_updated_by?: string | null
+          cs_status_updated_by_name?: string | null
           customer_name?: string
           customer_number?: string
           customer_number_2?: string | null

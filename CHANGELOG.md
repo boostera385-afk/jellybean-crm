@@ -15,6 +15,22 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Completed Quo calls now mark leads as called. Call deliveries were being
+  dropped because their numbers were not where message events keep them, and a
+  call placed after the customer's first reply was never recorded
+  (`quo_last_call_at`). Verify: call a lead, its "not called yet" badge clears.
+- The AI badge on a status now reads "AI updated status"; a status set by a
+  person shows "by <name>" instead.
+- New status history: a History button on each lead card, table row and the
+  lead drawer opens every status the lead has had, who changed it (AI or the
+  person) and when. Backfilled from activity logs and AI runs.
+- AI pipeline automation applies only to leads created from 4 Nov 2026 (PKT).
+  The 669 older leads the AI had changed were restored to the status a person
+  last set, automation is off for older leads, and they show the AI comparison
+  chip next to the manual status again, as before.
+- The scheduled "no reply after 6h" flip is now recorded as an AI change, not
+  as a human edit.
+
 - Added a Quo `call.completed` API subscription so completed outbound calls
   remove the incorrect “not called yet” state on matching CS leads.
 - Reports now states explicitly that automatic AI status updates started on
