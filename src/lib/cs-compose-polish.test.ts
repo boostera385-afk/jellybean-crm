@@ -51,6 +51,28 @@ describe("polishing a composed first reply", () => {
     expect(polishComposedMessage(draft)).toBe(expected);
   });
 
+  it("corrects the article in front of a capitalised brand, not an acronym", () => {
+    expect(polishComposedMessage("looking for an whirlpool oven repair")).toBe(
+      "looking for a Whirlpool oven repair",
+    );
+    expect(polishComposedMessage("looking for an LG washer repair")).toBe(
+      "looking for an LG washer repair",
+    );
+    expect(polishComposedMessage("looking for an oven repair")).toBe("looking for an oven repair");
+    expect(polishComposedMessage("looking for an hour of help")).toBe(
+      "looking for an hour of help",
+    );
+  });
+
+  it("leaves a typo it does not recognise exactly as typed", () => {
+    expect(polishComposedMessage("Could you kindly let ,e know the size")).toBe(
+      "Could you kindly let ,e know the size",
+    );
+    expect(polishComposedMessage("the area that needs to be painted , so I can")).toBe(
+      "the area that needs to be painted, so I can",
+    );
+  });
+
   it("leaves a correct draft exactly as it is", () => {
     const draft =
       "Hi Megan, this is Harrison. I saw that you are looking for a house painting service. Could you kindly let me know the size of the area that needs to be painted and share pictures of it, so I can check the schedule for a visit?";

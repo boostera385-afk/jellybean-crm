@@ -81,7 +81,9 @@ function fixDoYouChains(text: string): string {
 }
 
 export function polishComposedMessage(text: string): string {
-  let out = text.replace(/[ \t]+/g, " ").replace(/ +([,.?!])/g, "$1");
+  // A space before punctuation, only where the punctuation then ends a word
+  // group ("be painted , so"); a typo like "let ,e know" is left as typed.
+  let out = text.replace(/[ \t]+/g, " ").replace(/ +([,.?!])(?=\s|$)/g, "$1");
   for (const [pattern, replacement] of rules) out = out.replace(pattern, replacement);
   out = fixDoYouChains(out);
   out = out.replace(/\b[a-z]+\b/gi, (word) => {
@@ -90,5 +92,10 @@ export function polishComposedMessage(text: string): string {
     // person is left alone, and so is a capitalised word mid-name.
     return proper && word === word.toLowerCase() ? proper : word;
   });
+  // "an Whirlpool oven": the article has to follow the (now capitalised)
+  // word. Consonant-led words only, and never an acronym ("an LG washer").
+  out = out.replace(/\ban (?=[B-DF-GJ-NP-TV-WYZb-df-gj-np-tv-wyz][a-z])/g, (match) =>
+    match[0] === "A" ? "A " : "a ",
+  );
   return out.trim();
 }
