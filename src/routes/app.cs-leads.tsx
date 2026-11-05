@@ -108,6 +108,7 @@ import { rephraseLeadTemplateWithAi, autoRephraseLeadWithAi } from "@/lib/raw-le
 import { SERVICE_CATEGORIES } from "@/data/service-options";
 
 import { cn } from "@/lib/utils";
+import { greetingNameMismatch } from "@/lib/compose-greeting";
 import { confirmDiscardUnsaved } from "@/components/confirm-dialog-store";
 
 type ContactMethod = "texted" | "called";
@@ -2860,6 +2861,7 @@ function LeadCard({
           className="text-[12.5px] mt-1.5 h-10 min-h-[40px] resize-none leading-relaxed py-2.5"
           placeholder="Compose a message or note for this lead…"
         />
+        <GreetingNameWarning draft={compose} customerName={lead.customer_name} />
         {composeSuggestion && (
           <ComposeSuggestion
             suggestion={composeSuggestion}
@@ -3069,6 +3071,30 @@ function StatusBadge({
         </span>
       )}
     </span>
+  );
+}
+
+/** Shown under a Compose box whose "Hi ___" is not this customer's name. */
+function GreetingNameWarning({
+  draft,
+  customerName,
+}: {
+  draft: string;
+  customerName: string | null;
+}) {
+  const greeted = greetingNameMismatch(draft, customerName);
+  if (!greeted) return null;
+  return (
+    <p
+      role="alert"
+      className="mt-1 inline-flex items-start gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+    >
+      <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+      <span>
+        Greeting says &ldquo;Hi {greeted}&rdquo; but this lead is {customerName}. Check the name
+        before sending.
+      </span>
+    </p>
   );
 }
 
@@ -4049,6 +4075,7 @@ function LeadDrawer({
                   maxLength={2000}
                   placeholder="Compose a message or note for this lead..."
                 />
+                <GreetingNameWarning draft={compose} customerName={lead.customer_name} />
                 {composeSuggestion && (
                   <ComposeSuggestion
                     suggestion={composeSuggestion}
