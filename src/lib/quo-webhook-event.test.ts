@@ -173,6 +173,61 @@ describe("reading a Quo webhook delivery", () => {
     });
   });
 
+  it("reads a current API outbound call that names the customer on the call itself", () => {
+    expect(
+      readQuoMessageEvent(
+        currentEnvelope(
+          "call.completed",
+          { direction: "outgoing", status: "completed", from: "+19105559999", to: "+19105551234" },
+          { phoneNumberId: "PNabc" },
+        ),
+      ),
+    ).toMatchObject({ category: "call", direction: "outbound", participant: "+19105551234" });
+  });
+
+  it.each([
+    ["outgoing", "outbound"],
+    ["incoming", "inbound"],
+  ])("reads a current API %s call from its participants list", (direction, expected) => {
+    expect(
+      readQuoMessageEvent(
+        currentEnvelope(
+          "call.completed",
+          {
+            direction,
+            status: "completed",
+            participants: ["+19105551234"],
+            phoneNumberId: "PNabc",
+          },
+          {},
+        ),
+      ),
+    ).toMatchObject({ category: "call", direction: expected, participant: "+19105551234" });
+  });
+
+  it("reads participants given as objects carrying the number", () => {
+    expect(
+      readQuoMessageEvent(
+        currentEnvelope(
+          "call.completed",
+          { direction: "outgoing" },
+          { participants: [{ phoneNumber: "+19105551234" }] },
+        ),
+      ),
+    ).toMatchObject({ category: "call", participant: "+19105551234" });
+  });
+
+  it("reports only field names when a call still cannot be read", () => {
+    const result = readQuoMessageEvent(
+      currentEnvelope("call.completed", { direction: "outgoing", secret: "+19105551234x" }, {}),
+    );
+    expect(result).toEqual({
+      kind: "ignored",
+      reason: "missing_recipient",
+      shape: "resource[direction,secret] context[]",
+    });
+  });
+
   it("drops a call with no stated direction rather than miscounting it", () => {
     expect(readQuoMessageEvent(envelope("call.completed", { from: "+19105551234" }))).toEqual({
       kind: "ignored",

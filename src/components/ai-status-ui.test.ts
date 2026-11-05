@@ -35,7 +35,11 @@ describe("urgent CS/Crisp UI contracts", () => {
     expect(route).toContain('setActiveStatus("__needs_review__")');
     expect(route).toContain("cs_status_updated_by_ai");
     expect(route).toContain("ai_review_required");
-    expect(route).toContain("A manual status change removes this tag");
+    expect(route).toContain("AI updated status");
+    expect(route).toContain("A manual status change replaces it");
+    // Who set the status by hand, and the full status history pop-up.
+    expect(route).toContain("cs_status_updated_by_name");
+    expect(route).toContain('from("lead_status_history")');
     expect(route).toContain("Set Delivered manually once");
     expect(route).not.toContain("Comparison only — not saved");
     const migration = readFileSync(

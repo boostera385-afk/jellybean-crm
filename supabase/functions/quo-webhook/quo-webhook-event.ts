@@ -44,7 +44,7 @@ export type QuoEventReadResult =
    * Verified, but nothing to do with it. The caller answers 2xx so Quo stops
    * redelivering: retrying cannot turn an unhandled event into a handled one.
    */
-  | { kind: "ignored"; reason: string };
+  | { kind: "ignored"; reason: string; shape?: string };
 
 const isMessageEvent = (value: unknown): value is QuoMessageEventType =>
   QUO_MESSAGE_EVENTS.includes(value as QuoMessageEventType);
@@ -98,8 +98,6 @@ export function readQuoMessageEvent(raw: string): QuoEventReadResult {
   const participants = context as Record<string, unknown> | undefined;
 
   const direction = message.direction;
-  const from = currentVersion ? participants?.senderIdentifier : message.from;
-  const to = currentVersion ? participants?.recipientIdentifiers : message.to;
   if (direction !== undefined && direction !== "incoming" && direction !== "outgoing")
     return { kind: "ignored", reason: "unexpected_direction" };
   // Messages may fall back to the event name; a call must state its direction.
@@ -109,6 +107,23 @@ export function readQuoMessageEvent(raw: string): QuoEventReadResult {
   if (direction === undefined && category === "call")
     return { kind: "ignored", reason: "missing_direction" };
 
+  // Messages on the current API name the parties in `context`; older payloads
+  // put them on the object. Calls are less uniform: depending on version they
+  // may use the same context keys, `from`/`to` on the call itself, or a
+  // `participants` list of the customer's numbers (our own inbox is referenced
+  // by phoneNumberId and is never in that list). Reading only the message keys
+  // dropped every completed call as missing_sender/missing_recipient, so for a
+  // call each of those places is tried in turn.
+  const allowObjects = !currentVersion || category === "call";
+  const from =
+    participants?.senderIdentifier ??
+    (!currentVersion || category === "call" ? message.from : undefined);
+  const to =
+    participants?.recipientIdentifiers ??
+    (!currentVersion || category === "call" ? message.to : undefined);
+  const callParticipants =
+    category === "call" ? (message.participants ?? participants?.participants) : undefined;
+
   const event = (participant: string): QuoEventReadResult => ({
     kind: "event",
     category,
@@ -116,31 +131,60 @@ export function readQuoMessageEvent(raw: string): QuoEventReadResult {
     direction: inbound ? "inbound" : "outbound",
     participant,
   });
+  const ignored = (reason: string): QuoEventReadResult =>
+    category === "call"
+      ? { kind: "ignored", reason, shape: describeShape(message, participants) }
+      : { kind: "ignored", reason };
 
-  if (inbound) {
-    if (typeof from !== "string" || !from.trim())
-      return { kind: "ignored", reason: "missing_sender" };
-    return event(from);
+  // Several numbers cannot be attributed to one lead, and the worker would
+  // refuse the thread as ambiguous anyway, so dropping those here saves that
+  // round. A bare string is treated as a list of one.
+  const single = (value: unknown): string | "group" | null => {
+    const list = Array.isArray(value)
+      ? value
+      : value !== undefined && value !== null && value !== ""
+        ? [value]
+        : [];
+    if (list.length === 0) return null;
+    if (list.length !== 1) return "group";
+    return readNumber(list[0], allowObjects);
+  };
+
+  const primary = single(inbound ? from : to);
+  if (primary === "group") return { kind: "ignored", reason: "group_conversation" };
+  if (primary) return event(primary);
+  if (callParticipants !== undefined) {
+    const fallback = single(callParticipants);
+    if (fallback === "group") return { kind: "ignored", reason: "group_conversation" };
+    if (fallback) return event(fallback);
   }
-  // Outbound. Messages carry `to` as an array of recipients; a call carries a
-  // single `to` string. Accept either, so an outbound call we place is counted
-  // and not dropped as "missing_recipient". Several recipients cannot be
-  // attributed to one lead, and the worker would refuse the thread as ambiguous
-  // anyway, so dropping those here saves that round.
-  const recipients = Array.isArray(to) ? to : typeof to === "string" && to.trim() ? [to] : null;
-  if (!recipients || recipients.length === 0)
-    return { kind: "ignored", reason: "missing_recipient" };
-  if (recipients.length !== 1) return { kind: "ignored", reason: "group_conversation" };
-  const recipient = recipients[0];
-  // Quo has sent recipients both as bare strings and as objects carrying the
-  // number, so accept either rather than silently resolving no lead.
-  const number =
-    typeof recipient === "string"
-      ? recipient
-      : !currentVersion && recipient && typeof recipient === "object" && !Array.isArray(recipient)
-        ? (recipient as Record<string, unknown>).phoneNumber
-        : undefined;
-  if (typeof number !== "string" || !number.trim())
-    return { kind: "ignored", reason: "missing_recipient" };
-  return event(number);
+  return ignored(inbound ? "missing_sender" : "missing_recipient");
+}
+
+/**
+ * Quo has sent numbers both as bare strings and as objects carrying the
+ * number, so accept either rather than silently resolving no lead.
+ */
+function readNumber(value: unknown, allowObjects: boolean): string | null {
+  if (typeof value === "string") return value.trim() ? value : null;
+  if (!allowObjects || !value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  for (const key of ["phoneNumber", "identifier", "number"]) {
+    const candidate = row[key];
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Field NAMES only (never values) of an unreadable call payload, so the logs
+ * show where Quo put the numbers without recording anyone's phone number.
+ */
+function describeShape(
+  resource: Record<string, unknown>,
+  context: Record<string, unknown> | undefined,
+): string {
+  const keys = (value: Record<string, unknown> | undefined) =>
+    value ? Object.keys(value).sort().join(",") : "-";
+  return `resource[${keys(resource)}] context[${keys(context)}]`;
 }

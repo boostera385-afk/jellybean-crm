@@ -66,8 +66,16 @@ import {
   Paperclip,
   ExternalLink,
   AlertTriangle,
+  History,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import {
   csPipelineDateRangeToUtcIso,
@@ -226,6 +234,8 @@ type Lead = {
   cs_status_updated_by_ai: boolean;
   cs_status_ai_updated_at: string | null;
   cs_status_human_updated_at: string | null;
+  cs_status_updated_by: string | null;
+  cs_status_updated_by_name: string | null;
   ai_review_required: boolean;
   ai_review_reason: string | null;
   contact_method: ContactMethod | null;
@@ -249,6 +259,7 @@ type Lead = {
   quo_outbound_messages: number;
   quo_outbound_calls: number;
   quo_first_reply_at: string | null;
+  quo_last_call_at: string | null;
 };
 
 // CS pipeline statuses surfaced in the UI (subset of the DB enum).
@@ -629,7 +640,8 @@ function Inner() {
 
     // "Not called yet" means no call at all — neither a manually logged call
     // nor a Quo call counted by the webhook.
-    if (notCalledOnly) q = q.is("called_at", null).eq("quo_outbound_calls", 0);
+    if (notCalledOnly)
+      q = q.is("called_at", null).is("quo_last_call_at", null).eq("quo_outbound_calls", 0);
 
     // Search text filter — pushed to DB across all pages
     if (dbSearch) {
@@ -670,7 +682,7 @@ function Inner() {
         supabase
           .from("qualified_leads")
           .select(
-            "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, ai_status_automation_started_at, cs_status_updated_by_ai, cs_status_ai_updated_at, cs_status_human_updated_at, ai_review_required, ai_review_reason, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at",
+            "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, ai_status_automation_started_at, cs_status_updated_by_ai, cs_status_ai_updated_at, cs_status_updated_by, cs_status_updated_by_name, cs_status_human_updated_at, ai_review_required, ai_review_reason, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at, quo_last_call_at",
           )
           .order("pinned_important", { ascending: false })
           .order("assigned_at", { ascending: false })
@@ -745,7 +757,7 @@ function Inner() {
       const { data, error } = await supabase
         .from("qualified_leads")
         .select(
-          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, ai_status_automation_started_at, cs_status_updated_by_ai, cs_status_ai_updated_at, cs_status_human_updated_at, ai_review_required, ai_review_reason, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at",
+          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, ai_status_automation_started_at, cs_status_updated_by_ai, cs_status_ai_updated_at, cs_status_updated_by, cs_status_updated_by_name, cs_status_human_updated_at, ai_review_required, ai_review_reason, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at, quo_last_call_at",
         )
         .eq("id", deepLinkLeadId)
         .maybeSingle();
@@ -2132,11 +2144,19 @@ function CsLeadsTable({
                   {numberNameLabel(lead.number_name) || "-"}
                 </td>
                 <td className="px-3 py-2">
-                  <StatusBadge
-                    status={lead.cs_status}
-                    updatedByAi={lead.cs_status_updated_by_ai}
-                    needsReview={lead.ai_review_required}
-                  />
+                  <div className="flex flex-col items-start gap-1">
+                    <StatusBadge
+                      status={lead.cs_status}
+                      updatedByAi={lead.cs_status_updated_by_ai}
+                      updatedByName={lead.cs_status_updated_by_name}
+                      needsReview={lead.ai_review_required}
+                    />
+                    <StatusHistoryButton
+                      leadId={lead.id}
+                      customerName={lead.customer_name}
+                      compact
+                    />
+                  </div>
                 </td>
                 {showAiStatus && (
                   <td className="px-3 py-2">
@@ -2216,6 +2236,7 @@ function LeadCard({
   const auth = useAuth();
   const [status, setStatus] = useState<CsStatus>(lead.cs_status);
   const [statusUpdatedByAi, setStatusUpdatedByAi] = useState(lead.cs_status_updated_by_ai);
+  const [statusUpdatedByName, setStatusUpdatedByName] = useState(lead.cs_status_updated_by_name);
   const [needsReview, setNeedsReview] = useState(lead.ai_review_required);
   const [contactMethod, setContactMethodState] = useState<ContactMethod>(
     lead.contact_method ?? "texted",
@@ -2251,8 +2272,14 @@ function LeadCard({
   useEffect(() => {
     setStatus(lead.cs_status);
     setStatusUpdatedByAi(lead.cs_status_updated_by_ai);
+    setStatusUpdatedByName(lead.cs_status_updated_by_name);
     setNeedsReview(lead.ai_review_required);
-  }, [lead.ai_review_required, lead.cs_status, lead.cs_status_updated_by_ai]);
+  }, [
+    lead.ai_review_required,
+    lead.cs_status,
+    lead.cs_status_updated_by_ai,
+    lead.cs_status_updated_by_name,
+  ]);
 
   const [rephrasing, setRephrasing] = useState(false);
   const rephraseFn = useServerFn(rephraseLeadTemplateWithAi);
@@ -2355,9 +2382,11 @@ function LeadCard({
     const prev = status;
     const prevAi = statusUpdatedByAi;
     const prevReview = needsReview;
+    const prevName = statusUpdatedByName;
     const changedAt = new Date().toISOString();
     setStatus(next);
     setStatusUpdatedByAi(false);
+    setStatusUpdatedByName(auth.profile?.full_name || auth.user?.email || prevName);
     setNeedsReview(false);
     setSaving(true);
     try {
@@ -2399,9 +2428,11 @@ function LeadCard({
       });
       toast.success(`Status → ${STATUS_LABEL[next] ?? next}`);
       qc.invalidateQueries({ queryKey: ["cs_leads"] });
+      qc.invalidateQueries({ queryKey: ["lead_status_history", lead.id] });
     } catch (e) {
       setStatus(prev);
       setStatusUpdatedByAi(prevAi);
+      setStatusUpdatedByName(prevName);
       setNeedsReview(prevReview);
       toast.error(friendlyError(e));
     } finally {
@@ -2601,11 +2632,18 @@ function LeadCard({
               </button>
             </div>
             <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+              {/* Leads outside AI automation (created before 4 Nov) keep the
+                  original view: the manual status plus the AI comparison chip. */}
+              {ai &&
+                !lead.ai_status_automation_started_at &&
+                canShowAiSuggestion(status, ai.ai_status) && <AiTagChip ai={ai} />}
               <StatusBadge
                 status={status}
                 updatedByAi={statusUpdatedByAi}
+                updatedByName={statusUpdatedByAi ? null : statusUpdatedByName}
                 needsReview={needsReview}
               />
+              <StatusHistoryButton leadId={lead.id} customerName={lead.customer_name} />
               <button
                 type="button"
                 onClick={(event) => {
@@ -2990,10 +3028,13 @@ function LeadCard({
 function StatusBadge({
   status,
   updatedByAi = false,
+  updatedByName = null,
   needsReview = false,
 }: {
   status: string;
   updatedByAi?: boolean;
+  /** Who last set the status by hand; shown when the AI did not set it. */
+  updatedByName?: string | null;
   needsReview?: boolean;
 }) {
   const tone = STATUS_TONE[status] ?? "bg-muted text-muted-foreground border-border";
@@ -3005,22 +3046,154 @@ function StatusBadge({
           tone,
         )}
       >
-        {STATUS_LABEL[status] ?? status.replace(/_/g, " ")}
+        {statusLabel(status)}
       </span>
-      {updatedByAi && (
+      {updatedByAi ? (
         <span
-          className="inline-flex items-center gap-1 rounded-full border border-violet-400/60 bg-violet-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-200"
-          title="This status was last updated automatically. A manual status change removes this tag."
+          className="inline-flex items-center gap-1 rounded-full border border-violet-400/60 bg-violet-500/10 px-2 py-1 text-[10px] font-semibold text-violet-700 dark:text-violet-200 whitespace-nowrap"
+          title="This status was last updated automatically. A manual status change replaces it."
         >
-          <Sparkles className="h-3 w-3" /> AI
+          <Sparkles className="h-3 w-3" /> AI updated status
         </span>
-      )}
+      ) : updatedByName ? (
+        <span
+          className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-1 text-[10px] font-medium text-muted-foreground whitespace-nowrap max-w-[14rem] truncate"
+          title={`Status last set by ${updatedByName}`}
+        >
+          by {updatedByName}
+        </span>
+      ) : null}
       {needsReview && (
         <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-800 dark:text-amber-200">
           <AlertTriangle className="h-3 w-3" /> Needs Review
         </span>
       )}
     </span>
+  );
+}
+
+function statusLabel(status: string): string {
+  return STATUS_LABEL[status] ?? status.replace(/_/g, " ");
+}
+
+type StatusHistoryEntry = {
+  id: number;
+  from_status: string | null;
+  to_status: string;
+  source: "user" | "ai" | "system";
+  changed_by_name: string | null;
+  note: string | null;
+  changed_at: string;
+};
+
+/** "History" button + pop-up: every status the lead has had, oldest first,
+ * with who changed it (AI or the person) and when. */
+function StatusHistoryButton({
+  leadId,
+  customerName,
+  compact = false,
+}: {
+  leadId: string;
+  customerName: string;
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const history = useQuery({
+    queryKey: ["lead_status_history", leadId],
+    enabled: open,
+    queryFn: async (): Promise<StatusHistoryEntry[]> => {
+      const { data, error } = await supabase
+        .from("lead_status_history")
+        .select("id, from_status, to_status, source, changed_by_name, note, changed_at")
+        .eq("lead_id", leadId)
+        .order("changed_at", { ascending: true })
+        .order("id", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as unknown as StatusHistoryEntry[];
+    },
+    staleTime: 15_000,
+  });
+  const rows = history.data ?? [];
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(true);
+        }}
+        className={cn(
+          "inline-flex items-center gap-1 rounded-lg border border-border font-semibold text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+          compact ? "h-6 px-2 text-[10.5px]" : "h-7 px-2.5 text-[11px]",
+        )}
+        aria-label={`Status history for ${customerName}`}
+      >
+        <History className="h-3 w-3" />
+        History
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent
+          className="max-w-lg max-h-[85vh] overflow-y-auto"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <DialogHeader>
+            <DialogTitle>Status history</DialogTitle>
+            <DialogDescription>
+              {customerName} · every status change, who made it and when
+            </DialogDescription>
+          </DialogHeader>
+          {history.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading history…</p>
+          ) : history.isError ? (
+            <p className="text-sm text-destructive">{friendlyError(history.error)}</p>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No status changes recorded yet.</p>
+          ) : (
+            <ol className="relative ml-2 border-l border-border">
+              {rows.map((row, index) => (
+                <li key={row.id} className="relative pb-4 pl-5 last:pb-0">
+                  <span
+                    className={cn(
+                      "absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-background",
+                      row.source === "ai"
+                        ? "bg-violet-500"
+                        : row.source === "user"
+                          ? "bg-primary"
+                          : "bg-muted-foreground",
+                    )}
+                  />
+                  <div className="flex flex-wrap items-center gap-1.5 text-[12.5px]">
+                    {index === 0 || !row.from_status ? (
+                      <span className="text-muted-foreground">First status</span>
+                    ) : (
+                      <>
+                        <StatusBadge status={row.from_status} />
+                        <span className="text-muted-foreground">→</span>
+                      </>
+                    )}
+                    <StatusBadge status={row.to_status} />
+                  </div>
+                  <div className="mt-1 text-[11.5px] text-muted-foreground">
+                    <span className="font-semibold text-foreground">
+                      {row.source === "ai"
+                        ? "AI updated status"
+                        : row.source === "user"
+                          ? (row.changed_by_name ?? "A team member")
+                          : "System"}
+                    </span>
+                    {" · "}
+                    {formatCsPipelineDateTime(row.changed_at)}
+                  </div>
+                  {row.note && (
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">{row.note}</div>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -3111,7 +3284,9 @@ function ReachOutBadge({ lead }: { lead: Lead }) {
   const parts: string[] = [];
   if (msgs > 0) parts.push(`${msgs} message${msgs === 1 ? "" : "s"}`);
   if (calls > 0) parts.push(`${calls} call${calls === 1 ? "" : "s"}`);
-  const notCalled = calls === 0;
+  // Called at all: a counted pre-reply Quo call, any completed Quo call (also
+  // after the customer replied), or a call logged manually on the card.
+  const notCalled = calls === 0 && !lead.quo_last_call_at && !lead.called_at;
   const title = `Reach-outs ${
     replied ? "before the customer's first reply" : "so far, until the customer replies"
   }, tracked from the Quo webhook (messages & calls).`;
@@ -3769,15 +3944,20 @@ function LeadDrawer({
                     busy || (!isAdmin && !isCs && (!assignedTo || auth.user?.id !== assignedTo))
                   }
                 />
-                {(lead.cs_status_updated_by_ai || lead.ai_review_required) && (
-                  <div className="mt-2">
-                    <StatusBadge
-                      status={status}
-                      updatedByAi={lead.cs_status_updated_by_ai && status === lead.cs_status}
-                      needsReview={lead.ai_review_required && status === lead.cs_status}
-                    />
-                  </div>
-                )}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {status === lead.cs_status &&
+                    (lead.cs_status_updated_by_ai ||
+                      lead.ai_review_required ||
+                      lead.cs_status_updated_by_name) && (
+                      <StatusBadge
+                        status={status}
+                        updatedByAi={lead.cs_status_updated_by_ai}
+                        updatedByName={lead.cs_status_updated_by_name}
+                        needsReview={lead.ai_review_required}
+                      />
+                    )}
+                  <StatusHistoryButton leadId={lead.id} customerName={lead.customer_name} />
+                </div>
                 {ai && canShowAiSuggestion(status, ai.ai_status) && (
                   <AiSuggestionPanel
                     ai={ai}
