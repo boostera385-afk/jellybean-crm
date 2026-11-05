@@ -1,4 +1,5 @@
 /** Shared by the app, Edge Function and tests. No database, env or SDK imports. */
+import { polishComposedMessage } from "./cs-compose-polish.ts";
 import { CS_ASK_CATALOGUE } from "./cs-ask-catalogue.generated.ts";
 import type { AskIntent } from "./cs-ask-catalogue-types.ts";
 import { detect, normalizeSource, type Detection } from "./cs-detect.ts";
@@ -19,7 +20,7 @@ import {
   ungroundedWords,
 } from "./cs-context-grounding.ts";
 
-export const CS_COMPOSER_VERSION = "2026-10-26.catalogue-v3.4-fitted";
+export const CS_COMPOSER_VERSION = "2026-11-05.catalogue-v3.5-polished";
 export const CS_COMPOSER_MODEL = "gpt-5.4-nano-2026-03-17";
 
 export type ComposerInput = {
@@ -67,6 +68,10 @@ the office lights", "a junk removal service to clear out a storage unit".
 Cover every job the customer mentioned; do not drop the second appliance or
 room. No greeting, no agent name, no question, no promise, no price, no
 availability or scheduling claim, no brackets, placeholders or invented details.
+Write correct English: subject and verb agree ("that stopped freezing", not
+"that are suddenly stopped freezing"), say "service" once, and capitalise names
+as they are normally written (Christmas, Whirlpool, Panasonic), keeping the
+customer's own spelling of a brand.
 
 targetObject: which listed object the questions should be aimed at. Choose the
 one the customer's own words centre on - the item with the fault, or the item
@@ -192,6 +197,10 @@ export function referralPlatform(reference: string | null | undefined): string |
 const dropArticle = (phrase: string) => phrase.replace(/^(?:an?)\s+/i, "");
 
 export function renderComposePlan(input: ComposerInput, plan: ComposePlan, sender: string): string {
+  return polishComposedMessage(renderComposeText(input, plan, sender));
+}
+
+function renderComposeText(input: ComposerInput, plan: ComposePlan, sender: string): string {
   const first = input.customerName.trim().split(/\s+/)[0];
   const safeName = first && /^[\p{L}\p{M}'’.-]+$/u.test(first) ? first : "there";
   const platform = referralPlatform(input.reference);

@@ -15,6 +15,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- CS compose (`2026-11-05.catalogue-v3.5-polished`): every composed draft now
+  gets a model-free clean-up pass for the slips found in a month of real
+  drafts: "share picture of" -> "share a picture of", "let me know do you" ->
+  "let me know if you", lowercased brands and "christmas", double spaces,
+  "what the issue you facing", agreement slips ("as its stopped"), "service"
+  said twice and doubled small words. Both composer prompts now also ask for
+  correct grammar and normal capitalisation.
+- The lead card and drawer warn when a draft's "Hi ___" does not match the
+  customer's name (mostly hand-written drafts, or a name edited after
+  composing). It only warns; the text is never changed.
+
 - AI status (policy `quo-auto-v7`, same `gpt-4.1-mini` model) now reads what a
   customer means instead of requiring explicit wording: "already got that
   fixed", "we're all set", "my husband did it" are already_got_someone, a
