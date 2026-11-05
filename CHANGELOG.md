@@ -15,6 +15,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Raw-leads AI prompt: the saved rule "if someone is recommending a guy or
+  company is a straight NO" was also catching posts ASKING for a
+  recommendation ("Can anyone recommend a garage door repair company?"), so
+  about 220 a month were marked No. Offering/advertising and praising a
+  provider stay NO; asking for a recommendation for an included service is
+  YES, with examples. The included-services list is unchanged. The built-in
+  fallback prompt now mirrors the saved one. 769 No posts from the last 30
+  days that ask for an included service were cleared for an AI re-check
+  (backup: private.raw_lead_recheck_20261105; previous prompt:
+  shared_state lead_ai_prompt_backup_20261105).
+
 - New CS status "Old Leads" (`old_lead`, a new enum identifier). The 3,597
   leads still in "New to contact" more than two months after they were created
   (11 Jun - 3 Sep 2026) were moved to it, each with a status-history entry.

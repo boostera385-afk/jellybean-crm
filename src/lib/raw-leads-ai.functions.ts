@@ -5,6 +5,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logActivity } from "@/lib/activity-log";
 
 // FROZEN PROMPT — batch-aware default used when no saved CRM prompt is available.
+// Mirrors the prompt saved in shared_state.lead_ai_prompt (the one the Raw
+// Leads page actually sends), so a missing saved prompt never falls back to a
+// different service list.
 export const FROZEN_LEAD_PROMPT = `You classify each item in the \`leads\` array independently as a residential home-service lead.
 
 For every input ID, return a \`yes\` or \`no\` decision using the required response schema.
@@ -12,28 +15,61 @@ For every input ID, return a \`yes\` or \`no\` decision using the required respo
 YES means the author currently needs, wants, or is seeking someone to perform an included service at a home or residential property.
 
 YES includes:
+
 - Hiring or looking for a provider
 - Asking for a recommendation, referral, estimate, or quote
-- Describing a current home problem that normally requires professional help
-- Repair, diagnosis, installation, replacement, maintenance, improvement, remodeling, moving, junk removal, hauling, or heavy one-time cleanup
+- Describing a current home problem that normally requires professional help for an included service
+- Repair, diagnosis, installation, replacement, maintenance, improvement, moving, junk removal, or heavy one-time cleanup related to an included service
 
-Included services include handyman, plumbing, electrical, HVAC, roofing, gutters, flooring, drywall, painting, doors, windows, garage doors, fences, concrete, appliances, sprinklers, pools, remodeling, moving, junk removal, pest control, locksmith, tree removal or trimming, pressure washing, storm cleanup, hoarder cleanup, estate cleanout, and similar residential work.
+Included services are ONLY:
+
+- Furniture Assembly
+- Window Cleaning, Pressure Washing, Gutter Cleaning
+- Carpet Cleaning / Sofa Cleaning
+- Govee Permanent Lights / Christmas Lights Installation
+- Junk Removal
+- Moving Service
+- Appliance Repair
+- Outlet Replacement, Picture Hanging, TV Mounting, Toilet Inner Kit Replacement
+- Drywall Patch Repair
+- Painting
+- Garage Door Repair
 
 NO means:
+
 - The author is advertising or offering their own services
+- If someone is providing a service, offering help, offering their services, or saying "we can help you with that", it is a straight NO
+- If someone is praising or recommending a provider they already used (a review or testimonial, e.g. "I highly recommend Mike, he fixed our garage door"), it is a straight NO
 - The service has already been completed and no additional work is requested
 - The author only wants DIY advice, products, supplies, moving boxes, or a disposal location
-- The requested service is routine house cleaning, cooking, catering, beauty, child care, pet care, lawn mowing, routine landscaping, car repair, employment, rentals, events, or unrelated discussion
+- The requested service is not included in the accepted services list, even if it is a residential home-service request
+- The requested service is routine house cleaning, cooking, catering, beauty, child care, pet care, lawn mowing, tree trimming, snow removal, routine landscaping, car repair, employment, rentals, events, or unrelated discussion
+- The author needs plumbing, HVAC, roofing, electrical, remodeling, or any other home service that does not specifically match the included services
 
 Important:
-- Classify the author's intent, not isolated keywords.
-- A current broken or malfunctioning home item is YES even without the words "hire," "recommend," or "looking for."
-- "My AC stopped cooling" is YES.
-- "I repair AC systems—call me" is NO.
-- "I need movers" is YES.
-- "I need moving boxes" is NO.
+
+- Classify the author’s intent, not isolated keywords.
+- A current broken or malfunctioning home item is YES if it relates to an included service, even without the words “hire,” “recommend,” or “looking for.”
+- “My washing machine stopped working” is YES.
+- “My AC stopped cooling” is NO because HVAC is not included.
+- “I repair appliances—call me” is NO.
+- “I need movers” is YES.
+- “I need moving boxes” is NO.
+- “I need someone to clean my carpet” is YES.
+- “I need regular house cleaning” is NO.
+- “My garage door won't open” is YES.
+- “I need a plumber to fix my leaking pipes” is NO.
+- Asking others FOR a recommendation for an included service is YES. Do not confuse someone asking for a recommendation with someone giving one.
+- “Can anyone recommend a reliable garage door repair company?” is YES.
+- “I highly recommend ABC Garage Doors, they fixed ours fast” is NO.
+- “Looking for an affordable refrigerator repair person” is YES.
+- “Recommendations for gutter cleaning and gutter guards?” is YES.
+- “Need someone to power wash and paint the siding” is YES.
+- “I need someone to come hang pictures” is YES.
+- “Need reliable men to unload a moving truck” is YES.
 - If a post clearly contains both qualifying and unrelated requests, choose YES.
-- When a post may reasonably be a qualifying residential-service need, choose YES.
+- When a post may reasonably be a qualifying residential-service need within the included services, choose YES.
+- Do not classify a lead as YES solely because it involves residential work. The requested work must match at least one included service.
 - Do not allow one post in the batch to influence another post.`;
 
 const analyzeInputSchema = z.object({
