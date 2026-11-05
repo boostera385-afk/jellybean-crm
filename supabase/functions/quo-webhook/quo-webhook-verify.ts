@@ -33,7 +33,8 @@ export type QuoVerifyFailure =
   | "signature_mismatch";
 
 export type QuoVerifyResult =
-  { ok: true; webhookId: string; timestamp: number } | { ok: false; reason: QuoVerifyFailure };
+  | { ok: true; webhookId: string; timestamp: number }
+  | { ok: false; reason: QuoVerifyFailure };
 
 function decodeBase64(value: string) {
   const binary = atob(value);

@@ -68,6 +68,7 @@ const CHAIN = [
   "need_review_excludes_manual",
   "quo_calls_mark_lead_called",
   "cs_status_history_and_attribution",
+  "quo_call_match_any_number",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -765,6 +766,15 @@ describe("Quo reach-out counting", () => {
     expect(frozen.quo_outbound_calls).toBe(1);
   });
 
+  it("marks the lead called when its number is one of several in the call", async () => {
+    const result = await call<{ leads: number }>(
+      `public.accept_quo_webhook_event('wh_multi','call.completed','+19105559999','outbound','call',
+         ARRAY['+19105559999','(910) 555-1234'])`,
+    );
+    expect(result.leads).toBe(1);
+    expect((await counts(lead(1))).quo_outbound_calls).toBe(1);
+  });
+
   it("marks a lead called when we call after the customer already replied", async () => {
     // The customer texts first, then CS calls: the pre-reply tally stays at 0
     // calls, but the lead must still leave "not called yet".
@@ -930,7 +940,8 @@ describe("restoring pre-cutoff leads the AI changed", () => {
     const restore = new PGlite();
     try {
       await restore.exec(BASE);
-      for (const name of CHAIN.slice(0, -1)) {
+      const upTo = CHAIN.indexOf("cs_status_history_and_attribution");
+      for (const name of CHAIN.slice(0, upTo)) {
         const files = readdirSync("supabase/migrations").filter((f) => f.endsWith(`_${name}.sql`));
         await restore.exec(readFileSync(`supabase/migrations/${files[0]}`, "utf8"));
       }
@@ -946,7 +957,7 @@ describe("restoring pre-cutoff leads the AI changed", () => {
           metadata, created_at)
         VALUES ('${ADMIN}', 'Sara CS', 'cs.status_changed', 'qualified_lead', '${OLD_LEAD}',
           '{"status":"converted"}', '2026-11-02T10:00:00Z');`);
-      const last = CHAIN.at(-1);
+      const last = "cs_status_history_and_attribution";
       const files = readdirSync("supabase/migrations").filter((f) => f.endsWith(`_${last}.sql`));
       await restore.exec(readFileSync(`supabase/migrations/${files[0]}`, "utf8"));
 

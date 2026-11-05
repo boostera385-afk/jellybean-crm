@@ -126,7 +126,7 @@ describe("reading a Quo webhook delivery", () => {
           to: ["+19105551234"],
         }),
       ),
-    ).toEqual({
+    ).toMatchObject({
       kind: "event",
       category: "call",
       type: "call.completed",
@@ -146,7 +146,7 @@ describe("reading a Quo webhook delivery", () => {
           to: "+19105551234",
         }),
       ),
-    ).toEqual({
+    ).toMatchObject({
       kind: "event",
       category: "call",
       type: "call.completed",
@@ -164,7 +164,7 @@ describe("reading a Quo webhook delivery", () => {
           { senderIdentifier: "+19105551234", recipientIdentifiers: ["+19105559999"] },
         ),
       ),
-    ).toEqual({
+    ).toMatchObject({
       kind: "event",
       category: "call",
       type: "call.completed",
@@ -240,28 +240,42 @@ describe("reading a Quo webhook delivery", () => {
       participants: [{ contactNumber: "+19105551234", role: "customer" }],
       contacts: [{ id: "CT1", phoneNumbers: [{ value: "(910) 555-1234" }] }],
     };
-    expect(readQuoMessageEvent(currentEnvelope("call.completed", resource, context))).toEqual({
-      kind: "event",
-      category: "call",
-      type: "call.completed",
-      direction: "outbound",
-      participant: "+19105551234",
-    });
+    expect(readQuoMessageEvent(currentEnvelope("call.completed", resource, context))).toMatchObject(
+      {
+        kind: "event",
+        category: "call",
+        type: "call.completed",
+        direction: "outbound",
+        participant: "+19105551234",
+      },
+    );
     // Contacts alone are enough when participants carry no number.
     expect(
       readQuoMessageEvent(
         currentEnvelope("call.completed", resource, { ...context, participants: [] }),
       ),
     ).toMatchObject({ participant: "(910) 555-1234" });
-    // Two different customers cannot be attributed to one lead.
+    // Our own line listed next to the customer: every number goes to the
+    // database, which matches leads on any of them (our lines match none).
     expect(
       readQuoMessageEvent(
         currentEnvelope("call.completed", resource, {
           ...context,
-          participants: [{ a: "+19105551234" }, { a: "+19105559876" }],
+          participants: [{ userId: "US1", line: "+19105559999" }],
+          contacts: [{ id: "CT1", phoneNumbers: [{ value: "+19105551234" }] }],
         }),
       ),
-    ).toEqual({ kind: "ignored", reason: "group_conversation" });
+    ).toMatchObject({ numbers: ["+19105559999", "+19105551234"] });
+    // Two plain numbers (our line and the customer) are both passed on.
+    expect(
+      readQuoMessageEvent(
+        currentEnvelope("call.completed", resource, {
+          ...context,
+          participants: ["+19105559999", "+19105551234"],
+          contacts: [],
+        }),
+      ),
+    ).toMatchObject({ category: "call", numbers: ["+19105559999", "+19105551234"] });
   });
 
   it("reports only field names when a call still cannot be read", () => {

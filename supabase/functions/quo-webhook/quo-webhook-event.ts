@@ -39,6 +39,10 @@ export type QuoEventReadResult =
       /** inbound = the customer contacted us; outbound = we contacted them. */
       direction: "inbound" | "outbound";
       participant: string;
+      /** Calls only: every distinct phone number in the payload. Which entry
+       *  is the customer is not fixed across Quo payloads, so the database
+       *  matches leads against all of them; our own lines match no lead. */
+      numbers?: string[];
     }
   /**
    * Verified, but nothing to do with it. The caller answers 2xx so Quo stops
@@ -125,12 +129,17 @@ export function readQuoMessageEvent(raw: string): QuoEventReadResult {
     category === "call" ? (message.participants ?? participants?.participants) : undefined;
   const callContacts = category === "call" ? participants?.contacts : undefined;
 
+  const callNumbers =
+    category === "call"
+      ? phoneNumbersIn([from, to, callParticipants, callContacts, message.from, message.to])
+      : [];
   const event = (participant: string): QuoEventReadResult => ({
     kind: "event",
     category,
     type: eventType,
     direction: inbound ? "inbound" : "outbound",
     participant,
+    ...(category === "call" ? { numbers: [...new Set([participant, ...callNumbers])] } : {}),
   });
   const ignored = (reason: string): QuoEventReadResult =>
     category === "call"
@@ -151,25 +160,30 @@ export function readQuoMessageEvent(raw: string): QuoEventReadResult {
     return readNumber(list[0], allowObjects);
   };
 
+  // A message to several people cannot be attributed to one lead. A call
+  // instead sends every number it carries, and the database marks the lead
+  // that owns one of them (our own lines belong to no lead).
+  const group = (): QuoEventReadResult =>
+    category === "call" && callNumbers.length
+      ? event(callNumbers[0])
+      : { kind: "ignored", reason: "group_conversation" };
   const primary = single(inbound ? from : to);
-  if (primary === "group") return { kind: "ignored", reason: "group_conversation" };
+  if (primary === "group") return group();
   if (primary) return event(primary);
   if (callParticipants !== undefined) {
     const fallback = single(callParticipants);
-    if (fallback === "group") return { kind: "ignored", reason: "group_conversation" };
+    if (fallback === "group") return group();
     if (fallback) return event(fallback);
   }
-  // Current call payloads carry no numbers on the call itself; the customer is
-  // in context.participants (or context.contacts), as entries whose key names
-  // are not fixed. Take the one phone number found in them, whatever it is
-  // called. Our own inbox is referenced only by phoneNumberId, so it is not
-  // among these. More than one distinct number cannot be attributed to a lead.
+  // Current call payloads carry no numbers on the call itself; they sit in
+  // context.participants / context.contacts, as entries whose key names are
+  // not fixed. Take the numbers found there, whatever they are called.
   for (const source of [callParticipants, callContacts]) {
     if (source === undefined) continue;
     const found = phoneNumbersIn(source);
-    if (found.length > 1) return { kind: "ignored", reason: "group_conversation" };
-    if (found.length === 1) return event(found[0]);
+    if (found.length >= 1) return event(found[0]);
   }
+  if (callNumbers.length) return event(callNumbers[0]);
   return ignored(inbound ? "missing_sender" : "missing_recipient");
 }
 
@@ -177,7 +191,7 @@ const PHONE_LIKE = /^\+?[\d\s().-]{7,24}$/;
 
 /** Distinct phone-looking strings anywhere in a value (a few levels deep). */
 function phoneNumbersIn(value: unknown, depth = 0, found = new Map<string, string>()): string[] {
-  if (depth > 4 || value === null || value === undefined) return [...found.values()];
+  if (depth > 5 || value === null || value === undefined) return [...found.values()];
   if (typeof value === "string") {
     const digits = value.replace(/\D/g, "");
     if (PHONE_LIKE.test(value.trim()) && digits.length >= 10 && digits.length <= 15) {
