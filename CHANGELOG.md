@@ -15,6 +15,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- New CS status "Old Leads" (`old_lead`, a new enum identifier). The 3,597
+  leads still in "New to contact" more than two months after they were created
+  (11 Jun - 3 Sep 2026) were moved to it, each with a status-history entry.
+  It has its own pipeline tab, a Reports colour and a Google Sheets label.
+
 - CS compose (`2026-11-05.catalogue-v3.5-polished`): every composed draft now
   gets a model-free clean-up pass for the slips found in a month of real
   drafts: "share picture of" -> "share a picture of", "let me know do you" ->

@@ -2712,6 +2712,7 @@ export type Database = {
         | "fb_admin"
       cs_status:
         | "new"
+        | "old_lead"
         | "called"
         | "messaged"
         | "follow_up"
@@ -2885,6 +2886,7 @@ export const Constants = {
       ],
       cs_status: [
         "new",
+        "old_lead",
         "called",
         "messaged",
         "follow_up",

@@ -93,6 +93,7 @@ export const Route = createFileRoute("/app/reports")({
 const RAW_STATUSES = ["new", "forwarded", "not_found", "wrong", "duplicate"] as const;
 export const CS_STATUSES = [
   "new",
+  "old_lead",
   "undeliver",
   "wrong_number",
   "wrong_lead",
@@ -119,6 +120,7 @@ const RAW_LABELS: Record<string, string> = {
 
 const CS_LABELS: Record<string, string> = {
   new: "New to contact",
+  old_lead: "Old Leads",
   undeliver: "Undeliver",
   wrong_number: "Wrong Number",
   wrong_lead: "Wrong Lead",
@@ -146,6 +148,7 @@ const CS_STATUS_COLORS: Record<string, string> = {
   cx_not_interested: "var(--destructive)",
   cx_didnt_replied: "var(--warning)",
   new: "#38bdf8",
+  old_lead: "#a8a29e",
   converted: "#4ade80",
   need_follow_up: "#60a5fa",
   out_of_base: "#fb923c",
