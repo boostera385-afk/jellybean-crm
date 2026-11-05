@@ -69,6 +69,7 @@ const CHAIN = [
   "quo_calls_mark_lead_called",
   "cs_status_history_and_attribution",
   "quo_call_match_any_number",
+  "ai_status_respects_human_choice",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -225,7 +226,7 @@ describe("guarded CS pipeline automation", () => {
     messageCount: 4,
     historyHash: "hash",
     model: "test-model",
-    policyVersion: "quo-auto-v6",
+    policyVersion: "quo-auto-v7",
     lastMessageAt: "2026-10-22T10:00:00Z",
   });
 
@@ -243,6 +244,37 @@ describe("guarded CS pipeline automation", () => {
       )
     ).rows[0];
     expect(row).toEqual({ cs_status: "new", cs_status_updated_by_ai: false });
+  });
+
+  it("never overwrites a final status a person chose", async () => {
+    // A person picks Interested by hand (after Delivered enabled automation).
+    await db.exec(`SET ROLE postgres;
+      UPDATE public.qualified_leads SET cs_status='cx_interested' WHERE id='${lead(1)}';
+      UPDATE public.qualified_leads SET cs_status_human_updated_at = now() - interval '1 hour'
+       WHERE id='${lead(1)}';
+      SET ROLE service_role;`);
+    expect(await finish(lead(1), classified("already_got_someone"))).toBe(true);
+    const row = (
+      await db.query<{ cs_status: string; ai_status: string }>(
+        `SELECT q.cs_status::text, a.ai_status::text FROM public.qualified_leads q
+           JOIN public.lead_ai_status a ON a.lead_id = q.id WHERE q.id='${lead(1)}'`,
+      )
+    ).rows[0];
+    // The person's choice stays; the AI verdict is kept as the suggestion.
+    expect(row).toEqual({ cs_status: "cx_interested", ai_status: "already_got_someone" });
+  });
+
+  it("still moves a lead a person left at Delivered", async () => {
+    await db.exec(`SET ROLE postgres;
+      UPDATE public.qualified_leads SET cs_status='converted' WHERE id='${lead(1)}';
+      SET ROLE service_role;`);
+    expect(await finish(lead(1), classified("already_got_someone"))).toBe(true);
+    const row = (
+      await db.query<{ cs_status: string }>(
+        `SELECT cs_status::text FROM public.qualified_leads WHERE id='${lead(1)}'`,
+      )
+    ).rows[0];
+    expect(row.cs_status).toBe("already_got_someone");
   });
 
   it("updates an enabled lead and records that AI made the decision", async () => {
