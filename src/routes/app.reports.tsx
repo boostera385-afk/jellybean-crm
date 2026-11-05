@@ -299,8 +299,8 @@ function Inner() {
     queryKey: ["report-ai-status", range.from, range.to],
     queryFn: async () => {
       const { data, error } = await supabase.rpc("report_lead_ai_status", {
-        p_from: range.from ?? null,
-        p_to: range.to ?? null,
+        p_from: range.from ?? undefined,
+        p_to: range.to ?? undefined,
       });
       if (error) throw error;
       return parseAiStatusReport(data);
@@ -353,8 +353,8 @@ function Inner() {
     enabled: canManageAiReporting && Boolean(aiConfiguration.data?.configured),
     queryFn: async () => {
       const { data, error } = await supabase.rpc("report_quo_ai_progress", {
-        p_from: range.from ?? null,
-        p_to: range.to ?? null,
+        p_from: range.from ?? undefined,
+        p_to: range.to ?? undefined,
       });
       if (error) throw error;
       return data as { pending: number; workDone: number; workTotal: number };
@@ -457,8 +457,8 @@ function Inner() {
     queryKey: ["report-not-found-by-user", range.from, range.to],
     queryFn: async () => {
       const { data, error } = await supabase.rpc("report_not_found_by_user", {
-        _from: range.from ?? null,
-        _to: range.to ?? null,
+        _from: range.from ?? undefined,
+        _to: range.to ?? undefined,
       });
       if (error) throw error;
       return (data ?? []) as Array<{

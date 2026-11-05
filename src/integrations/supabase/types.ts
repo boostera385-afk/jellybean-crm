@@ -1204,6 +1204,57 @@ export type Database = {
           },
         ]
       }
+      lead_status_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          changed_by_name: string | null
+          from_status: string | null
+          id: number
+          lead_id: string
+          note: string | null
+          source: string
+          to_status: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          changed_by_name?: string | null
+          from_status?: string | null
+          id?: never
+          lead_id: string
+          note?: string | null
+          source: string
+          to_status: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          changed_by_name?: string | null
+          from_status?: string | null
+          id?: never
+          lead_id?: string
+          note?: string | null
+          source?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_status_history_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "processed_leads_export"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_status_history_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "qualified_leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       map_snapshots: {
         Row: {
           captured_at: string
@@ -1276,50 +1327,6 @@ export type Database = {
         }
         Relationships: []
       }
-      lead_status_history: {
-        Row: {
-          changed_at: string
-          changed_by: string | null
-          changed_by_name: string | null
-          from_status: string | null
-          id: number
-          lead_id: string
-          note: string | null
-          source: string
-          to_status: string
-        }
-        Insert: {
-          changed_at?: string
-          changed_by?: string | null
-          changed_by_name?: string | null
-          from_status?: string | null
-          id?: never
-          lead_id: string
-          note?: string | null
-          source: string
-          to_status: string
-        }
-        Update: {
-          changed_at?: string
-          changed_by?: string | null
-          changed_by_name?: string | null
-          from_status?: string | null
-          id?: never
-          lead_id?: string
-          note?: string | null
-          source?: string
-          to_status?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "lead_status_history_lead_id_fkey"
-            columns: ["lead_id"]
-            isOneToOne: false
-            referencedRelation: "qualified_leads"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       qualified_leads: {
         Row: {
           ai_review_reason: string | null
@@ -1340,8 +1347,8 @@ export type Database = {
           cs_status: Database["public"]["Enums"]["cs_status"]
           cs_status_ai_updated_at: string | null
           cs_status_human_updated_at: string | null
-          cs_status_updated_by_ai: boolean
           cs_status_updated_by: string | null
+          cs_status_updated_by_ai: boolean
           cs_status_updated_by_name: string | null
           customer_name: string
           customer_number: string
@@ -1396,8 +1403,8 @@ export type Database = {
           cs_status?: Database["public"]["Enums"]["cs_status"]
           cs_status_ai_updated_at?: string | null
           cs_status_human_updated_at?: string | null
-          cs_status_updated_by_ai?: boolean
           cs_status_updated_by?: string | null
+          cs_status_updated_by_ai?: boolean
           cs_status_updated_by_name?: string | null
           customer_name: string
           customer_number: string
@@ -1452,8 +1459,8 @@ export type Database = {
           cs_status?: Database["public"]["Enums"]["cs_status"]
           cs_status_ai_updated_at?: string | null
           cs_status_human_updated_at?: string | null
-          cs_status_updated_by_ai?: boolean
           cs_status_updated_by?: string | null
+          cs_status_updated_by_ai?: boolean
           cs_status_updated_by_name?: string | null
           customer_name?: string
           customer_number?: string
@@ -1912,6 +1919,7 @@ export type Database = {
           p_direction?: string
           p_event_type: string
           p_phone: string
+          p_phones?: string[]
           p_webhook_id: string
         }
         Returns: Json
@@ -2166,6 +2174,7 @@ export type Database = {
         Returns: boolean
       }
       crisp_worker_authorized: { Args: { p_token: string }; Returns: boolean }
+      cs_ai_automation_cutoff: { Args: never; Returns: string }
       cs_claim_compose_eval: {
         Args: { p_job_id: string; p_token: string }
         Returns: Json
@@ -2194,6 +2203,21 @@ export type Database = {
         }
         Returns: string
       }
+      cs_status_ai_may_change: {
+        Args: {
+          p_human_updated_at: string
+          p_status: Database["public"]["Enums"]["cs_status"]
+          p_updated_by_ai: boolean
+        }
+        Returns: boolean
+      }
+      cs_status_write_is_ai: {
+        Args: {
+          p_new: Database["public"]["Tables"]["qualified_leads"]["Row"]
+          p_old: Database["public"]["Tables"]["qualified_leads"]["Row"]
+        }
+        Returns: boolean
+      }
       cs_user_assignment_totals: {
         Args: { _from?: string; _to?: string }
         Returns: {
@@ -2208,6 +2232,7 @@ export type Database = {
           total_leads: number
         }[]
       }
+      current_profile_name: { Args: never; Returns: string }
       current_user_has_feature: { Args: { _feature: string }; Returns: boolean }
       current_user_has_role: {
         Args: { _role: Database["public"]["Enums"]["app_role"] }
@@ -2256,7 +2281,6 @@ export type Database = {
           wrong_count: number
         }[]
       }
-      get_quo_webhook_keys: { Args: never; Returns: string[] }
       get_crisp_conversations_page: {
         Args: {
           p_limit?: number
@@ -2299,6 +2323,7 @@ export type Database = {
           unreplied_chat_count: number
         }[]
       }
+      get_quo_webhook_keys: { Args: never; Returns: string[] }
       get_raw_lead_duplicate_match_preview: {
         Args: { _current_raw_lead_id: string }
         Returns: Json
@@ -2374,6 +2399,9 @@ export type Database = {
           _limit?: number
         }
         Returns: {
+          ai_review_reason: string | null
+          ai_review_required: boolean
+          ai_status_automation_started_at: string | null
           assigned_at: string
           assigned_by: string | null
           assigned_to: string | null
@@ -2387,6 +2415,11 @@ export type Database = {
           cs_notes: Json
           cs_outcome: string | null
           cs_status: Database["public"]["Enums"]["cs_status"]
+          cs_status_ai_updated_at: string | null
+          cs_status_human_updated_at: string | null
+          cs_status_updated_by: string | null
+          cs_status_updated_by_ai: boolean
+          cs_status_updated_by_name: string | null
           customer_name: string
           customer_number: string
           customer_number_2: string | null
@@ -2406,6 +2439,7 @@ export type Database = {
           pinned_important: boolean
           post_text: string | null
           quo_first_reply_at: string | null
+          quo_last_call_at: string | null
           quo_outbound_calls: number
           quo_outbound_messages: number
           quo_reach_out_updated_at: string | null
