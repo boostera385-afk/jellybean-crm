@@ -217,6 +217,53 @@ describe("reading a Quo webhook delivery", () => {
     ).toMatchObject({ category: "call", participant: "+19105551234" });
   });
 
+  it("reads the customer from current call context participants with unknown keys", () => {
+    // The live call.completed shape: no numbers on the resource; the customer
+    // sits in context.participants / contacts under keys we do not rely on.
+    const resource = {
+      id: "AC1",
+      direction: "outgoing",
+      status: "completed",
+      answeredAt: null,
+      completedAt: "2026-11-05T07:29:00Z",
+      createdAt: "2026-11-05T07:28:00Z",
+      duration: 12,
+      hasVoicemail: false,
+      updatedAt: "2026-11-05T07:29:00Z",
+    };
+    const context = {
+      conversationId: "CN1",
+      orgId: "OR1",
+      phoneNumberId: "PNabc",
+      phoneNumberType: "local",
+      userId: "US1",
+      participants: [{ contactNumber: "+19105551234", role: "customer" }],
+      contacts: [{ id: "CT1", phoneNumbers: [{ value: "(910) 555-1234" }] }],
+    };
+    expect(readQuoMessageEvent(currentEnvelope("call.completed", resource, context))).toEqual({
+      kind: "event",
+      category: "call",
+      type: "call.completed",
+      direction: "outbound",
+      participant: "+19105551234",
+    });
+    // Contacts alone are enough when participants carry no number.
+    expect(
+      readQuoMessageEvent(
+        currentEnvelope("call.completed", resource, { ...context, participants: [] }),
+      ),
+    ).toMatchObject({ participant: "(910) 555-1234" });
+    // Two different customers cannot be attributed to one lead.
+    expect(
+      readQuoMessageEvent(
+        currentEnvelope("call.completed", resource, {
+          ...context,
+          participants: [{ a: "+19105551234" }, { a: "+19105559876" }],
+        }),
+      ),
+    ).toEqual({ kind: "ignored", reason: "group_conversation" });
+  });
+
   it("reports only field names when a call still cannot be read", () => {
     const result = readQuoMessageEvent(
       currentEnvelope("call.completed", { direction: "outgoing", secret: "+19105551234x" }, {}),
@@ -224,7 +271,7 @@ describe("reading a Quo webhook delivery", () => {
     expect(result).toEqual({
       kind: "ignored",
       reason: "missing_recipient",
-      shape: "resource[direction,secret] context[]",
+      shape: "resource[direction,secret] context[] participants[] contacts[]",
     });
   });
 

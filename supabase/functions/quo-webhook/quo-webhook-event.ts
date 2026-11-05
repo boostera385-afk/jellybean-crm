@@ -123,6 +123,7 @@ export function readQuoMessageEvent(raw: string): QuoEventReadResult {
     (!currentVersion || category === "call" ? message.to : undefined);
   const callParticipants =
     category === "call" ? (message.participants ?? participants?.participants) : undefined;
+  const callContacts = category === "call" ? participants?.contacts : undefined;
 
   const event = (participant: string): QuoEventReadResult => ({
     kind: "event",
@@ -158,7 +159,39 @@ export function readQuoMessageEvent(raw: string): QuoEventReadResult {
     if (fallback === "group") return { kind: "ignored", reason: "group_conversation" };
     if (fallback) return event(fallback);
   }
+  // Current call payloads carry no numbers on the call itself; the customer is
+  // in context.participants (or context.contacts), as entries whose key names
+  // are not fixed. Take the one phone number found in them, whatever it is
+  // called. Our own inbox is referenced only by phoneNumberId, so it is not
+  // among these. More than one distinct number cannot be attributed to a lead.
+  for (const source of [callParticipants, callContacts]) {
+    if (source === undefined) continue;
+    const found = phoneNumbersIn(source);
+    if (found.length > 1) return { kind: "ignored", reason: "group_conversation" };
+    if (found.length === 1) return event(found[0]);
+  }
   return ignored(inbound ? "missing_sender" : "missing_recipient");
+}
+
+const PHONE_LIKE = /^\+?[\d\s().-]{7,24}$/;
+
+/** Distinct phone-looking strings anywhere in a value (a few levels deep). */
+function phoneNumbersIn(value: unknown, depth = 0, found = new Map<string, string>()): string[] {
+  if (depth > 4 || value === null || value === undefined) return [...found.values()];
+  if (typeof value === "string") {
+    const digits = value.replace(/\D/g, "");
+    if (PHONE_LIKE.test(value.trim()) && digits.length >= 10 && digits.length <= 15) {
+      // US numbers arrive both with and without the leading 1.
+      const key = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+      if (!found.has(key)) found.set(key, value.trim());
+    }
+  } else if (Array.isArray(value)) {
+    for (const item of value) phoneNumbersIn(item, depth + 1, found);
+  } else if (typeof value === "object") {
+    for (const item of Object.values(value as Record<string, unknown>))
+      phoneNumbersIn(item, depth + 1, found);
+  }
+  return [...found.values()];
 }
 
 /**
@@ -186,5 +219,22 @@ function describeShape(
 ): string {
   const keys = (value: Record<string, unknown> | undefined) =>
     value ? Object.keys(value).sort().join(",") : "-";
-  return `resource[${keys(resource)}] context[${keys(context)}]`;
+  // Shape of a list's entries: a type, or an object's key names.
+  const entries = (value: unknown) => {
+    const list = Array.isArray(value) ? value : value === undefined ? [] : [value];
+    return list
+      .slice(0, 3)
+      .map((item) =>
+        item && typeof item === "object" && !Array.isArray(item)
+          ? `{${keys(item as Record<string, unknown>)}}`
+          : Array.isArray(item)
+            ? "array"
+            : typeof item,
+      )
+      .join("|");
+  };
+  return (
+    `resource[${keys(resource)}] context[${keys(context)}]` +
+    ` participants[${entries(context?.participants)}] contacts[${entries(context?.contacts)}]`
+  );
 }
