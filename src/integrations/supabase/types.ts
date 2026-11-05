@@ -1316,6 +1316,7 @@ export type Database = {
           pinned_important: boolean
           post_text: string | null
           quo_first_reply_at: string | null
+          quo_last_call_at: string | null
           quo_outbound_calls: number
           quo_outbound_messages: number
           quo_reach_out_updated_at: string | null
@@ -1369,6 +1370,7 @@ export type Database = {
           pinned_important?: boolean
           post_text?: string | null
           quo_first_reply_at?: string | null
+          quo_last_call_at?: string | null
           quo_outbound_calls?: number
           quo_outbound_messages?: number
           quo_reach_out_updated_at?: string | null
@@ -1422,6 +1424,7 @@ export type Database = {
           pinned_important?: boolean
           post_text?: string | null
           quo_first_reply_at?: string | null
+          quo_last_call_at?: string | null
           quo_outbound_calls?: number
           quo_outbound_messages?: number
           quo_reach_out_updated_at?: string | null

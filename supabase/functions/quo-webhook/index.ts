@@ -81,6 +81,7 @@ export async function handleQuoWebhook(req: Request): Promise<Response> {
     console.info("Accepted and ignored Quo webhook delivery", {
       id: verified.webhookId,
       reason: event.reason,
+      ...(event.shape ? { shape: event.shape } : {}),
     });
     return text("Ignored", 200);
   }

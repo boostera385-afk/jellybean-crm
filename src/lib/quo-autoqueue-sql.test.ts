@@ -62,6 +62,7 @@ const CHAIN = [
   "quo_reachout_counts",
   "cs_pipeline_ai_status_automation",
   "need_review_excludes_manual",
+  "quo_calls_mark_lead_called",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -757,6 +758,25 @@ describe("Quo reach-out counting", () => {
     const frozen = await counts(lead(1));
     expect(frozen.quo_outbound_messages).toBe(2);
     expect(frozen.quo_outbound_calls).toBe(1);
+  });
+
+  it("marks a lead called when we call after the customer already replied", async () => {
+    // The customer texts first, then CS calls: the pre-reply tally stays at 0
+    // calls, but the lead must still leave "not called yet".
+    await acceptFull("wh_r2", "message.received", "+19105551234", "inbound", "message");
+    await acceptFull("wh_c4", "call.completed", "+19105551234", "outbound", "call");
+    const row = (
+      await db.query<{ quo_outbound_calls: number; quo_last_call_at: string | null }>(
+        `SELECT quo_outbound_calls, quo_last_call_at FROM public.qualified_leads
+          WHERE id = '${lead(1)}'`,
+      )
+    ).rows[0];
+    expect(row.quo_outbound_calls).toBe(0);
+    expect(row.quo_last_call_at).not.toBeNull();
+    const report = await call<Record<string, { called: number; not_called: number }>>(
+      "public.report_cs_reachout_counts(NULL, NULL)",
+    );
+    expect(report.new.called).toBeGreaterThanOrEqual(1);
   });
 
   it("does not count an undelivered message as a reach-out that reached the customer", async () => {

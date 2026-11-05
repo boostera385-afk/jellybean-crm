@@ -249,6 +249,7 @@ type Lead = {
   quo_outbound_messages: number;
   quo_outbound_calls: number;
   quo_first_reply_at: string | null;
+  quo_last_call_at: string | null;
 };
 
 // CS pipeline statuses surfaced in the UI (subset of the DB enum).
@@ -629,7 +630,8 @@ function Inner() {
 
     // "Not called yet" means no call at all — neither a manually logged call
     // nor a Quo call counted by the webhook.
-    if (notCalledOnly) q = q.is("called_at", null).eq("quo_outbound_calls", 0);
+    if (notCalledOnly)
+      q = q.is("called_at", null).is("quo_last_call_at", null).eq("quo_outbound_calls", 0);
 
     // Search text filter — pushed to DB across all pages
     if (dbSearch) {
@@ -670,7 +672,7 @@ function Inner() {
         supabase
           .from("qualified_leads")
           .select(
-            "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, ai_status_automation_started_at, cs_status_updated_by_ai, cs_status_ai_updated_at, cs_status_human_updated_at, ai_review_required, ai_review_reason, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at",
+            "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, ai_status_automation_started_at, cs_status_updated_by_ai, cs_status_ai_updated_at, cs_status_human_updated_at, ai_review_required, ai_review_reason, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at, quo_last_call_at",
           )
           .order("pinned_important", { ascending: false })
           .order("assigned_at", { ascending: false })
@@ -745,7 +747,7 @@ function Inner() {
       const { data, error } = await supabase
         .from("qualified_leads")
         .select(
-          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, ai_status_automation_started_at, cs_status_updated_by_ai, cs_status_ai_updated_at, cs_status_human_updated_at, ai_review_required, ai_review_reason, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at",
+          "id, customer_name, customer_number, customer_number_2, context, post_text, pass_it_to, main_area, sub_area, marketing_notes, requirement_1, requirement_2, number_name, original_lead_link, cs_status, ai_status_automation_started_at, cs_status_updated_by_ai, cs_status_ai_updated_at, cs_status_human_updated_at, ai_review_required, ai_review_reason, cs_notes, followup_at, assigned_at, assigned_to, assigned_by, created_by, is_important, pinned_important, service, reference, images, submitted_by_role, is_landline, out_of_base, contact_method, called_at, quo_outbound_messages, quo_outbound_calls, quo_first_reply_at, quo_last_call_at",
         )
         .eq("id", deepLinkLeadId)
         .maybeSingle();
@@ -3111,7 +3113,9 @@ function ReachOutBadge({ lead }: { lead: Lead }) {
   const parts: string[] = [];
   if (msgs > 0) parts.push(`${msgs} message${msgs === 1 ? "" : "s"}`);
   if (calls > 0) parts.push(`${calls} call${calls === 1 ? "" : "s"}`);
-  const notCalled = calls === 0;
+  // Called at all: a counted pre-reply Quo call, any completed Quo call (also
+  // after the customer replied), or a call logged manually on the card.
+  const notCalled = calls === 0 && !lead.quo_last_call_at && !lead.called_at;
   const title = `Reach-outs ${
     replied ? "before the customer's first reply" : "so far, until the customer replies"
   }, tracked from the Quo webhook (messages & calls).`;
