@@ -97,6 +97,7 @@ export async function handleQuoWebhook(req: Request): Promise<Response> {
     // event freezes the tally (the customer has responded).
     p_direction: event.direction,
     p_category: event.category,
+    ...(event.numbers ? { p_phones: event.numbers } : {}),
   });
   if (error) {
     // Idempotent on the signed webhook-id, so a redelivery after a partial
@@ -105,7 +106,18 @@ export async function handleQuoWebhook(req: Request): Promise<Response> {
     return text("Could not record event", 503);
   }
 
-  const result = (data ?? {}) as { duplicate?: boolean; matched?: number };
+  const result = (data ?? {}) as { duplicate?: boolean; matched?: number; leads?: number };
+  if (event.category === "call") {
+    // Enough to see whether a call reached a lead, without logging a number:
+    // only the last four digits of each number in the payload.
+    console.info("Recorded Quo call", {
+      id: verified.webhookId,
+      direction: event.direction,
+      numbers: (event.numbers ?? []).map((n) => `***${n.replace(/\D/g, "").slice(-4)}`),
+      leadsUpdated: result.leads ?? 0,
+      duplicate: Boolean(result.duplicate),
+    });
+  }
   // Never echo the phone number or any message content back to the caller.
   return text(result.duplicate ? "Duplicate" : `Queued ${result.matched ?? 0}`, 200);
 }

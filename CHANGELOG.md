@@ -15,6 +15,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- AI status (policy `quo-auto-v7`, same `gpt-4.1-mini` model) now reads what a
+  customer means instead of requiring explicit wording: "already got that
+  fixed", "we're all set", "my husband did it" are already_got_someone, a
+  question about price or timing is interest, and replies are read against the
+  question they answer. It returns review only when the meaning is genuinely
+  unclear. The confidence floor moves from 0.85 to 0.8 to match the prompt's
+  scale. Every automated lead is re-read once under v7.
+- The AI no longer overwrites a status a person chose: it may change a status
+  only when it is Delivered, was set by the AI, or was never set by a person.
+  This applies to classified runs and to the 6h no-reply flip.
+
 - Completed Quo calls now mark leads as called. Call deliveries were being
   dropped because their numbers were not where message events keep them, and a
   call placed after the customer's first reply was never recorded

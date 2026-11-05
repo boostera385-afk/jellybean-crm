@@ -274,7 +274,7 @@ describe("evidence-based shadow status", () => {
     });
   });
   it.each([
-    { status: "cx_interested", confidence: 0.84, evidenceIds: ["AC1"] },
+    { status: "cx_interested", confidence: 0.79, evidenceIds: ["AC1"] },
     { status: "cx_interested", confidence: 2, evidenceIds: ["AC1"] },
     { status: "cx_interested", confidence: 0.95, evidenceIds: ["invented"] },
     { status: "closed_won", confidence: 0.95, evidenceIds: ["AC1"] },
@@ -285,6 +285,47 @@ describe("evidence-based shadow status", () => {
     { status: "converted", confidence: 0.95, evidenceIds: ["AC1"] },
   ])("reviews invalid or unsupported intent %j", (value) => {
     expect(validateIntent(value, [message()], assigned).state).toBe("review");
+  });
+  it("accepts a likely verdict at the v7 confidence floor", () => {
+    // "already got that fixed" style answers come back around 0.8-0.9.
+    const answer = { status: "already_got_someone", confidence: 0.8, evidenceIds: ["AC1"] };
+    expect(validateIntent(answer, [message()], assigned)).toMatchObject({
+      state: "classified",
+      status: "already_got_someone",
+    });
+  });
+  it("tells the model to read meaning, not exact words", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  status: "already_got_someone",
+                  confidence: 0.92,
+                  evidenceIds: ["AC1"],
+                }),
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    await classifyQuoHistory({
+      messages: [outgoing(), message({ text: "already got that fixed, thanks" })],
+      assignedAt: assigned,
+      service: "Handyman",
+      apiKey: "test",
+      fetcher,
+      now,
+    });
+    const body = JSON.parse(fetcher.mock.calls[0][1].body);
+    const system = body.messages[0].content as string;
+    expect(body.model).toBe("gpt-4.1-mini-2025-04-14");
+    expect(system).toContain("Decide what the customer MEANS");
+    expect(system).toContain("already got it fixed");
+    expect(system).toContain("Do NOT return review just because the customer was indirect");
   });
   it("requires incoming evidence from the current assignment", () => {
     const answer = { status: "cx_not_interested", confidence: 0.98, evidenceIds: ["AC1"] };
