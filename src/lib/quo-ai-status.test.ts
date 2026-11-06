@@ -281,10 +281,16 @@ describe("evidence-based shadow status", () => {
     { status: "wrong_person", confidence: 0.99, evidenceIds: ["AC1"] },
     { status: "wrong_service", confidence: 0.99, evidenceIds: ["AC1"] },
     { status: "small_service", confidence: 0.99, evidenceIds: ["AC1"] },
-    { status: "need_follow_up", confidence: 0.99, evidenceIds: ["AC1"] },
     { status: "converted", confidence: 0.95, evidenceIds: ["AC1"] },
   ])("reviews invalid or unsupported intent %j", (value) => {
     expect(validateIntent(value, [message()], assigned).state).toBe("review");
+  });
+  it("accepts need follow up as an AI verdict", () => {
+    const answer = { status: "need_follow_up", confidence: 0.9, evidenceIds: ["AC1"] };
+    expect(validateIntent(answer, [message()], assigned)).toMatchObject({
+      state: "classified",
+      status: "need_follow_up",
+    });
   });
   it("accepts a likely verdict at the v7 confidence floor", () => {
     // "already got that fixed" style answers come back around 0.8-0.9.
@@ -326,9 +332,9 @@ describe("evidence-based shadow status", () => {
     expect(system).toContain("Decide what the customer MEANS");
     expect(system).toContain("already got it fixed");
     expect(system).toContain("Do NOT return review just because the customer was indirect");
-    // Any interest outranks another contractor being lined up.
-    expect(system).toContain("ANY INTEREST WINS");
-    expect(system).toContain("if it falls through I'll let you know");
+    // A customer holding us in reserve is a follow-up, not interest.
+    expect(system).toContain("LATEST POSITION WINS");
+    expect(system).toContain("if it falls through I'll let you know\" = need_follow_up");
   });
   it("requires incoming evidence from the current assignment", () => {
     const answer = { status: "cx_not_interested", confidence: 0.98, evidenceIds: ["AC1"] };
