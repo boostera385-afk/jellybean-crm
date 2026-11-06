@@ -127,6 +127,9 @@ const SUBMITTER: Item[] = [
   { to: "/app/forwarded-leads", label: "Forwarded Leads", icon: Headphones },
 ];
 
+// SEO submitters also answer website chats in Crisp.
+const SEO_ITEMS: Item[] = [...SUBMITTER, CRISP_ITEM];
+
 // FB admin: sees FB submitters' forwarded leads, can submit leads, runs the
 // forwarded-per-user report, and manages FB users under Users.
 const FB_ADMIN_ITEMS: Item[] = [
@@ -161,7 +164,8 @@ function itemsForRole(role: AppRole | null): Item[] {
   if (role === "cs_admin") return CS_ADMIN_ITEMS;
   if (role === "fb_admin") return FB_ADMIN_ITEMS;
   if (role === "acc_handler") return ACC_HANDLER;
-  if (role === "facebook" || role === "seo") return SUBMITTER;
+  if (role === "facebook") return SUBMITTER;
+  if (role === "seo") return SEO_ITEMS;
   return [];
 }
 
@@ -231,7 +235,10 @@ export function AppShell({ auth, children }: { auth: AuthState; children: React.
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { unreadCount: crispUnreadCount, hasUnread: hasCrispUnread } = useCrispUnread(
-    auth.primaryRole === "admin" || auth.primaryRole === "cs" || auth.primaryRole === "cs_admin",
+    auth.primaryRole === "admin" ||
+      auth.primaryRole === "cs" ||
+      auth.primaryRole === "cs_admin" ||
+      auth.primaryRole === "seo",
   );
   const { hasPending: hasPendingReminders } = usePendingReminders(
     auth.primaryRole === "admin" || auth.primaryRole === "cs" || auth.primaryRole === "cs_admin",

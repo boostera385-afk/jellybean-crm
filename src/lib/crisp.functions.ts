@@ -5,7 +5,7 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import { crispFetch } from "../../supabase/functions/_shared/crisp-api";
 import { validateCrispGreeting } from "./crisp-greeting-policy";
 
-const CRISP_ROLES = ["admin", "cs_admin", "cs"];
+const CRISP_ROLES = ["admin", "cs_admin", "cs", "seo"];
 const CRISP_VISITOR_TIME_ZONE = "Asia/Karachi";
 // Only the columns mapVisitor actually returns. `select("*")` also ships the id,
 // bookkeeping timestamps and greeting markers that the UI never reads.
@@ -1121,7 +1121,7 @@ export const getCrispConversationNotes = createServerFn({ method: "POST" })
       .eq("user_id", userId);
     if (roleErr) throw new Error("Could not verify user roles");
     const callerRoles = (roleRows ?? []).map((r) => String(r.role));
-    if (!callerRoles.some((r) => ["admin", "cs_admin", "cs"].includes(r))) {
+    if (!callerRoles.some((r) => CRISP_ROLES.includes(r))) {
       throw new Error("Forbidden: Crisp notes are restricted to admin, cs_admin and cs roles.");
     }
 
@@ -1220,7 +1220,7 @@ export const addCrispConversationNote = createServerFn({ method: "POST" })
       .eq("user_id", userId);
     if (roleErr) throw new Error("Could not verify user roles");
     const roles = (roleRows ?? []).map((r) => String(r.role));
-    if (!roles.some((r) => ["admin", "cs_admin", "cs"].includes(r))) {
+    if (!roles.some((r) => CRISP_ROLES.includes(r))) {
       throw new Error("Forbidden: Crisp notes are restricted to admin, cs_admin and cs roles.");
     }
 
@@ -1257,7 +1257,7 @@ export const deleteCrispConversationNote = createServerFn({ method: "POST" })
       .eq("user_id", userId);
     if (roleErr) throw new Error("Could not verify user roles");
     const callerRoles = (roleRows ?? []).map((r) => String(r.role));
-    if (!callerRoles.some((r) => ["admin", "cs_admin", "cs"].includes(r))) {
+    if (!callerRoles.some((r) => CRISP_ROLES.includes(r))) {
       throw new Error("Forbidden: Crisp notes are restricted to admin, cs_admin and cs roles.");
     }
 
