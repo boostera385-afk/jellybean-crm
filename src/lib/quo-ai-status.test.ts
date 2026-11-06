@@ -334,6 +334,10 @@ describe("evidence-based shadow status", () => {
     expect(system).toContain("Do NOT return review just because the customer was indirect");
     // A customer holding us in reserve is a follow-up, not interest.
     expect(system).toContain("LATEST POSITION WINS");
+    // Real-chat scenarios: trust questions, delivery errors and check scams.
+    expect(system).toContain("Scenarios seen in our real chats");
+    expect(system).toContain("Error 2112");
+    expect(system).toContain("mobile check deposit");
     expect(system).toContain("if it falls through I'll let you know\" = need_follow_up");
   });
   it("requires incoming evidence from the current assignment", () => {
