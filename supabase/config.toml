@@ -39,3 +39,8 @@ verify_jwt = true
 # trusts anything, and is idempotent on the signed webhook-id.
 [functions.quo-webhook]
 verify_jwt = false
+
+# One-off backfill of saved Quo conversations. Backend only: the handler also
+# requires the exact service-role key.
+[functions.quo-message-backfill]
+verify_jwt = true

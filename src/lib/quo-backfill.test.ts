@@ -116,3 +116,29 @@ describe("Quo conversation backfill", () => {
     });
   });
 });
+
+describe("Quo conversation backfill time limits", () => {
+  it("re-queues a lead whose history does not finish within its own budget", async () => {
+    let clock = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => {
+        clock += 1_000;
+        return new Response(JSON.stringify({ data: [], nextPageToken: null }));
+      }),
+    );
+    const db = fakeDb([{ ...lead, inboxIds: Array.from({ length: 40 }, (_, i) => `PN${i}`) }]);
+    const result = await backfillQuoMessages(db as never, "key", ["PN1"], {
+      wait: async () => {},
+      now: () => clock,
+      budgetMs: 100_000,
+      leadBudgetMs: 20_000,
+    });
+    expect(result.requeued).toBe(1);
+    expect(calls(db, "store_quo_messages")).toHaveLength(0);
+    expect(calls(db, "finish_quo_message_backfill")[0]).toMatchObject({
+      p_state: "pending",
+      p_reason: "backfill_time_budget",
+    });
+  });
+});

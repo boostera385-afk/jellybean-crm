@@ -7,7 +7,6 @@ import {
   safeAiError,
 } from "../_shared/quo-ai-status.ts";
 import { processQuoJob, type QuoWorkerDb } from "../_shared/quo-worker.ts";
-import { backfillQuoMessages } from "../_shared/quo-backfill.ts";
 import { inboxKeys } from "../_shared/quo-number-names.ts";
 import { ensureQuoCallWebhook } from "../_shared/quo-webhooks.ts";
 
@@ -79,7 +78,7 @@ export async function handleAiStatus(req: Request): Promise<Response> {
     actorId = auth.user.id;
   }
   if (
-    !["configuration", "refresh", "work", "enqueue", "ensure-call-webhook", "backfill"].includes(
+    !["configuration", "refresh", "work", "enqueue", "ensure-call-webhook"].includes(
       String(body.action),
     )
   )
@@ -89,18 +88,14 @@ export async function handleAiStatus(req: Request): Promise<Response> {
   // asking for the same thing has "refresh", which records who asked.
   if (body.action === "enqueue" && !isWorker)
     return json({ error: "Backend credentials required" }, 403);
-  if ((body.action === "ensure-call-webhook" || body.action === "backfill") && !isWorker)
+  if (body.action === "ensure-call-webhook" && !isWorker)
     return json({ error: "Backend credentials required" }, 403);
-  const needsModel = body.action !== "ensure-call-webhook" && body.action !== "backfill";
-  if (!quoKey || (!modelKey && needsModel))
+  if (!quoKey || (!modelKey && body.action !== "ensure-call-webhook"))
     return json(
       {
         message:
           "Set QUO_API_KEY and OPENAI_API_KEY in this project's Edge Function secrets. Quo inbox IDs are discovered automatically.",
-        missingSecrets: [
-          !quoKey && "QUO_API_KEY",
-          needsModel && !modelKey && "OPENAI_API_KEY",
-        ].filter(Boolean),
+        missingSecrets: [!quoKey && "QUO_API_KEY", !modelKey && "OPENAI_API_KEY"].filter(Boolean),
         configured: false,
       },
       body.action === "configuration" ? 200 : 503,
@@ -193,16 +188,6 @@ export async function handleAiStatus(req: Request): Promise<Response> {
   if (Object.keys(keys).length) {
     const { error: syncError } = await db.rpc("sync_quo_inbox_keys", { p_keys: keys });
     if (syncError) console.warn("Could not record Quo inbox names", { message: syncError.message });
-  }
-  if (body.action === "backfill") {
-    // One-off: save the conversations of leads seeded into the backfill queue
-    // (seed_quo_message_backfill). Reads and saves only; no status changes.
-    try {
-      const result = await backfillQuoMessages(db as unknown as QuoWorkerDb, quoKey, inboxes.ids);
-      return json({ mode: "backfill", ...result });
-    } catch {
-      return json({ error: "Backfill unavailable; retry shortly." }, 503);
-    }
   }
   if (body.action === "configuration")
     return json({

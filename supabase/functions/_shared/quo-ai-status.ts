@@ -68,11 +68,11 @@ export function isQuoConfigurationProbe(
 }
 
 /**
- * Backend-only actions: draining/filling the queue, maintaining the signed
- * Quo webhook subscription and draining the one-off conversation backfill. "refresh" is deliberately absent -- that one
+ * Backend-only actions: draining/filling the queue and maintaining the signed
+ * Quo webhook subscription. "refresh" is deliberately absent -- that one
  * carries a person's chosen date range and must stay attributable to them.
  */
-const WORKER_ACTIONS = new Set(["work", "enqueue", "ensure-call-webhook", "backfill"]);
+const WORKER_ACTIONS = new Set(["work", "enqueue", "ensure-call-webhook"]);
 export function isQuoWorker(token: string, serviceKey: string, action: unknown): boolean {
   return WORKER_ACTIONS.has(String(action)) && Boolean(serviceKey) && token === serviceKey;
 }

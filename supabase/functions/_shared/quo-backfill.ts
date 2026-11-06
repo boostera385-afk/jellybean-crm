@@ -1,6 +1,14 @@
 import { safeAiError } from "./quo-ai-status.ts";
 import { advanceQuoCheckpoint, createQuoCheckpoint } from "./quo-sync.ts";
-import type { QuoWorkerDb } from "./quo-worker.ts";
+
+/** The one database call the backfill makes, kept local so this module and
+ *  its function bundle do not pull in the AI status worker. */
+export type BackfillDb = {
+  rpc: (
+    name: string,
+    args?: Record<string, unknown>,
+  ) => PromiseLike<{ data: unknown; error: unknown }>;
+};
 
 type BackfillLead = {
   leadId: string;
@@ -30,13 +38,22 @@ const FINAL_ERRORS = new Set([
  * returned to the queue, so a partial conversation is never saved.
  */
 export async function backfillQuoMessages(
-  db: QuoWorkerDb,
+  db: BackfillDb,
   quoKey: string,
   inboxIds: string[],
-  options: { budgetMs?: number; wait?: () => Promise<void>; now?: () => number } = {},
+  options: {
+    budgetMs?: number;
+    leadBudgetMs?: number;
+    wait?: () => Promise<void>;
+    now?: () => number;
+  } = {},
 ) {
   const now = options.now ?? Date.now;
+  // New leads are claimed for budgetMs; a claimed lead then gets its own
+  // leadBudgetMs, so one claimed late is not cut short and charged an attempt.
+  // The call ends within budgetMs + leadBudgetMs, inside the 150s function limit.
   const deadline = now() + (options.budgetMs ?? 40_000);
+  const leadBudgetMs = options.leadBudgetMs ?? 60_000;
   const wait = options.wait ?? (() => new Promise<void>((resolve) => setTimeout(resolve, 200)));
   const counts = { done: 0, skipped: 0, error: 0, requeued: 0, messages: 0 };
   while (now() < deadline) {
@@ -71,13 +88,14 @@ export async function backfillQuoMessages(
           if (unique !== true) throw new Error("phone_shared_between_leads");
         }
       }
+      const leadDeadline = now() + leadBudgetMs;
       let complete = false;
       while (!complete) {
-        if (now() >= deadline) throw new Error("backfill_time_budget");
+        if (now() >= leadDeadline) throw new Error("backfill_time_budget");
         const advanced = await advanceQuoCheckpoint(checkpoint, {
           apiKey: quoKey,
           inboxIds: lead.inboxIds,
-          signal: AbortSignal.timeout(Math.max(1_000, deadline - now() + 15_000)),
+          signal: AbortSignal.timeout(Math.max(1_000, leadDeadline - now())),
           reserveRequest: wait,
         });
         checkpoint = advanced.checkpoint;
@@ -112,7 +130,6 @@ export async function backfillQuoMessages(
         // (recorded as an error by the database after three attempts).
         await finish("pending", null, reason);
         counts.requeued++;
-        if (reason === "backfill_time_budget") break;
       }
     }
   }
