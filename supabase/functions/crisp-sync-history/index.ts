@@ -110,7 +110,7 @@ serve(async (req) => {
       .eq("user_id", user.id);
     if (
       roleError ||
-      !roles?.some((row: { role: string }) => ["admin", "cs_admin", "cs"].includes(row.role))
+      !roles?.some((row: { role: string }) => ["admin", "cs_admin", "cs", "seo"].includes(row.role))
     ) {
       return new Response("Forbidden", { status: 403 });
     }

@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const ALLOWED_ROLES = ["admin", "cs_admin", "cs"];
+const ALLOWED_ROLES = ["admin", "cs_admin", "cs", "seo"];
 
 serve(async (req) => {
   const started = performance.now();
@@ -65,7 +65,7 @@ serve(async (req) => {
     if (!roles.some((r) => ALLOWED_ROLES.includes(r))) {
       return new Response(
         JSON.stringify({
-          error: "Forbidden: Crisp Chat is restricted to admin, cs_admin, and cs roles.",
+          error: "Forbidden: Crisp Chat is restricted to admin, cs_admin, cs and seo roles.",
         }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );

@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const ALLOWED_ROLES = new Set(["admin", "cs_admin", "cs"]);
+const ALLOWED_ROLES = new Set(["admin", "cs_admin", "cs", "seo"]);
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {

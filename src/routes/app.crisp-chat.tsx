@@ -535,7 +535,7 @@ function CrispChatPage() {
         </div>
       </header>
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-3 md:p-4">
-        <RoleGate allow={["admin", "cs_admin", "cs"]} current={auth.primaryRole}>
+        <RoleGate allow={["admin", "cs_admin", "cs", "seo"]} current={auth.primaryRole}>
           <CrispInboxInner />
         </RoleGate>
       </div>
@@ -554,9 +554,11 @@ function CrispInboxInner() {
     auth.primaryRole === "admin" ||
     auth.primaryRole === "cs_admin" ||
     auth.primaryRole === "cs" ||
+    auth.primaryRole === "seo" ||
     auth.roles.includes("admin") ||
     auth.roles.includes("cs_admin") ||
-    auth.roles.includes("cs");
+    auth.roles.includes("cs") ||
+    auth.roles.includes("seo");
   const visitorOverview = useCrispVisitors(canUseCrisp);
 
   const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
