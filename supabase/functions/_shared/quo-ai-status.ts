@@ -1,5 +1,5 @@
 /** Read-only Quo history analysis. Never sends messages. */
-export const AI_STATUS_VERSION = "quo-auto-v7";
+export const AI_STATUS_VERSION = "quo-auto-v8";
 /** A delivered message with nothing back for this long is "didn't reply". */
 export const NO_REPLY_MS = 6 * 60 * 60 * 1000;
 export const AI_STATUS_MODEL = "gpt-4.1-mini-2025-04-14";
@@ -460,7 +460,7 @@ How to read the chat:
 - Never infer an outcome from an outgoing template or from silence.
 
 Statuses. The phrases are examples of meaning, not a list to match:
-already_got_someone: the need is already handled, by another provider, a friend, family, landlord or themselves. "already got it fixed", "all taken care of", "we're all set", "it's done", "got someone", "found a guy", "my husband fixed it", "did it myself", "landlord is handling it", "already booked", "someone is coming tomorrow", "we're good now thanks".
+already_got_someone: the need is already handled, by another provider, a friend, family, landlord or themselves, AND the customer shows no remaining interest in us. "already got it fixed", "all taken care of", "we're all set", "it's done", "got someone", "found a guy", "my husband fixed it", "did it myself", "landlord is handling it", "already booked", "someone is coming tomorrow", "we're good now thanks".
 cx_not_interested: does not want the service, without saying it is already handled. "no thanks", "not interested", "we'll pass", "don't need it anymore", "changed my mind", "too expensive", "not right now", "STOP", "unsubscribe", "remove me", "don't text me".
 cx_interested: wants help or engages to move forward. "yes", "yes please", "sure", "please do", "how much?", "when can they come?", "send someone", shares an address, job details, photos or availability, asks about price, timing or the provider.
 wrong_number: this number is not the person who asked. "wrong number", "you have the wrong person", "I don't know what you're talking about", "this isn't [name]", or "who is this?" followed by not knowing about any request.
@@ -470,8 +470,10 @@ service_provider_himself: the customer is a provider or contractor offering work
 out_of_base: the customer confirms the job is outside an area we said we cover. A location alone, without coverage facts, is not proof.
 converted: only a plain acknowledgement with no outcome ("ok", "thanks", "got it", a thumbs-up) and an outgoing message has status delivered. This means Delivered, NEVER a sale.
 
+ANY INTEREST WINS: if the customer shows even a little interest in us, choose cx_interested, even when they also mention another contractor or someone else who may do the job. Interest includes answering our questions about the job, giving details of the work, asking about price or timing, or leaving the door open ("if it falls through I'll let you know", "send me a quote anyway", "maybe as a backup", "I'll keep your number"). Example: the customer answers "Yes, that's correct" and "No just walls" to our questions, then says "I already have one contractor supposed to be coming today but if it falls through I'll let you know" = cx_interested.
+
 Distinctions:
-- Already handled by anyone, including themselves = already_got_someone. Simply not wanting it = cx_not_interested.
+- Already handled by anyone, including themselves, with no interest left in us = already_got_someone. Simply not wanting it = cx_not_interested. Handled but still engaging or leaving the door open = cx_interested.
 - "Who is this?" then interest once explained = cx_interested. "Who is this?" with nothing after = review.
 - Any question about price, timing, availability or details = cx_interested.
 - Follow-up is manual-only: "call me later", "I'll get back to you", "maybe next week", "let me ask my wife" with no other outcome = review. Never read interest into it.
