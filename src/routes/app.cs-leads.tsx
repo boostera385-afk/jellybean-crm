@@ -721,7 +721,7 @@ function Inner() {
     enabled: isAdmin,
     queryFn: async (): Promise<Map<string, AiSuggestion>> => {
       const ids = [...(list.data ?? []), ...(opened ? [opened] : [])]
-        .filter((l) => l.cs_status !== "need_follow_up")
+        .filter((l) => l.cs_status !== "need_follow_up" || l.cs_status_updated_by_ai)
         .map((l) => l.id);
       if (ids.length === 0) return new Map();
       const { data, error } = await supabase
@@ -2093,7 +2093,9 @@ function CsLeadsTable({
             const assignee = lead.assigned_to ? teamById.get(lead.assigned_to) : null;
             const ai = aiSuggestions?.get(lead.id);
             const visibleAi =
-              ai && !isUntouched(ai) && canShowAiSuggestion(lead.cs_status, ai.ai_status)
+              ai &&
+              !isUntouched(ai) &&
+              canShowAiSuggestion(lead.cs_status, ai.ai_status, lead.cs_status_updated_by_ai)
                 ? ai
                 : null;
             return (
@@ -2638,7 +2640,11 @@ function LeadCard({
                   original view: the manual status plus the AI comparison chip. */}
               {ai &&
                 !lead.ai_status_automation_started_at &&
-                canShowAiSuggestion(status, ai.ai_status) && <AiTagChip ai={ai} />}
+                canShowAiSuggestion(
+                  status,
+                  ai.ai_status,
+                  status === lead.cs_status && lead.cs_status_updated_by_ai,
+                ) && <AiTagChip ai={ai} />}
               <StatusBadge
                 status={status}
                 updatedByAi={statusUpdatedByAi}
@@ -3985,13 +3991,18 @@ function LeadDrawer({
                     )}
                   <StatusHistoryButton leadId={lead.id} customerName={lead.customer_name} />
                 </div>
-                {ai && canShowAiSuggestion(status, ai.ai_status) && (
-                  <AiSuggestionPanel
-                    ai={ai}
-                    active={status}
-                    automationStarted={Boolean(lead.ai_status_automation_started_at)}
-                  />
-                )}
+                {ai &&
+                  canShowAiSuggestion(
+                    status,
+                    ai.ai_status,
+                    status === lead.cs_status && lead.cs_status_updated_by_ai,
+                  ) && (
+                    <AiSuggestionPanel
+                      ai={ai}
+                      active={status}
+                      automationStarted={Boolean(lead.ai_status_automation_started_at)}
+                    />
+                  )}
                 <div className="mt-3">
                   <ContactMethodToggle
                     value={contactMethod}

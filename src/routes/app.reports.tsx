@@ -767,7 +767,7 @@ function Inner() {
               total={csTotal}
               color={CS_STATUS_COLORS[k]}
               aiValue={
-                !canSeeAiReporting || k === "need_follow_up"
+                !canSeeAiReporting
                   ? undefined
                   : ai.data && !ai.isError
                     ? (ai.data.counts[k] ?? 0)

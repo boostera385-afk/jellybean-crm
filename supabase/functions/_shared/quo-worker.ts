@@ -1,4 +1,11 @@
-import { classifyQuoHistory, emptyResult, safeAiError, type AiResult } from "./quo-ai-status.ts";
+import {
+  classifyQuoHistory,
+  emptyResult,
+  fetchQuoCalls,
+  safeAiError,
+  type AiResult,
+  type QuoMessage,
+} from "./quo-ai-status.ts";
 import {
   advanceQuoCheckpoint,
   createQuoCheckpoint,
@@ -153,8 +160,42 @@ export async function processQuoJob(
             policyVersion: previous.policy_version,
           } as AiResult)
         : null;
+      // Phone calls too: many outcomes are only said on a call. Best effort --
+      // without them the lead is judged from its texts, as before.
+      let calls: QuoMessage[] = [];
+      // Off unless the QUO_AI_CALLS secret is "on": measured on 300 labeled
+      // chats, transcripts fixed call-only outcomes but tipped as many
+      // interested customers into need_follow_up, for no net gain yet.
+      const callsOn =
+        (globalThis as { Deno?: { env: { get(k: string): string | undefined } } }).Deno?.env.get(
+          "QUO_AI_CALLS",
+        ) === "on";
+      if (callsOn && job.inboxIds.length <= 3) {
+        try {
+          for (const phone of checkpoint.phones)
+            for (const inbox of job.inboxIds)
+              calls.push(
+                ...(await fetchQuoCalls({
+                  apiKey: quoKey,
+                  phoneNumberId: inbox,
+                  participant: phone,
+                  snapshot: checkpoint.snapshot,
+                  signal: deadline,
+                  reserveRequest:
+                    options.wait ??
+                    (async () => {
+                      await new Promise((resolve) => setTimeout(resolve, 200));
+                    }),
+                })),
+              );
+        } catch {
+          calls = [];
+        }
+      }
       result = await classifyQuoHistory({
-        messages: checkpoint.messages,
+        messages: [...checkpoint.messages, ...calls].sort(
+          (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+        ),
         assignedAt: job.assignedAt,
         createdAt: job.createdAt,
         // Strict: a job from before the claim reported it does not qualify.

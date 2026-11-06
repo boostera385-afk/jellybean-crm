@@ -58,13 +58,19 @@ export const STATUS_TONE: Record<string, string> = {
   closed_lost: "bg-[#f8e4e5] text-[#C1292E] border-[#e7b1b3] shadow-sm",
 };
 
-/** Follow-up is manual-only; suppress old suggestions during rolling deploys too. */
-export function canShowAiSuggestion(manualStatus: string, suggestedStatus: string | null): boolean {
+/**
+ * A Need Follow Up a person chose is locked from the AI, so no suggestion is
+ * shown for it. One the AI set itself is still re-read and shows its verdict.
+ * Legacy aliases are never shown as suggestions.
+ */
+export function canShowAiSuggestion(
+  manualStatus: string,
+  suggestedStatus: string | null,
+  manualSetByAi = false,
+): boolean {
   return (
-    manualStatus !== "need_follow_up" &&
-    !["need_follow_up", "wrong_person", "wrong_service", "small_service"].includes(
-      suggestedStatus ?? "",
-    )
+    !(manualStatus === "need_follow_up" && !manualSetByAi) &&
+    !["wrong_person", "wrong_service", "small_service"].includes(suggestedStatus ?? "")
   );
 }
 

@@ -4,10 +4,12 @@ import { describe, expect, it } from "vitest";
 import { canShowAiSuggestion, STATUS_LABEL } from "./lead-statuses";
 
 describe("consolidated lead statuses", () => {
-  it("keeps follow-up manual-only, including legacy suggestions", () => {
+  it("locks a person's follow-up, shows the AI's own, and hides legacy suggestions", () => {
     expect(canShowAiSuggestion("need_follow_up", "converted")).toBe(false);
     expect(canShowAiSuggestion("need_follow_up", null)).toBe(false);
-    for (const status of ["need_follow_up", "wrong_person", "wrong_service", "small_service"])
+    expect(canShowAiSuggestion("need_follow_up", "already_got_someone", true)).toBe(true);
+    expect(canShowAiSuggestion("new", "need_follow_up")).toBe(true);
+    for (const status of ["wrong_person", "wrong_service", "small_service"])
       expect(canShowAiSuggestion("new", status)).toBe(false);
     expect(canShowAiSuggestion("new", "wrong_number")).toBe(true);
     expect(canShowAiSuggestion("new", null)).toBe(true);

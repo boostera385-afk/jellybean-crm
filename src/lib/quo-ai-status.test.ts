@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  fetchQuoCalls,
   classifyQuoHistory,
   fetchQuoHistory,
   isQuoConfigurationProbe,
@@ -230,18 +231,18 @@ describe("evidence-based shadow status", () => {
     });
     expect(NO_REPLY_MS).toBe(6 * 3600_000);
   });
-  it("marks a lead we were already talking to before it was created", () => {
+  it("marks 'already received before' only when the customer wrote first", () => {
     const created = "2026-10-20T09:00:00Z";
-    const before = outgoing({ id: "ACold", createdAt: "2026-09-01T10:00:00Z" });
-    expect(transportResult([before, outgoing()], assigned, now, created)).toMatchObject({
+    const theyWrote = message({ id: "ACthem", createdAt: "2026-08-01T10:00:00Z" });
+    expect(transportResult([theyWrote, outgoing()], assigned, now, created)).toMatchObject({
       state: "classified",
       status: "already_received_before",
-      reasonCode: "contacted_before_lead",
-      evidenceIds: ["ACold"],
+      reasonCode: "customer_wrote_first",
+      evidenceIds: ["ACthem"],
     });
-    // A customer who wrote to us first counts the same.
-    const theyWrote = message({ id: "ACthem", createdAt: "2026-08-01T10:00:00Z" });
-    expect(transportResult([theyWrote], assigned, now, created)?.status).toBe(
+    // Our own earlier outreach, even about another job, is not a repeat.
+    const before = outgoing({ id: "ACold", createdAt: "2026-09-01T10:00:00Z" });
+    expect(transportResult([before, outgoing()], assigned, now, created)?.status).not.toBe(
       "already_received_before",
     );
   });
@@ -281,10 +282,27 @@ describe("evidence-based shadow status", () => {
     { status: "wrong_person", confidence: 0.99, evidenceIds: ["AC1"] },
     { status: "wrong_service", confidence: 0.99, evidenceIds: ["AC1"] },
     { status: "small_service", confidence: 0.99, evidenceIds: ["AC1"] },
-    { status: "need_follow_up", confidence: 0.99, evidenceIds: ["AC1"] },
     { status: "converted", confidence: 0.95, evidenceIds: ["AC1"] },
   ])("reviews invalid or unsupported intent %j", (value) => {
     expect(validateIntent(value, [message()], assigned).state).toBe("review");
+  });
+  it("keeps a verdict whose evidence lists extra or unknown IDs, citing only real ones", () => {
+    const answer = {
+      status: "cx_interested",
+      confidence: 0.95,
+      evidenceIds: ["invented", ...Array(9).fill("AC1")],
+    };
+    expect(validateIntent(answer, [message()], assigned)).toMatchObject({
+      state: "classified",
+      evidenceIds: ["AC1"],
+    });
+  });
+  it("accepts need follow up as an AI verdict", () => {
+    const answer = { status: "need_follow_up", confidence: 0.9, evidenceIds: ["AC1"] };
+    expect(validateIntent(answer, [message()], assigned)).toMatchObject({
+      state: "classified",
+      status: "need_follow_up",
+    });
   });
   it("accepts a likely verdict at the v7 confidence floor", () => {
     // "already got that fixed" style answers come back around 0.8-0.9.
@@ -326,9 +344,13 @@ describe("evidence-based shadow status", () => {
     expect(system).toContain("Decide what the customer MEANS");
     expect(system).toContain("already got it fixed");
     expect(system).toContain("Do NOT return review just because the customer was indirect");
-    // Any interest outranks another contractor being lined up.
-    expect(system).toContain("ANY INTEREST WINS");
-    expect(system).toContain("if it falls through I'll let you know");
+    // A customer holding us in reserve is a follow-up, not interest.
+    expect(system).toContain("LATEST POSITION WINS");
+    // Real-chat scenarios: trust questions, delivery errors and check scams.
+    expect(system).toContain("Scenarios seen in our real chats");
+    expect(system).toContain("Error 2112");
+    expect(system).toContain("mobile check deposit");
+    expect(system).toContain("if it falls through I'll let you know\" = need_follow_up");
   });
   it("requires incoming evidence from the current assignment", () => {
     const answer = { status: "cx_not_interested", confidence: 0.98, evidenceIds: ["AC1"] };
@@ -390,5 +412,84 @@ describe("evidence-based shadow status", () => {
       "history_too_large",
     );
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe("phone calls", () => {
+  const now = Date.parse("2026-10-20T20:00:00Z");
+  const call = (change: Partial<QuoMessage> = {}): QuoMessage =>
+    outgoing({
+      id: "ACcall",
+      text: "Agent: Hi. Customer: We already found someone, thanks.",
+      call: { answered: true },
+      ...change,
+    });
+  it("counts a call the customer spoke on as their reply", () => {
+    // Without the call this would be "didn't reply"; the model must read it.
+    expect(transportResult([outgoing(), call()], assigned, now)).toBeNull();
+  });
+  it("does not count a voicemail or missed call as a reply", () => {
+    const voicemail = call({ text: "", call: { answered: false } });
+    expect(transportResult([outgoing(), voicemail], assigned, now)?.status).toBe(
+      "cx_didnt_replied",
+    );
+  });
+  it("marks 'already received before' when the customer called us first", () => {
+    const theyCalled = call({
+      direction: "incoming",
+      createdAt: "2026-09-01T10:00:00Z",
+      call: { answered: false },
+      text: "",
+    });
+    expect(transportResult([theyCalled, outgoing()], assigned, now)?.status).toBe(
+      "already_received_before",
+    );
+  });
+  it("reads transcripts from Quo, our lines as Agent and theirs as Customer", async () => {
+    const fetcher = vi.fn(async (url: URL | string) => {
+      const u = String(url);
+      if (u.includes("/v1/calls"))
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "AC1",
+                direction: "outgoing",
+                status: "completed",
+                answeredAt: "2026-10-20T11:00:05Z",
+                duration: 60,
+                createdAt: "2026-10-20T11:00:00Z",
+                phoneNumberId: "PN1",
+                participants: ["+19105551234", "+15550000000"],
+              },
+            ],
+            nextPageToken: null,
+          }),
+        );
+      return new Response(
+        JSON.stringify({
+          data: {
+            dialogue: [
+              { content: "Hello?", userId: "US1" },
+              { content: "Someone is coming tomorrow, thanks", userId: null },
+            ],
+          },
+        }),
+      );
+    });
+    const calls = await fetchQuoCalls({
+      apiKey: "k",
+      phoneNumberId: "PN1",
+      participant: "+19105551234",
+      snapshot: "2026-10-21T00:00:00Z",
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+    expect(calls).toMatchObject([
+      {
+        id: "AC1",
+        call: { answered: true },
+        text: "Agent: Hello? Customer: Someone is coming tomorrow, thanks",
+      },
+    ]);
   });
 });

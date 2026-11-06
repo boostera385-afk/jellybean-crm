@@ -71,6 +71,7 @@ const CHAIN = [
   "quo_call_match_any_number",
   "ai_status_respects_human_choice",
   "store_quo_messages",
+  "ai_may_set_need_follow_up",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -276,6 +277,41 @@ describe("guarded CS pipeline automation", () => {
       )
     ).rows[0];
     expect(row.cs_status).toBe("already_got_someone");
+  });
+
+  it("lets the AI set Need Follow Up and keeps re-reading that lead", async () => {
+    expect(await finish(lead(1), classified("need_follow_up"))).toBe(true);
+    const row = (
+      await db.query<{ cs_status: string; cs_status_updated_by_ai: boolean }>(
+        `SELECT cs_status::text,cs_status_updated_by_ai
+         FROM public.qualified_leads WHERE id='${lead(1)}'`,
+      )
+    ).rows[0];
+    expect(row).toEqual({ cs_status: "need_follow_up", cs_status_updated_by_ai: true });
+    // The customer later decides: the AI may still move its own follow-up on.
+    await db.exec(`SET ROLE postgres;
+      UPDATE public.lead_ai_status_runs SET started_at=now() - interval '1 hour';
+      SET ROLE service_role;`);
+    expect(await finish(lead(1), classified("already_got_someone"))).toBe(true);
+    expect(
+      (
+        await db.query<{ cs_status: string }>(
+          `SELECT cs_status::text FROM public.qualified_leads WHERE id='${lead(1)}'`,
+        )
+      ).rows[0].cs_status,
+    ).toBe("already_got_someone");
+  });
+
+  it("keeps a person's own Need Follow Up locked from the AI", async () => {
+    await db.exec(`SET ROLE postgres;
+      UPDATE public.qualified_leads SET cs_status='need_follow_up', cs_status_updated_by_ai=false,
+        cs_status_human_updated_at=now() - interval '1 hour' WHERE id='${lead(1)}';
+      SET ROLE service_role;`);
+    expect(
+      await call<number>(
+        `public.enqueue_quo_ai_batch(NULL,'${INBOX}'::text[],NULL,NULL,'${lead(1)}'::uuid)`,
+      ),
+    ).toBe(0);
   });
 
   it("updates an enabled lead and records that AI made the decision", async () => {
