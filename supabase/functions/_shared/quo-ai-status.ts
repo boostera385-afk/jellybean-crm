@@ -25,6 +25,9 @@ export type QuoMessage = {
   from: string;
   to: string[];
   media?: unknown[];
+  /** Set on a phone call, not a text. answered: the customer spoke on it, and
+   *  text holds the transcript ("Agent" is us, "Customer" is them). */
+  call?: { answered: boolean };
 };
 export type AiResult = {
   state: "classified" | "review" | "unmatched" | "error";
@@ -201,6 +204,105 @@ export async function fetchQuoHistoryPage(options: {
   return { messages: body.data, nextPageToken: body.nextPageToken || null };
 }
 
+const isCall = (m: QuoMessage) => Boolean(m.call);
+/** Something the customer said: a text from them, or a call they spoke on. */
+const fromCustomer = (m: QuoMessage) => (m.call ? m.call.answered : m.direction === "incoming");
+
+/**
+ * The lead's phone calls on one inbox, each as a QuoMessage with `call` set.
+ * Answered calls carry their transcript, written as "Agent:" / "Customer:"
+ * lines. Read-only and best effort: callers fall back to texts alone.
+ */
+export async function fetchQuoCalls(options: {
+  apiKey: string;
+  phoneNumberId: string;
+  participant: string;
+  snapshot: string;
+  fetcher?: Fetcher;
+  signal?: AbortSignal;
+  reserveRequest?: () => Promise<void>;
+  maxTranscripts?: number;
+}): Promise<QuoMessage[]> {
+  const get = async (url: URL | string) => {
+    await options.reserveRequest?.();
+    const response = await (options.fetcher ?? fetch)(url, {
+      headers: { Authorization: options.apiKey },
+      signal: options.signal,
+    });
+    if (response.status === 404) return null;
+    if (!response.ok)
+      throw new Error(response.status === 429 ? "quo_rate_limited" : "quo_api_error");
+    const raw = await response.text();
+    if (raw.length > 2_000_000) throw new Error("history_too_large");
+    return JSON.parse(raw);
+  };
+  const calls: Array<Record<string, unknown>> = [];
+  let pageToken: string | null = null;
+  for (let page = 0; page < 3; page++) {
+    const url = new URL("https://api.quo.com/v1/calls");
+    url.searchParams.set("phoneNumberId", options.phoneNumberId);
+    url.searchParams.append("participants", options.participant);
+    url.searchParams.set("maxResults", "100");
+    url.searchParams.set("createdBefore", options.snapshot);
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const body = await get(url);
+    if (!body || !Array.isArray(body.data)) throw new Error("invalid_quo_response");
+    calls.push(...body.data);
+    pageToken =
+      typeof body.nextPageToken === "string" && body.nextPageToken ? body.nextPageToken : null;
+    if (!pageToken) break;
+  }
+  const valid = calls.filter(
+    (c) =>
+      typeof c?.id === "string" &&
+      ["incoming", "outgoing"].includes(c.direction as string) &&
+      Number.isFinite(Date.parse(c.createdAt as string)) &&
+      c.phoneNumberId === options.phoneNumberId &&
+      Array.isArray(c.participants) &&
+      (c.participants as unknown[]).some(
+        (p) => normalizeQuoPhone(p as string) === options.participant,
+      ) &&
+      (c.participants as unknown[]).length <= 2,
+  );
+  valid.sort((a, b) => (a.createdAt as string).localeCompare(b.createdAt as string));
+  // Transcripts for the most recent answered calls only, to bound requests.
+  const answered = valid.filter(
+    (c) => c.answeredAt && c.status === "completed" && Number(c.duration) >= 10,
+  );
+  const wanted = new Set(answered.slice(-(options.maxTranscripts ?? 6)).map((c) => c.id));
+  const out: QuoMessage[] = [];
+  for (const c of valid) {
+    let text = "";
+    let spoke = false;
+    if (wanted.has(c.id)) {
+      const body = await get(`https://api.quo.com/v1/call-transcripts/${c.id}`);
+      const dialogue = Array.isArray(body?.data?.dialogue) ? body.data.dialogue : [];
+      const lines: string[] = [];
+      for (const d of dialogue) {
+        if (typeof d?.content !== "string" || !d.content.trim()) continue;
+        const customer = !d.userId;
+        if (customer && d.content.trim().split(/\s+/).length >= 2) spoke = true;
+        lines.push(`${customer ? "Customer" : "Agent"}: ${d.content.trim()}`);
+      }
+      text = lines.join(" ").slice(0, 6000);
+    }
+    out.push({
+      id: c.id as string,
+      text,
+      direction: c.direction as "incoming" | "outgoing",
+      status: "delivered",
+      createdAt: c.createdAt as string,
+      updatedAt: (c.updatedAt as string) ?? (c.createdAt as string),
+      conversationId: "",
+      phoneNumberId: options.phoneNumberId,
+      from: "",
+      to: [],
+      call: { answered: spoke && Boolean(text) },
+    });
+  }
+  return out;
+}
+
 export async function fetchQuoHistory(options: {
   apiKey: string;
   phoneNumberId: string;
@@ -280,8 +382,11 @@ export function transportResult(
   // Nothing sent to this lead yet: no AI status, so "New" is left alone.
   if (!current.length)
     return emptyResult("unmatched", messages.length ? "no_contact_yet" : "no_matching_quo_history");
-  if (current.some((m) => m.direction === "incoming")) return null;
-  const last = current[current.length - 1];
+  if (current.some(fromCustomer)) return null;
+  const texts = current.filter((m) => !isCall(m));
+  // Only calls so far (e.g. voicemails): nothing delivered to judge yet.
+  if (!texts.length) return emptyResult("unmatched", "no_contact_yet");
+  const last = texts[texts.length - 1];
   const result = {
     ...emptyResult("classified", "delivery_confirmed"),
     confidence: 1,
@@ -326,9 +431,7 @@ export function validateIntent(
     messages
       .filter(
         (m) =>
-          m.direction === "incoming" &&
-          m.text.trim() &&
-          Date.parse(m.createdAt) >= Date.parse(assignedAt),
+          fromCustomer(m) && m.text.trim() && Date.parse(m.createdAt) >= Date.parse(assignedAt),
       )
       .map((m) => m.id),
   );
@@ -346,6 +449,7 @@ export function validateIntent(
     !messages.some(
       (m) =>
         m.direction === "outgoing" &&
+        !isCall(m) &&
         m.status === "delivered" &&
         Date.parse(m.createdAt) >= Date.parse(assignedAt),
     )
@@ -380,14 +484,13 @@ export async function classifyQuoHistory(options: {
   const input = JSON.stringify({
     assignedAt,
     service: options.service,
-    messages: messages.map(({ id, text, direction, status, createdAt, media }) => ({
-      id,
-      text,
-      direction,
-      status,
-      createdAt,
-      hasMedia: Boolean(media?.length),
-    })),
+    messages: messages
+      .filter((m) => !isCall(m) || m.call?.answered)
+      .map(({ id, text, direction, status, createdAt, media, call }) =>
+        call
+          ? { id, type: "call", text, direction, createdAt }
+          : { id, text, direction, status, createdAt, hasMedia: Boolean(media?.length) },
+      ),
   });
   if (input.length > 180_000)
     return { ...emptyResult("review", "history_too_large"), messageCount: messages.length };
@@ -413,9 +516,11 @@ export async function classifyQuoHistory(options: {
   // Only when the whole reply is media -- if they also sent text, the model
   // reads that text (it already receives a hasMedia flag for context).
   const incomingAfterAssign = messages.filter(
-    (m) => m.direction === "incoming" && Date.parse(m.createdAt) >= Date.parse(assignedAt),
+    (m) => fromCustomer(m) && Date.parse(m.createdAt) >= Date.parse(assignedAt),
   );
-  const mediaOnlyReplies = incomingAfterAssign.filter((m) => m.media?.length && !m.text.trim());
+  const mediaOnlyReplies = incomingAfterAssign.filter(
+    (m) => !isCall(m) && m.media?.length && !m.text.trim(),
+  );
   if (mediaOnlyReplies.length && !incomingAfterAssign.some((m) => m.text.trim()))
     return withMeta({
       ...emptyResult("classified", "media_reply_interested"),
@@ -469,7 +574,8 @@ Context: we text people who asked for a home service (the "service" field) and o
 
 How to read the chat:
 - Judge the CURRENT assignment (createdAt >= assignedAt); older messages are context only.
-- Only incoming customer text is evidence. Outgoing messages show what the customer is answering, so read every reply against the question before it ("no" to "Do you still need help?" = not interested; "yes" to it = interested).
+- Entries with type "call" are phone call transcripts: "Customer:" lines are the customer's own words and count as evidence just like their texts ("Agent:" is us). A call can settle the outcome ("someone else is coming", "we'll buy a new one"). A voicemail greeting is not the customer speaking.
+- Only incoming customer text (or a customer's words on a call) is evidence. Outgoing messages show what the customer is answering, so read every reply against the question before it ("no" to "Do you still need help?" = not interested; "yes" to it = interested).
 - Use the customer's latest clear position; a later message overrides an earlier one ("yes please" then "never mind, found someone" = already_got_someone).
 - Never infer an outcome from an outgoing template or from silence.
 

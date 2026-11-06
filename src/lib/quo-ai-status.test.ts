@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  fetchQuoCalls,
   classifyQuoHistory,
   fetchQuoHistory,
   isQuoConfigurationProbe,
@@ -411,5 +412,84 @@ describe("evidence-based shadow status", () => {
       "history_too_large",
     );
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe("phone calls", () => {
+  const now = Date.parse("2026-10-20T20:00:00Z");
+  const call = (change: Partial<QuoMessage> = {}): QuoMessage =>
+    outgoing({
+      id: "ACcall",
+      text: "Agent: Hi. Customer: We already found someone, thanks.",
+      call: { answered: true },
+      ...change,
+    });
+  it("counts a call the customer spoke on as their reply", () => {
+    // Without the call this would be "didn't reply"; the model must read it.
+    expect(transportResult([outgoing(), call()], assigned, now)).toBeNull();
+  });
+  it("does not count a voicemail or missed call as a reply", () => {
+    const voicemail = call({ text: "", call: { answered: false } });
+    expect(transportResult([outgoing(), voicemail], assigned, now)?.status).toBe(
+      "cx_didnt_replied",
+    );
+  });
+  it("marks 'already received before' when the customer called us first", () => {
+    const theyCalled = call({
+      direction: "incoming",
+      createdAt: "2026-09-01T10:00:00Z",
+      call: { answered: false },
+      text: "",
+    });
+    expect(transportResult([theyCalled, outgoing()], assigned, now)?.status).toBe(
+      "already_received_before",
+    );
+  });
+  it("reads transcripts from Quo, our lines as Agent and theirs as Customer", async () => {
+    const fetcher = vi.fn(async (url: URL | string) => {
+      const u = String(url);
+      if (u.includes("/v1/calls"))
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "AC1",
+                direction: "outgoing",
+                status: "completed",
+                answeredAt: "2026-10-20T11:00:05Z",
+                duration: 60,
+                createdAt: "2026-10-20T11:00:00Z",
+                phoneNumberId: "PN1",
+                participants: ["+19105551234", "+15550000000"],
+              },
+            ],
+            nextPageToken: null,
+          }),
+        );
+      return new Response(
+        JSON.stringify({
+          data: {
+            dialogue: [
+              { content: "Hello?", userId: "US1" },
+              { content: "Someone is coming tomorrow, thanks", userId: null },
+            ],
+          },
+        }),
+      );
+    });
+    const calls = await fetchQuoCalls({
+      apiKey: "k",
+      phoneNumberId: "PN1",
+      participant: "+19105551234",
+      snapshot: "2026-10-21T00:00:00Z",
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+    expect(calls).toMatchObject([
+      {
+        id: "AC1",
+        call: { answered: true },
+        text: "Agent: Hello? Customer: Someone is coming tomorrow, thanks",
+      },
+    ]);
   });
 });
