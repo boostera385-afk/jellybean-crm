@@ -163,13 +163,11 @@ export async function processQuoJob(
       // Phone calls too: many outcomes are only said on a call. Best effort --
       // without them the lead is judged from its texts, as before.
       let calls: QuoMessage[] = [];
-      // Off unless the QUO_AI_CALLS secret is "on": measured on 300 labeled
-      // chats, transcripts fixed call-only outcomes but tipped as many
-      // interested customers into need_follow_up, for no net gain yet.
+      // On unless the QUO_AI_CALLS secret is "off".
       const callsOn =
         (globalThis as { Deno?: { env: { get(k: string): string | undefined } } }).Deno?.env.get(
           "QUO_AI_CALLS",
-        ) === "on";
+        ) !== "off";
       if (callsOn && job.inboxIds.length <= 3) {
         try {
           for (const phone of checkpoint.phones)
