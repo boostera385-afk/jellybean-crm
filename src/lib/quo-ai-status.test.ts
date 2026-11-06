@@ -230,18 +230,18 @@ describe("evidence-based shadow status", () => {
     });
     expect(NO_REPLY_MS).toBe(6 * 3600_000);
   });
-  it("marks a lead we were already talking to before it was created", () => {
+  it("marks 'already received before' only when the customer wrote first", () => {
     const created = "2026-10-20T09:00:00Z";
-    const before = outgoing({ id: "ACold", createdAt: "2026-09-01T10:00:00Z" });
-    expect(transportResult([before, outgoing()], assigned, now, created)).toMatchObject({
+    const theyWrote = message({ id: "ACthem", createdAt: "2026-08-01T10:00:00Z" });
+    expect(transportResult([theyWrote, outgoing()], assigned, now, created)).toMatchObject({
       state: "classified",
       status: "already_received_before",
-      reasonCode: "contacted_before_lead",
-      evidenceIds: ["ACold"],
+      reasonCode: "customer_wrote_first",
+      evidenceIds: ["ACthem"],
     });
-    // A customer who wrote to us first counts the same.
-    const theyWrote = message({ id: "ACthem", createdAt: "2026-08-01T10:00:00Z" });
-    expect(transportResult([theyWrote], assigned, now, created)?.status).toBe(
+    // Our own earlier outreach, even about another job, is not a repeat.
+    const before = outgoing({ id: "ACold", createdAt: "2026-09-01T10:00:00Z" });
+    expect(transportResult([before, outgoing()], assigned, now, created)?.status).not.toBe(
       "already_received_before",
     );
   });

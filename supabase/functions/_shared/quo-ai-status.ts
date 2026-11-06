@@ -1,5 +1,5 @@
 /** Read-only Quo history analysis. Never sends messages. */
-export const AI_STATUS_VERSION = "quo-auto-v12";
+export const AI_STATUS_VERSION = "quo-auto-v13";
 /** A delivered message with nothing back for this long is "didn't reply". */
 export const NO_REPLY_MS = 6 * 60 * 60 * 1000;
 export const AI_STATUS_MODEL = "gpt-4.1-mini-2025-04-14";
@@ -7,7 +7,6 @@ export const INTENT_STATUSES = [
   "wrong_number",
   "wrong_lead",
   "already_got_someone",
-  "already_received_before",
   "service_provider_himself",
   "cx_interested",
   "cx_not_interested",
@@ -236,7 +235,7 @@ export async function fetchQuoHistory(options: {
 /**
  * The statuses that need no model: decided from Quo's own records.
  *
- *   messaged before the lead existed  -> already_received_before
+ *   the customer wrote to us first    -> already_received_before
  *   nothing sent yet                  -> no status at all ("New" stays untouched)
  *   last message undelivered          -> undeliver
  *   delivered, nothing back           -> converted ("Delivered")
@@ -254,21 +253,28 @@ export function transportResult(
    *  some other inbox say nothing about this lead. */
   checkPriorContact = true,
 ): AiResult | null {
-  // Before the lead existed. The earlier of creation and assignment, so a lead
-  // reassigned later does not count its own earlier messages as prior contact.
+  // "Already received before" means the customer contacted this inbox (the
+  // number named on the lead card) before we ever wrote to them: the
+  // conversation's very first message is theirs. Our own earlier outreach,
+  // even about another job, is not that.
+  const first = checkPriorContact
+    ? messages.reduce<QuoMessage | null>(
+        (a, m) => (!a || Date.parse(m.createdAt) < Date.parse(a.createdAt) ? m : a),
+        null,
+      )
+    : null;
+  // ...and did so before this lead existed (a reply after we texted the new
+  // lead is just their answer).
   const leadStart = Math.min(
     Date.parse(assignedAt),
     createdAt && Number.isFinite(Date.parse(createdAt)) ? Date.parse(createdAt) : Infinity,
   );
-  const prior = checkPriorContact
-    ? messages.filter((m) => Date.parse(m.createdAt) < leadStart)
-    : [];
-  if (prior.length)
+  if (first?.direction === "incoming" && Date.parse(first.createdAt) < leadStart)
     return {
-      ...emptyResult("classified", "contacted_before_lead"),
+      ...emptyResult("classified", "customer_wrote_first"),
       status: "already_received_before",
       confidence: 1,
-      evidenceIds: [prior[prior.length - 1].id],
+      evidenceIds: [first.id],
     };
   const current = messages.filter((m) => Date.parse(m.createdAt) >= Date.parse(assignedAt));
   // Nothing sent to this lead yet: no AI status, so "New" is left alone.
@@ -474,7 +480,6 @@ need_follow_up: the customer has not decided and has not closed the door: they a
 cx_interested: wants help or engages to move forward. "yes", "yes please", "sure", "please do", "how much?", "when can they come?", "send someone", shares an address, job details, photos or availability, asks about price or timing.
 wrong_number: this number is not the person who asked. "wrong number", "you have the wrong person", "I don't know what you're talking about", "this isn't [name]", or "who is this?" followed by not knowing about any request.
 wrong_lead: the right person, but the lead is wrong: never requested this work, needs a different service than offered, or the job described is clearly not this service or too small for it. A short text alone is not proof.
-already_received_before: says WE already contacted them about THIS same job in the current assignment: "you already texted me about this", "your guy already called me". Not when other companies texted them ("I've gotten two other texts on this"), and never because of an older job's messages before assignedAt.
 service_provider_himself: the customer is a business or tradesperson, not a homeowner buying for themselves: a contractor or handyman looking for work or offering to team up, a company that wants to sub out its own customer's job, a crew hiring workers or helpers, a property manager or developer, a recruiter. A homeowner or tenant is never this, even if a landlord must approve.
 out_of_base: the customer confirms the job is outside an area we said we cover. A location alone, without coverage facts, is not proof.
 converted: only a plain acknowledgement with no outcome ("ok", "thanks", "got it", a thumbs-up) and an outgoing message has status delivered. This means Delivered, NEVER a sale.
@@ -489,6 +494,7 @@ Scenarios seen in our real chats (meanings, not words to match):
 - Different person = wrong_number: "my name is not Lakisha", "hasn't been his phone number in 10 years", "you have the wrong person".
 - Different need = wrong_lead: "I'm not moving", "it wasn't for pressure washing, I need help with a nozzle", "I just want someone to take free furniture", "I'm looking to buy a hot tub, not repair one".
 - Business, not homeowner = service_provider_himself: "I own a roofing company, I have a customer whose garage door...", "we install lights, we just need more workers", "I do handyman work, give me jobs", "I'm the admin, we're hiring a concrete foreman".
+- "Already received before" is decided outside this prompt; never return it.
 - Trust questions alone are NOT a refusal, NOT interest and NOT need_follow_up: "how did you get my number?", "what company are you with?", "are you licensed?", "do you have a website or references?", "where are you located?". If that is all the customer said = review.
 - Replacing instead of repairing = cx_not_interested, not already_got_someone: "decided to get a new dishwasher instead", "ended up buying a new one", "new one is $250 so I'll buy that".
 - Giving up on us because of our delay or price = cx_not_interested: "I'm going to pass, you never confirmed a time", "rate doubled, not gonna happen". If they say they hired someone else instead = already_got_someone.
