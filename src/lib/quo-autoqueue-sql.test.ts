@@ -226,7 +226,7 @@ describe("guarded CS pipeline automation", () => {
     messageCount: 4,
     historyHash: "hash",
     model: "test-model",
-    policyVersion: "quo-auto-v7",
+    policyVersion: "quo-auto-v8",
     lastMessageAt: "2026-10-22T10:00:00Z",
   });
 

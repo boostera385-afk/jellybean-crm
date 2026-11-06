@@ -326,6 +326,9 @@ describe("evidence-based shadow status", () => {
     expect(system).toContain("Decide what the customer MEANS");
     expect(system).toContain("already got it fixed");
     expect(system).toContain("Do NOT return review just because the customer was indirect");
+    // Any interest outranks another contractor being lined up.
+    expect(system).toContain("ANY INTEREST WINS");
+    expect(system).toContain("if it falls through I'll let you know");
   });
   it("requires incoming evidence from the current assignment", () => {
     const answer = { status: "cx_not_interested", confidence: 0.98, evidenceIds: ["AC1"] };
