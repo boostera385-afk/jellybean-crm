@@ -1,5 +1,5 @@
 /** Read-only Quo history analysis. Never sends messages. */
-export const AI_STATUS_VERSION = "quo-auto-v9";
+export const AI_STATUS_VERSION = "quo-auto-v12";
 /** A delivered message with nothing back for this long is "didn't reply". */
 export const NO_REPLY_MS = 6 * 60 * 60 * 1000;
 export const AI_STATUS_MODEL = "gpt-4.1-mini-2025-04-14";
@@ -313,8 +313,7 @@ export function validateIntent(
     v.confidence < MIN_INTENT_CONFIDENCE ||
     v.confidence > 1 ||
     !Array.isArray(v.evidenceIds) ||
-    !v.evidenceIds.length ||
-    v.evidenceIds.length > 8
+    !v.evidenceIds.length
   )
     return review;
   const incoming = new Set(
@@ -327,7 +326,15 @@ export function validateIntent(
       )
       .map((m) => m.id),
   );
-  if (!v.evidenceIds.every((id) => typeof id === "string" && incoming.has(id))) return review;
+  // Keep only real incoming IDs (the most recent 8); a verdict with none is unproven.
+  const evidence = [
+    ...new Set(
+      (v.evidenceIds as unknown[]).filter(
+        (id): id is string => typeof id === "string" && incoming.has(id),
+      ),
+    ),
+  ].slice(-8);
+  if (!evidence.length) return review;
   if (
     v.status === "converted" &&
     !messages.some(
@@ -343,7 +350,7 @@ export function validateIntent(
     state: "classified",
     status: v.status as string,
     confidence: v.confidence,
-    evidenceIds: [...new Set(v.evidenceIds as string[])],
+    evidenceIds: evidence,
     reasonCode: "customer_intent",
   };
 }
@@ -463,7 +470,7 @@ How to read the chat:
 Statuses. The phrases are examples of meaning, not a list to match:
 already_got_someone: the need is already handled, by another provider, a friend, family, landlord or themselves, AND the customer shows no remaining interest in us. "already got it fixed", "all taken care of", "we're all set", "it's done", "got someone", "found a guy", "my husband fixed it", "did it myself", "landlord is handling it", "already booked", "we're good now thanks".
 cx_not_interested: does not want the service, without saying it is already handled. "no thanks", "not interested", "we'll pass", "don't need it anymore", "changed my mind", "too expensive", "not right now", "STOP", "unsubscribe", "remove me", "don't text me".
-need_follow_up: the customer has not decided and has not closed the door: they are holding us in reserve, comparing, or putting it off. "someone is coming, I'll let you know if he can't do it", "if it falls through I'll text you", "I'm exploring options", "getting a few quotes", "let me think about it", "let me check with my husband", "I'll get back to you", "maybe next week", "after I close on the house". Choose it whenever their latest position is undecided, even after earlier interest. An open-ended "not right now" or "plans on hold" with nothing to come back to stays cx_not_interested.
+need_follow_up: the customer has not decided and has not closed the door: they are holding us in reserve, comparing, or putting it off. "someone is coming, I'll let you know if he can't do it", "if it falls through I'll text you", "I'm exploring options", "getting a few quotes", "let me think about it", "let me check with my husband", "I'll get back to you", "maybe next week", "after I close on the house". It needs the CUSTOMER's own words putting the decision off or keeping us in reserve. NOT need_follow_up: a customer who is giving details, sending photos, asking price or timing, agreeing to a time, or waiting for OUR quote, schedule or visit; a customer who simply has not answered our last message yet. Those stay cx_interested. An open-ended "not right now" or "plans on hold" with nothing to come back to stays cx_not_interested.
 cx_interested: wants help or engages to move forward. "yes", "yes please", "sure", "please do", "how much?", "when can they come?", "send someone", shares an address, job details, photos or availability, asks about price or timing.
 wrong_number: this number is not the person who asked. "wrong number", "you have the wrong person", "I don't know what you're talking about", "this isn't [name]", or "who is this?" followed by not knowing about any request.
 wrong_lead: the right person, but the lead is wrong: never requested this work, needs a different service than offered, or the job described is clearly not this service or too small for it. A short text alone is not proof.
@@ -482,10 +489,17 @@ Scenarios seen in our real chats (meanings, not words to match):
 - Different person = wrong_number: "my name is not Lakisha", "hasn't been his phone number in 10 years", "you have the wrong person".
 - Different need = wrong_lead: "I'm not moving", "it wasn't for pressure washing, I need help with a nozzle", "I just want someone to take free furniture", "I'm looking to buy a hot tub, not repair one".
 - Business, not homeowner = service_provider_himself: "I own a roofing company, I have a customer whose garage door...", "we install lights, we just need more workers", "I do handyman work, give me jobs", "I'm the admin, we're hiring a concrete foreman".
-- Trust questions alone are NOT a refusal and NOT interest: "how did you get my number?", "what company are you with?", "are you licensed?", "do you have a website or references?", "where are you located?". If that is all the customer said = review.
-- Delays are not refusals: "I'm at work, I'll send pictures later", "I'm not home", "I'll measure it later" = cx_interested. Putting the decision itself off = need_follow_up.
+- Trust questions alone are NOT a refusal, NOT interest and NOT need_follow_up: "how did you get my number?", "what company are you with?", "are you licensed?", "do you have a website or references?", "where are you located?". If that is all the customer said = review.
+- Replacing instead of repairing = cx_not_interested, not already_got_someone: "decided to get a new dishwasher instead", "ended up buying a new one", "new one is $250 so I'll buy that".
+- Giving up on us because of our delay or price = cx_not_interested: "I'm going to pass, you never confirmed a time", "rate doubled, not gonna happen". If they say they hired someone else instead = already_got_someone.
+- Homeowners mention landlords, HOAs, insurance or a mortgage company; that does not make them a business.
+- Practical delays while still moving forward = cx_interested, never need_follow_up: "I'm at work, I'll text you later", "I'll send pictures when I get home", "I'll measure it later", "I keep checking my email", "please contact my wife instead", "please text me" (rather than call), "what time are you coming?". Only putting the DECISION off ("I'll think about it", "getting other quotes", "I'll let you know if the other guy can't") = need_follow_up.
+- Our own unanswered messages (a follow-up, a question, a reschedule, a quote they have not replied to yet) never make a lead need_follow_up. Judge only the customer's last words: if those were moving forward ("What time? I need to know ASAP", sending details or photos), it stays cx_interested.
+- "I'll keep your number for next time" or "I'll keep you in mind" after the job was handled does not reopen it = already_got_someone. After a refusal it stays cx_not_interested.
+- Short polite refusals = cx_not_interested: "No", "No thanks", "I'm fine thank you", "I'm good", "Disregard", "never mind". A bare "No" never means wrong_lead.
+- The request was for someone else ("this wasn't for me, it was for a friend, I forwarded your text") = wrong_number.
 - Agreeing to a quote or a visit time ("ok", "confirmed", "sounds good", "yes" right after we sent a price or schedule) = cx_interested, not converted.
-- Possible scam = review: the customer insists on paying by check, mobile check deposit, certified check or upfront deposit, says they are away or on vacation, or asks for a Zoom call before paying.
+- Possible scam = review (never need_follow_up or cx_interested): the customer insists on paying by check, mobile check deposit, certified check or upfront deposit, says they are away or on vacation, or asks for a Zoom call before paying.
 - Not a customer reply, never evidence: carrier or delivery errors ("message could not be delivered", "Error 2112"), voicemail greetings ("Please leave your message"), auto-replies.
 - Earlier jobs: messages before assignedAt about a different service belong to an older lead. Ignore their outcome ("got it covered" in August about junk removal says nothing about today's gutters).
 - Replies in Spanish or another language mean the same as in English.
@@ -498,7 +512,7 @@ Distinctions:
 When to return review: the meaning is genuinely unclear or contradictory, it depends on a photo or voice note you cannot see, or the customer gave no outcome at all. Do NOT return review just because the customer was indirect or used none of the example phrases: if an experienced agent would confidently pick a status, pick it.
 
 Confidence: 0.9 to 1 when the meaning is clear, even if indirectly worded; 0.8 to 0.9 when it is very likely but slightly ambiguous; otherwise return review.
-Return status, confidence 0..1 and 1..8 exact incoming message IDs supporting that status.
+Return status, confidence 0..1 and 1..8 exact incoming message IDs supporting that status (the most recent ones that show it; never more than 8).
 For review return confidence 0 and an empty evidenceIds array. Never invent facts or IDs.`,
         },
         { role: "user", content: input },

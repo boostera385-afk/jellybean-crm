@@ -285,6 +285,17 @@ describe("evidence-based shadow status", () => {
   ])("reviews invalid or unsupported intent %j", (value) => {
     expect(validateIntent(value, [message()], assigned).state).toBe("review");
   });
+  it("keeps a verdict whose evidence lists extra or unknown IDs, citing only real ones", () => {
+    const answer = {
+      status: "cx_interested",
+      confidence: 0.95,
+      evidenceIds: ["invented", ...Array(9).fill("AC1")],
+    };
+    expect(validateIntent(answer, [message()], assigned)).toMatchObject({
+      state: "classified",
+      evidenceIds: ["AC1"],
+    });
+  });
   it("accepts need follow up as an AI verdict", () => {
     const answer = { status: "need_follow_up", confidence: 0.9, evidenceIds: ["AC1"] };
     expect(validateIntent(answer, [message()], assigned)).toMatchObject({
