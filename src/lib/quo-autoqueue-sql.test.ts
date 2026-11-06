@@ -70,6 +70,7 @@ const CHAIN = [
   "cs_status_history_and_attribution",
   "quo_call_match_any_number",
   "ai_status_respects_human_choice",
+  "store_quo_messages",
 ];
 
 /** Seeds a finished comparison, so the sweep and the flip have state to read. */
@@ -1032,5 +1033,46 @@ describe("restoring pre-cutoff leads the AI changed", () => {
     } finally {
       await restore.close();
     }
+  });
+});
+
+describe("saving Quo conversations", () => {
+  const msg = (status: string, updatedAt: string) => ({
+    id: "AC9",
+    text: "Yes, that's correct",
+    direction: "incoming",
+    status,
+    createdAt: "2026-11-05T10:00:00Z",
+    updatedAt,
+    conversationId: "CN9",
+    phoneNumberId: "PNtestinbox1",
+    from: "+19105551234",
+    to: ["+19105559999"],
+  });
+  const store = (lead: string, messages: unknown[]) =>
+    call<number>(
+      `public.store_quo_messages('${lead}'::uuid, '${JSON.stringify(messages).replace(/'/g, "''")}'::jsonb)`,
+    );
+
+  it("keeps one row per message, updated on re-read and linked to every lead", async () => {
+    expect(await store(lead(1), [msg("received", "2026-11-05T10:00:00Z")])).toBe(1);
+    expect(await store(lead(2), [msg("delivered", "2026-11-05T11:00:00Z")])).toBe(1);
+    const rows = (
+      await db.query<{ body: string; status: string; lead_ids: string[]; n: number }>(
+        `SELECT body, status, lead_ids, count(*) OVER () AS n FROM private.quo_messages`,
+      )
+    ).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ body: "Yes, that's correct", status: "delivered" });
+    expect(rows[0].lead_ids).toEqual([lead(1), lead(2)]);
+  });
+
+  it("skips malformed entries and is not readable by signed-in users", async () => {
+    expect(
+      await store(lead(1), [{ id: "", text: "x" }, msg("received", "2026-11-05T10:00:00Z")]),
+    ).toBe(1);
+    await db.exec("RESET ROLE; SET ROLE authenticated;");
+    await expect(db.query("SELECT * FROM private.quo_messages")).rejects.toThrow();
+    await db.exec("RESET ROLE; SET ROLE service_role;");
   });
 });

@@ -51,6 +51,8 @@ describe("bounded resumable Quo worker", () => {
       });
       expect((await pending).processed).toBe(0);
       expect(db.rpc.mock.calls.some(([name]) => name === "finish_quo_ai_job")).toBe(false);
+      // A partial conversation is never saved as if it were the whole chat.
+      expect(db.rpc.mock.calls.some(([name]) => name === "store_quo_messages")).toBe(false);
       const save = db.rpc.mock.calls.find(([name]) => name === "checkpoint_quo_ai_job")!;
       expect(save[1].p_done).toBe(16);
       expect(save[1].p_total).toBe(39);
@@ -99,5 +101,72 @@ describe("bounded resumable Quo worker", () => {
     expect(db.rpc.mock.calls.some(([name]) => name === "lead_ai_phone_is_unique")).toBe(false);
     const finish = db.rpc.mock.calls.find(([name]) => name === "finish_quo_ai_job")!;
     expect(finish[1].p_result.reasonCode).not.toBe("phone_shared_between_leads");
+  });
+
+  it("saves the complete conversation, and a failed save never blocks the status", async () => {
+    const message = {
+      id: "AC1",
+      text: "Yes please, how much?",
+      direction: "incoming",
+      status: "received",
+      createdAt: "2026-10-21T10:00:00Z",
+      updatedAt: "2026-10-21T10:00:00Z",
+      conversationId: "CN1",
+      phoneNumberId: "PN0",
+      from: "+19105551234",
+      to: ["+19105559999"],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (url: string | URL) =>
+        String(url).includes("api.openai.com")
+          ? new Response(
+              JSON.stringify({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        status: "cx_interested",
+                        confidence: 0.95,
+                        evidenceIds: ["AC1"],
+                      }),
+                    },
+                  },
+                ],
+              }),
+            )
+          : new Response(
+              JSON.stringify({
+                data: String(url).includes("phoneNumberId=PN0") ? [message] : [],
+                nextPageToken: null,
+              }),
+            ),
+      ),
+    );
+    for (const failSave of [false, true]) {
+      const db = fakeDb({ ...job, inboxIds: ["PN0"], inboxMatched: true });
+      if (failSave)
+        db.rpc.mockImplementation(async (name: string) =>
+          name === "store_quo_messages"
+            ? { data: null, error: { message: "boom" } }
+            : {
+                data: name === "claim_quo_ai_job" ? { ...job, inboxIds: ["PN0"] } : true,
+                error: null,
+              },
+        );
+      const result = await processQuoJob(db as never, "test-secret", "model-secret", {
+        wait: async () => {},
+      });
+      const names = db.rpc.mock.calls.map(([name]) => name);
+      const store = db.rpc.mock.calls.find(([name]) => name === "store_quo_messages")!;
+      expect(store[1].p_lead_id).toBe("lead-1");
+      expect(store[1].p_messages).toEqual([
+        expect.objectContaining({ id: "AC1", text: message.text }),
+      ]);
+      expect(names.indexOf("store_quo_messages")).toBeLessThan(names.indexOf("finish_quo_ai_job"));
+      expect(result.processed).toBe(1);
+      const finish = db.rpc.mock.calls.find(([name]) => name === "finish_quo_ai_job")!;
+      expect(finish[2] ?? finish[1].p_result).toMatchObject({ status: "cx_interested" });
+    }
   });
 });

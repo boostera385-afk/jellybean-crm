@@ -125,6 +125,18 @@ export async function processQuoJob(
           message: "Complete history still syncing. No partial status has been published.",
         };
       }
+      // Keep the conversation itself, not only the verdict, so chats can be
+      // reviewed and used to improve the rules. Best effort: a failed save
+      // never holds up or changes the status decision.
+      try {
+        const { error: storeError } = await db.rpc("store_quo_messages", {
+          p_lead_id: job.leadId,
+          p_messages: checkpoint.messages,
+        });
+        if (storeError) console.warn("Could not save Quo messages", { leadId: job.leadId });
+      } catch {
+        console.warn("Could not save Quo messages", { leadId: job.leadId });
+      }
       const { data: previous } = await db
         .from("lead_ai_status")
         .select("*")
