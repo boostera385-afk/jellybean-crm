@@ -631,8 +631,16 @@ function Inner() {
       q = q.eq("assigned_to", dbOwner);
     }
 
-    // Status filter — pushed to DB (cs_status+created_at is indexed)
-    if (dbStatus) q = q.eq("cs_status", dbStatus);
+    // Status filter — pushed to DB (cs_status+created_at is indexed). A lead
+    // waiting in Need Review is shown there only, not also under its status
+    // tab: either it is not flagged, or a person already owns its status (the
+    // inverse of the Need Review rule below / cs_lead_in_review in the DB).
+    if (dbStatus)
+      q = q
+        .eq("cs_status", dbStatus)
+        .or(
+          "ai_review_required.eq.false,and(cs_status_updated_by_ai.eq.false,cs_status_human_updated_at.not.is.null,cs_status.neq.converted)",
+        );
     // Need Review shows leads flagged by the AI that a person has not already
     // settled: Delivered (the hand-off point, even when a person set it),
     // updated by AI, or never touched by a human. Same rule as
