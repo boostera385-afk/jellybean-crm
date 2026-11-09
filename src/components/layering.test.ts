@@ -45,9 +45,12 @@ describe("overlay layering", () => {
     expect(ambient).toBeGreaterThan(30);
   });
 
-  it("keeps visitor notifications in their original bottom-right position", () => {
+  it("starts visitor notifications bottom-right, movable by the operator", () => {
     const source = stripComments(read("components/crisp-visitor-alerts.tsx"));
-    expect(source).toContain("fixed bottom-4 right-4 z-40");
+    expect(source).toContain("fixed z-40");
+    // Default spot is the bottom-right corner (16px = bottom-4 / right-4).
+    expect(source).toContain("DEFAULT_POSITION: AlertPosition = { right: 16, bottom: 16 }");
+    expect(source).toContain("style={{ right: position.right, bottom: position.bottom }}");
     expect(source).toContain("flex-col items-end");
     expect(source).not.toContain("bottom-4 left-4");
   });

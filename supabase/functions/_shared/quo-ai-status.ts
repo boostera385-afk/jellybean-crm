@@ -210,6 +210,25 @@ const isCall = (m: QuoMessage) => Boolean(m.call);
 /** Something the customer said: a text from them, or a call they spoke on. */
 const fromCustomer = (m: QuoMessage) => (m.call ? m.call.answered : m.direction === "incoming");
 
+/** Whether the customer has said anything since this lead was assigned. */
+export function customerRepliedSince(messages: QuoMessage[], assignedAt: string): boolean {
+  return messages.some((m) => fromCustomer(m) && Date.parse(m.createdAt) >= Date.parse(assignedAt));
+}
+
+/**
+ * A voicemail greeting, carrier announcement or call-screening prompt. On a
+ * call that went to voicemail the transcript gives these lines no user, so
+ * they read as "Customer" -- and the lead looked as if the customer had
+ * spoken. The AI then (correctly) found no outcome in a greeting and parked
+ * the lead in review, where it stayed instead of becoming "didn't reply".
+ */
+const VOICEMAIL =
+  /\b(voice ?mail|mail ?box|leave (me |us )?(a |your )?(message|name|number)|after the (tone|beep)|at the (tone|beep)|record your message|(is|am|are) (not available|unavailable)|can(no|')t (take|come to|get to) (the|your) (call|phone)|you('ve| have) reached|the (person|number|party|subscriber|customer) you('re| are| have)? ?(trying to reach|calling|dialed)|screening service|(google|call) (assistant|screen)|stay on the line|not accepting calls|has been disconnected|is no longer in service|please try (again|your call) later|press (pound|star|\d))/i;
+
+export function isVoicemailSpeech(lines: string[]): boolean {
+  return lines.some((line) => VOICEMAIL.test(line));
+}
+
 /**
  * The lead's phone calls on one inbox, each as a QuoMessage with `call` set.
  * Answered calls carry their transcript, written as "Agent:" / "Customer:"
@@ -280,12 +299,18 @@ export async function fetchQuoCalls(options: {
       const body = await get(`https://api.quo.com/v1/call-transcripts/${c.id}`);
       const dialogue = Array.isArray(body?.data?.dialogue) ? body.data.dialogue : [];
       const lines: string[] = [];
+      const customerLines: string[] = [];
       for (const d of dialogue) {
         if (typeof d?.content !== "string" || !d.content.trim()) continue;
         const customer = !d.userId;
-        if (customer && d.content.trim().split(/\s+/).length >= 2) spoke = true;
+        if (customer) {
+          customerLines.push(d.content.trim());
+          if (d.content.trim().split(/\s+/).length >= 2) spoke = true;
+        }
         lines.push(`${customer ? "Customer" : "Agent"}: ${d.content.trim()}`);
       }
+      // A voicemail greeting is not the customer answering.
+      if (spoke && isVoicemailSpeech(customerLines)) spoke = false;
       text = lines.join(" ").slice(0, 6000);
     }
     out.push({
@@ -705,12 +730,14 @@ async function confirmFollowUp(
     if (!response.ok) return verdict;
     const body = await response.json();
     const position = JSON.parse(body.choices?.[0]?.message?.content ?? "null")?.position;
-    const status = {
-      deferred: "need_follow_up",
-      moving_forward: "cx_interested",
-      handled: "already_got_someone",
-      declined: "cx_not_interested",
-    }[position as string];
+    const status = (
+      {
+        deferred: "need_follow_up",
+        moving_forward: "cx_interested",
+        handled: "already_got_someone",
+        declined: "cx_not_interested",
+      } as Record<string, string>
+    )[position as string];
     return status ? { ...verdict, status } : verdict;
   } catch {
     return verdict;

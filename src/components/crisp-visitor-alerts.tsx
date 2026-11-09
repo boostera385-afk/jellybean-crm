@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Radio, Send, MapPin } from "lucide-react";
+import { Radio, Send, MapPin, GripHorizontal } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -49,6 +49,47 @@ function visitorLocation(visitor: CrispVisitor): string {
   return [visitor.city, visitor.region, visitor.country].filter(Boolean).join(", ");
 }
 
+/** Where the operator dragged the live-visitor stack, as distances from the
+ *  bottom-right corner so it stays anchored the same way the default is. */
+type AlertPosition = { right: number; bottom: number };
+const POSITION_STORAGE_KEY = "crisp-visitor-alerts-position";
+const DEFAULT_POSITION: AlertPosition = { right: 16, bottom: 16 };
+const EDGE_GAP = 8;
+
+function readStoredPosition(): AlertPosition {
+  try {
+    const raw = window.localStorage.getItem(POSITION_STORAGE_KEY);
+    if (!raw) return DEFAULT_POSITION;
+    const parsed = JSON.parse(raw) as Partial<AlertPosition>;
+    if (Number.isFinite(parsed.right) && Number.isFinite(parsed.bottom))
+      return { right: Number(parsed.right), bottom: Number(parsed.bottom) };
+  } catch {
+    // Storage blocked or corrupt: fall back to the default corner.
+  }
+  return DEFAULT_POSITION;
+}
+
+function storePosition(position: AlertPosition) {
+  try {
+    window.localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(position));
+  } catch {
+    // Storage blocked: the position simply is not remembered.
+  }
+}
+
+/** Keep the whole stack on screen, whatever the window size is now. */
+function clampPosition(position: AlertPosition, el: HTMLElement | null): AlertPosition {
+  if (typeof window === "undefined") return position;
+  const width = el?.offsetWidth ?? 320;
+  const height = el?.offsetHeight ?? 80;
+  const maxRight = Math.max(EDGE_GAP, window.innerWidth - width - EDGE_GAP);
+  const maxBottom = Math.max(EDGE_GAP, window.innerHeight - height - EDGE_GAP);
+  return {
+    right: Math.min(Math.max(position.right, EDGE_GAP), maxRight),
+    bottom: Math.min(Math.max(position.bottom, EDGE_GAP), maxBottom),
+  };
+}
+
 /**
  * Live-visitor notifications.
  *
@@ -60,6 +101,9 @@ function visitorLocation(visitor: CrispVisitor): string {
  * visitor leaves their card disappears on its own. The only action is "Send
  * Message", which jumps straight into the Crisp chat tab deep-linked to that
  * visitor so an operator can reach out.
+ *
+ * The stack can be dragged anywhere on screen by its grip; the spot is kept
+ * in this browser (double-click the grip to put it back in the corner).
  *
  * These cards are ambient, so they sit at z-40: BELOW the dialog layer. Every
  * dialog, sheet and alert-dialog is z-50, and the comboboxes that have to open
@@ -125,6 +169,65 @@ export function CrispVisitorAlerts() {
       void supabase.removeChannel(channel);
     };
   }, [canUseCrisp, user?.id, queryClient]);
+
+  // ── Drag to move ──────────────────────────────────────────────────────────
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<AlertPosition>(DEFAULT_POSITION);
+  const dragRef = useRef<{ x: number; y: number; start: AlertPosition } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    setPosition(readStoredPosition());
+  }, []);
+
+  // A remembered spot from a bigger window must not leave the stack off screen.
+  useEffect(() => {
+    const onResize = () => setPosition((p) => clampPosition(p, containerRef.current));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const onGripPointerDown = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      dragRef.current = { x: e.clientX, y: e.clientY, start: position };
+      setDragging(true);
+    },
+    [position],
+  );
+
+  const onGripPointerMove = useCallback((e: PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    setPosition(
+      clampPosition(
+        {
+          right: drag.start.right - (e.clientX - drag.x),
+          bottom: drag.start.bottom - (e.clientY - drag.y),
+        },
+        containerRef.current,
+      ),
+    );
+  }, []);
+
+  const onGripPointerUp = useCallback((e: PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    setDragging(false);
+    if (e.currentTarget.hasPointerCapture(e.pointerId))
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    setPosition((p) => {
+      storePosition(p);
+      return p;
+    });
+  }, []);
+
+  const resetPosition = useCallback(() => {
+    setPosition(DEFAULT_POSITION);
+    storePosition(DEFAULT_POSITION);
+  }, []);
 
   const visitorOverview = useCrispVisitors(canUseCrisp && Boolean(user?.id));
   const liveVisitors = useMemo(
@@ -202,8 +305,24 @@ export function CrispVisitorAlerts() {
 
   return (
     <div
-      className={`pointer-events-none fixed bottom-4 right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end ${onCrispTab ? "lg:hidden" : ""}`}
+      ref={containerRef}
+      style={{ right: position.right, bottom: position.bottom }}
+      className={`pointer-events-none fixed z-40 flex max-w-[calc(100vw-1rem)] flex-col items-end ${onCrispTab ? "lg:hidden" : ""}`}
     >
+      <div
+        role="button"
+        tabIndex={-1}
+        aria-label="Drag to move live visitor alerts. Double-click to reset."
+        title="Drag to move · double-click to reset"
+        onPointerDown={onGripPointerDown}
+        onPointerMove={onGripPointerMove}
+        onPointerUp={onGripPointerUp}
+        onPointerCancel={onGripPointerUp}
+        onDoubleClick={resetPosition}
+        className={`pointer-events-auto mb-1 flex h-5 w-80 max-w-full touch-none select-none items-center justify-center rounded-md border border-border/60 bg-card/90 text-muted-foreground shadow-sm backdrop-blur-xl hover:text-foreground ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+      >
+        <GripHorizontal className="h-3.5 w-3.5" />
+      </div>
       <div className="pointer-events-auto flex w-80 max-w-full flex-col gap-2 max-h-[50vh] overflow-y-auto overscroll-contain pr-0.5">
         {liveVisitors.map((visitor) => {
           const name = visitorName(visitor);
