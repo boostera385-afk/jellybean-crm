@@ -1,10 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  conversationSummaryChanged,
-  createCoalescedRefresh,
-  workspaceSummaryChanged,
-} from "@/lib/crisp-refresh";
+import { conversationSummaryChanged, createCoalescedRefresh } from "@/lib/crisp-refresh";
 
 export function useCrispUnread(enabled: boolean = true) {
   const [unreadCount, setUnreadCount] = useState<number>(0);
@@ -47,13 +43,10 @@ export function useCrispUnread(enabled: boolean = true) {
           if (conversationSummaryChanged(payload)) refresh.schedule();
         },
       )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "crisp_workspaces" },
-        (payload) => {
-          if (workspaceSummaryChanged(payload)) refresh.schedule();
-        },
-      )
+      // No crisp_workspaces listener: the worker rewrites lease/budget/presence
+      // columns on those rows every few seconds, and Realtime bills every one of
+      // those deliveries even though none change the unread total. Unread totals
+      // move with crisp_conversations; the 30s poll covers enable/disable.
       .subscribe();
 
     // Background heartbeat poll every 30s to keep unread badges synced even if websocket drops

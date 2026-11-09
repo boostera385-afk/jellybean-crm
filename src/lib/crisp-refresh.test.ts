@@ -1,14 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  conversationSummaryChanged,
-  createCoalescedRefresh,
-  workspaceSummaryChanged,
-} from "./crisp-refresh";
+import { conversationSummaryChanged, createCoalescedRefresh } from "./crisp-refresh";
 
 afterEach(() => vi.useRealTimers());
 
 describe("Crisp summary invalidation", () => {
-  const workspace = { crisp_website_id: "one", enabled: true };
   const conversation = {
     crisp_website_id: "one",
     unread_count: 1,
@@ -16,24 +11,6 @@ describe("Crisp summary invalidation", () => {
     last_customer_unread_at: "today",
   };
 
-  it("ignores presence leases and budget changes", () => {
-    expect(
-      workspaceSummaryChanged({
-        eventType: "UPDATE",
-        old: workspace,
-        new: { ...workspace, visitor_synced_at: "now", visitor_budget_used: 10 },
-      }),
-    ).toBe(false);
-  });
-  it("refreshes when a workspace is disabled", () => {
-    expect(
-      workspaceSummaryChanged({
-        eventType: "UPDATE",
-        old: workspace,
-        new: { ...workspace, enabled: false },
-      }),
-    ).toBe(true);
-  });
   it("ignores unrelated conversation metadata", () => {
     expect(
       conversationSummaryChanged({
@@ -60,7 +37,6 @@ describe("Crisp summary invalidation", () => {
   });
   it("fails safe for partial old rows and always handles inserts/deletes", () => {
     for (const eventType of ["INSERT", "DELETE", "UPDATE"]) {
-      expect(workspaceSummaryChanged({ eventType, old: { id: "1" }, new: workspace })).toBe(true);
       expect(conversationSummaryChanged({ eventType, old: {}, new: conversation })).toBe(true);
     }
   });
