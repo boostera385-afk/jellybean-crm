@@ -1,5 +1,6 @@
 import {
   classifyQuoHistory,
+  customerRepliedSince,
   emptyResult,
   fetchQuoCalls,
   safeAiError,
@@ -72,6 +73,9 @@ export async function processQuoJob(
   // unless the history completed, because a partial thread's last message is
   // not the thread's last message.
   let lastMessageAt: string | null = null;
+  // Whether the customer said anything since assignment. A lead the AI cannot
+  // classify must then not keep showing "didn't reply" in Need Review.
+  let customerReplied = false;
   try {
     checkpoint = job.checkpoint
       ? await decryptQuoCheckpoint(job.checkpoint, quoKey, job.runId)
@@ -190,10 +194,12 @@ export async function processQuoJob(
           calls = [];
         }
       }
+      const history = [...checkpoint.messages, ...calls].sort(
+        (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+      );
+      customerReplied = customerRepliedSince(history, job.assignedAt);
       result = await classifyQuoHistory({
-        messages: [...checkpoint.messages, ...calls].sort(
-          (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
-        ),
+        messages: history,
         assignedAt: job.assignedAt,
         createdAt: job.createdAt,
         // Strict: a job from before the claim reported it does not qualify.
@@ -237,7 +243,7 @@ export async function processQuoJob(
   const { data: saved, error } = await db.rpc("finish_quo_ai_job", {
     p_run_id: job.runId,
     p_lease_token: job.leaseToken,
-    p_result: { ...result!, lastMessageAt },
+    p_result: { ...result!, lastMessageAt, customerReplied },
   });
   return {
     processed: 1,

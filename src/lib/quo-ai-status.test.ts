@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   fetchQuoCalls,
+  isVoicemailSpeech,
+  customerRepliedSince,
   classifyQuoHistory,
   fetchQuoHistory,
   isQuoConfigurationProbe,
@@ -444,6 +446,69 @@ describe("phone calls", () => {
     expect(transportResult([theyCalled, outgoing()], assigned, now)?.status).toBe(
       "already_received_before",
     );
+  });
+  it("does not count a voicemail greeting as the customer speaking", async () => {
+    const fetcher = vi.fn(async (url: URL | string) => {
+      const u = String(url);
+      if (u.includes("/v1/calls"))
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "AC2",
+                direction: "outgoing",
+                status: "completed",
+                answeredAt: "2026-10-20T11:00:05Z",
+                duration: 35,
+                createdAt: "2026-10-20T11:00:00Z",
+                phoneNumberId: "PN1",
+                participants: ["+19105551234", "+15550000000"],
+              },
+            ],
+            nextPageToken: null,
+          }),
+        );
+      return new Response(
+        JSON.stringify({
+          data: {
+            dialogue: [
+              {
+                content: "Hi, you've reached Vineet. I can't take your call right now.",
+                userId: null,
+              },
+              { content: "Please leave a message after the tone.", userId: null },
+              { content: "Hi, this is Peter about your garage door, call me back.", userId: "US1" },
+            ],
+          },
+        }),
+      );
+    });
+    const calls = await fetchQuoCalls({
+      apiKey: "k",
+      phoneNumberId: "PN1",
+      participant: "+19105551234",
+      snapshot: "2026-10-21T00:00:00Z",
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+    expect(calls[0].call).toEqual({ answered: false });
+    // So a delivered text plus a voicemail is still "didn't reply".
+    expect(transportResult([outgoing(), calls[0]], assigned, now)?.status).toBe("cx_didnt_replied");
+  });
+  it("recognises common voicemail and carrier prompts", () => {
+    for (const line of [
+      "The person you are trying to reach is not available",
+      "The mailbox is full and cannot accept any messages",
+      "Please leave your name and number",
+      "The number you have dialed has been disconnected",
+      "The person you're calling is using a screening service from Google",
+    ])
+      expect(isVoicemailSpeech([line])).toBe(true);
+    expect(isVoicemailSpeech(["Yes I still need it, can he come Tuesday?"])).toBe(false);
+    expect(isVoicemailSpeech(["We already found someone, thanks"])).toBe(false);
+  });
+  it("knows whether the customer replied since assignment", () => {
+    expect(customerRepliedSince([outgoing()], assigned)).toBe(false);
+    expect(customerRepliedSince([outgoing(), call()], assigned)).toBe(true);
   });
   it("reads transcripts from Quo, our lines as Agent and theirs as Customer", async () => {
     const fetcher = vi.fn(async (url: URL | string) => {

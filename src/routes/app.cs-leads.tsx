@@ -633,12 +633,16 @@ function Inner() {
 
     // Status filter — pushed to DB (cs_status+created_at is indexed)
     if (dbStatus) q = q.eq("cs_status", dbStatus);
-    // Need Review shows only leads without a manual status: flagged by the AI
-    // and not owned by a person (updated by AI, or never touched by a human).
+    // Need Review shows leads flagged by the AI that a person has not already
+    // settled: Delivered (the hand-off point, even when a person set it),
+    // updated by AI, or never touched by a human. Same rule as
+    // cs_status_ai_may_change in the database.
     if (needsReviewOnly)
       q = q
         .eq("ai_review_required", true)
-        .or("cs_status_updated_by_ai.eq.true,cs_status_human_updated_at.is.null");
+        .or(
+          "cs_status.eq.converted,cs_status_updated_by_ai.eq.true,cs_status_human_updated_at.is.null",
+        );
 
     // "Not called yet" means no call at all — neither a manually logged call
     // nor a Quo call counted by the webhook.
