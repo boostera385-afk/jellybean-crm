@@ -22,11 +22,6 @@ export function conversationSummaryChanged(change: Change) {
   ]);
 }
 
-export function workspaceSummaryChanged(change: Change) {
-  // Leases, budgets, and presence timestamps never change conversation totals.
-  return fieldsChanged(change, ["crisp_website_id", "enabled"]);
-}
-
 /** Merge bursts, allow one in-flight read, and retain one trailing refresh. */
 export function createCoalescedRefresh(refresh: () => Promise<void>, delayMs = 150) {
   let timer: ReturnType<typeof setTimeout> | undefined;

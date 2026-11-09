@@ -51,11 +51,7 @@ import {
   type CrispVisitor,
 } from "@/lib/crisp.functions";
 import { mergeIncomingMessage } from "@/lib/crisp-chat-messages";
-import {
-  conversationSummaryChanged,
-  createCoalescedRefresh,
-  workspaceSummaryChanged,
-} from "@/lib/crisp-refresh";
+import { conversationSummaryChanged, createCoalescedRefresh } from "@/lib/crisp-refresh";
 import { useCrispVisitors } from "@/hooks/use-crisp-visitors";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -1119,14 +1115,10 @@ function CrispInboxInner() {
           }
         },
       )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "crisp_workspaces" },
-        (payload) => {
-          if (workspaceSummaryChanged(payload)) refreshCounts.schedule();
-          loadWorkspaces();
-        },
-      )
+      // crisp_workspaces is deliberately not subscribed (and not in the Realtime
+      // publication): background sync rewrites those rows every few seconds, so
+      // a listener here cost one Realtime message plus a full workspace reload
+      // per tab per write. Settings edits are picked up by the 30s heartbeat.
       .subscribe();
 
     // ── Background Auto-Sync Heartbeat (Every 30s) ──────────────────────────
@@ -1135,6 +1127,7 @@ function CrispInboxInner() {
     const pollInterval = setInterval(() => {
       if (document.visibilityState === "hidden") return;
       refreshCounts.schedule();
+      void loadWorkspaces();
       loadConversations(selectedWebsiteIdRef.current, true);
       const activeId = selectedConversationIdRef.current;
       if (activeId) {
