@@ -641,6 +641,11 @@ function Page() {
 // stop — until fewer than this many unchecked leads remain.
 const AUTO_CHECK_THRESHOLD = 50;
 
+// Temporarily pause AI auto-checking of raw leads. While true, the AI never
+// fires on its own; users can still run a batch manually with the
+// "Check 50 Leads" button. Flip back to false to resume auto-checking.
+const AUTO_CHECK_PAUSED = true;
+
 function Inner() {
   const auth = useAuth();
   const qc = useQueryClient();
@@ -1367,7 +1372,11 @@ function Inner() {
   // is no toggle and no manual stop — it stays "locked" while the backlog is
   // large. When new leads push the count back over the threshold it resumes.
   const autoActive =
-    canRunAi && !!aiPrompt.trim() && !aiLockedByOther && uncheckedCount >= AUTO_CHECK_THRESHOLD;
+    !AUTO_CHECK_PAUSED &&
+    canRunAi &&
+    !!aiPrompt.trim() &&
+    !aiLockedByOther &&
+    uncheckedCount >= AUTO_CHECK_THRESHOLD;
 
   const autoActiveRef = useRef(autoActive);
   autoActiveRef.current = autoActive;
@@ -1734,7 +1743,11 @@ function Inner() {
                     : `Check ${aiTargets.length || 50} Lead${aiTargets.length === 1 ? "" : "s"}`}
               </Button>
               <p className="px-1 text-[11px] leading-snug text-muted-foreground lg:w-[210px]">
-                {autoActive ? "Locked until under 50 left." : "Auto-runs at 50+ unchecked."}
+                {AUTO_CHECK_PAUSED
+                  ? "Auto-check paused — run manually."
+                  : autoActive
+                    ? "Locked until under 50 left."
+                    : "Auto-runs at 50+ unchecked."}
               </p>
             </div>
           </div>
