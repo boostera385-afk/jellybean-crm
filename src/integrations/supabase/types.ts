@@ -2006,6 +2006,10 @@ export type Database = {
         Returns: Json
       }
       claim_quo_ai_job: { Args: never; Returns: Json }
+      claim_quo_message_backfill: {
+        Args: { p_inbox_ids: string[] }
+        Returns: Json
+      }
       count_pending_reminder_leads: { Args: never; Returns: number }
       crisp_accept_event: {
         Args: { p_body: Json; p_fingerprint: string }
@@ -2179,6 +2183,15 @@ export type Database = {
         Args: { p_job_id: string; p_token: string }
         Returns: Json
       }
+      cs_lead_in_review: {
+        Args: {
+          p_human_updated_at: string
+          p_review_required: boolean
+          p_status: Database["public"]["Enums"]["cs_status"]
+          p_updated_by_ai: boolean
+        }
+        Returns: boolean
+      }
       cs_leads_status_counts: { Args: never; Returns: Json }
       cs_leads_status_counts_filtered: {
         Args: {
@@ -2202,6 +2215,13 @@ export type Database = {
           p_version: string
         }
         Returns: string
+      }
+      cs_status_ai_locked: {
+        Args: {
+          p_status: Database["public"]["Enums"]["cs_status"]
+          p_updated_by_ai: boolean
+        }
+        Returns: boolean
       }
       cs_status_ai_may_change: {
         Args: {
@@ -2265,6 +2285,15 @@ export type Database = {
       }
       finish_quo_ai_job: {
         Args: { p_lease_token: string; p_result: Json; p_run_id: string }
+        Returns: boolean
+      }
+      finish_quo_message_backfill: {
+        Args: {
+          p_lead_id: string
+          p_message_count: number
+          p_reason: string
+          p_state: string
+        }
         Returns: boolean
       }
       flip_quo_ai_no_reply: { Args: never; Returns: number }
@@ -2672,6 +2701,7 @@ export type Database = {
         Args: { p_from?: string; p_to?: string }
         Returns: Json
       }
+      seed_quo_message_backfill: { Args: { p_limit: number }; Returns: number }
       send_lead_reminder: {
         Args: { _lead_id: string; _message: string }
         Returns: Json
@@ -2686,6 +2716,10 @@ export type Database = {
           state_name: string
           total_leads: number
         }[]
+      }
+      store_quo_messages: {
+        Args: { p_lead_id: string; p_messages: Json }
+        Returns: number
       }
       store_quo_webhook_key: {
         Args: {
