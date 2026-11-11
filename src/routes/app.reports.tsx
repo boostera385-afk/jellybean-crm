@@ -362,7 +362,10 @@ function Inner() {
       if (error) throw error;
       return data as { pending: number; workDone: number; workTotal: number };
     },
-    refetchInterval: 5_000,
+    // Fast refresh only while a run is in progress; idle tabs no longer hit
+    // the database every 5s. Starting a run invalidates this query directly.
+    refetchInterval: (query) => (query.state.data?.pending ? 5_000 : 30_000),
+    refetchIntervalInBackground: false,
     retry: false,
   });
   useEffect(() => {
