@@ -612,13 +612,51 @@ export async function handleNextdoorLeadsPost(request: Request) {
         canonical_lead_link: string | null;
       }> = [];
       if (postedTimes.length > 0) {
-        const { data } = await supabaseAdmin
+        // "Posted Date & Time" is usually relative ("15 hr ago"), so it matches
+        // thousands of historical rows. Pull only the short key fields first,
+        // then fetch full rows (with Post Text) for the few rows whose name,
+        // area and posted time already match. Same result, a fraction of the
+        // rows/bytes the database has to build and ship per batch.
+        const { data: keyRows } = await supabaseAdmin
           .from("raw_lead_cache")
           .select(
-            "id, row_key, data, category, captured_at, assigned_myself_at, canonical_post_id, canonical_lead_link",
+            // JSON keys are quoted: supabase-js strips unquoted whitespace from select.
+            'id, posted:data->>"Posted Date & Time", name:data->>"Account Name", area:data->>"Sub Area / Neighborhood"',
           )
           .in("data->>Posted Date & Time", postedTimes);
-        if (data) fallbackCandidates = data as never;
+        const wanted = new Set(
+          fallbackRows.map(
+            (r) =>
+              `${normalizePostedTime(r.data["Posted Date & Time"] || "")}|${normalizeIdentifier(
+                r.data["Account Name"] || "",
+              )}|${normalizeIdentifier(r.data["Sub Area / Neighborhood"] || "")}`,
+          ),
+        );
+        const candidateIds = (
+          (keyRows ?? []) as unknown as Array<{
+            id: string;
+            posted: string | null;
+            name: string | null;
+            area: string | null;
+          }>
+        )
+          .filter((k) =>
+            wanted.has(
+              `${normalizePostedTime(k.posted || "")}|${normalizeIdentifier(
+                k.name || "",
+              )}|${normalizeIdentifier(k.area || "")}`,
+            ),
+          )
+          .map((k) => k.id);
+        if (candidateIds.length > 0) {
+          const { data } = await supabaseAdmin
+            .from("raw_lead_cache")
+            .select(
+              "id, row_key, data, category, captured_at, assigned_myself_at, canonical_post_id, canonical_lead_link",
+            )
+            .in("id", candidateIds);
+          if (data) fallbackCandidates = data as never;
+        }
       }
 
       if (fallbackCandidates.length > 0) {
