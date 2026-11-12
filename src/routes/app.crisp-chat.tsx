@@ -178,6 +178,7 @@ type WorkspaceRecord = {
   auto_greet_enabled?: boolean | null;
   auto_greet_message?: string | null;
   auto_greet_delay_seconds?: number | null;
+  metadata?: Json | null;
 };
 
 type NoteRecord = {
@@ -375,10 +376,35 @@ function formatConversationTime(dateStr: string | null | undefined): string {
   });
 }
 
-function getWorkspaceDisplayName(websiteId: string, workspacesMap: Map<string, string>): string {
+/** Reads the site domain Crisp reported at registration (stored in workspace metadata). */
+function getWorkspaceDomain(metadata: Json | null | undefined): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const raw = (metadata as Record<string, Json | undefined>).domain;
+  if (typeof raw !== "string") return null;
+  const domain = raw
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
+    .replace(/\/+$/, "");
+  return domain || null;
+}
+
+/** Site label shown in the inbox: "Name · domain" when both are known. */
+function formatWorkspaceLabel(name: string | null | undefined, domain: string | null): string {
+  const trimmedName = name?.trim() ?? "";
+  if (!domain) return trimmedName;
+  if (!trimmedName || trimmedName.toLowerCase() === domain.toLowerCase()) return domain;
+  return `${trimmedName} · ${domain}`;
+}
+
+function getWorkspaceDisplayName(
+  websiteId: string,
+  workspacesMap: Map<string, string>,
+  fallbackName?: string | null,
+): string {
   if (workspacesMap.has(websiteId) && workspacesMap.get(websiteId)?.trim()) {
     return workspacesMap.get(websiteId)!;
   }
+  if (fallbackName?.trim()) return fallbackName.trim();
   const suffix = websiteId.length > 6 ? websiteId.slice(-5) : websiteId;
   return `Workspace • ${suffix}`;
 }
@@ -1160,12 +1186,13 @@ function CrispInboxInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Map of workspace website_id -> workspace_name
+  // Map of workspace website_id -> display label ("Name · domain")
   const workspacesMap = useMemo(() => {
     const map = new Map<string, string>();
     workspaces.forEach((w) => {
-      if (w.workspace_name) {
-        map.set(w.crisp_website_id, w.workspace_name);
+      const label = formatWorkspaceLabel(w.workspace_name, getWorkspaceDomain(w.metadata));
+      if (label) {
+        map.set(w.crisp_website_id, label);
       }
     });
     return map;
@@ -1850,7 +1877,9 @@ function CrispInboxInner() {
                           ws.enabled ? "bg-emerald-500/60" : "bg-muted",
                         )}
                       />
-                      <span className="truncate max-w-[9rem]">{displayName}</span>
+                      <span className="truncate max-w-[16rem]" title={displayName}>
+                        {displayName}
+                      </span>
                       {hasUnread && (
                         <span
                           className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse ml-0.5"
@@ -2148,7 +2177,7 @@ function CrispInboxInner() {
                         className="shrink-0 gap-1 border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0 text-[10px] font-medium text-emerald-500"
                       >
                         <Building2 className="h-3 w-3" />
-                        <span className="max-w-[12rem] truncate">
+                        <span className="max-w-[16rem] truncate">
                           {getWorkspaceDisplayName(
                             activeConversation.crisp_website_id,
                             workspacesMap,
@@ -2446,10 +2475,11 @@ function CrispInboxInner() {
                       key={`${visitor.crisp_website_id}:${visitor.crisp_session_id}`}
                       visitor={visitor}
                       tone="hot"
-                      workspaceName={
-                        visitor.workspace_name ||
-                        getWorkspaceDisplayName(visitor.crisp_website_id, workspacesMap)
-                      }
+                      workspaceName={getWorkspaceDisplayName(
+                        visitor.crisp_website_id,
+                        workspacesMap,
+                        visitor.workspace_name,
+                      )}
                       onSend={() => {
                         setSelectedVisitor(visitor);
                         setVisitorMessage("");
@@ -2485,10 +2515,11 @@ function CrispInboxInner() {
                       key={`${visitor.crisp_website_id}:${visitor.crisp_session_id}`}
                       visitor={visitor}
                       tone="warm"
-                      workspaceName={
-                        visitor.workspace_name ||
-                        getWorkspaceDisplayName(visitor.crisp_website_id, workspacesMap)
-                      }
+                      workspaceName={getWorkspaceDisplayName(
+                        visitor.crisp_website_id,
+                        workspacesMap,
+                        visitor.workspace_name,
+                      )}
                       onSend={() => {
                         setSelectedVisitor(visitor);
                         setVisitorMessage("");
@@ -2679,8 +2710,11 @@ function CrispInboxInner() {
                         </Badge>
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {selectedVisitor.workspace_name ||
-                          getWorkspaceDisplayName(selectedVisitor.crisp_website_id, workspacesMap)}
+                        {getWorkspaceDisplayName(
+                          selectedVisitor.crisp_website_id,
+                          workspacesMap,
+                          selectedVisitor.workspace_name,
+                        )}
                       </p>
                     </div>
                   </div>
