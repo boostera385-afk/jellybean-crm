@@ -180,6 +180,30 @@ try {
         await page.getByRole("button", { name: "Diagram", exact: true }).click();
         const diagram = page.getByRole("region", { name: "Lead hierarchy diagram" });
         await diagram.waitFor();
+        await diagram.getByRole("button", { name: "Zoom in", exact: true }).click();
+        await diagram.getByRole("button", { name: /^Zoom 110 percent/ }).waitFor();
+        await diagram.getByRole("button", { name: /^Zoom 110 percent/ }).click();
+        await diagram.getByRole("button", { name: /^Zoom 100 percent/ }).waitFor();
+        await diagram.getByRole("button", { name: "Make diagram taller" }).click();
+        await diagram.getByRole("button", { name: "Make diagram smaller" }).click();
+        // Force overflow, then verify a real mouse drag pans the canvas without selecting.
+        const canvas = diagram.getByLabel(/^Diagram canvas/);
+        await canvas.evaluate((element) => {
+          (element.firstElementChild as HTMLElement).style.minWidth = "3000px";
+        });
+        const box = await canvas.boundingBox();
+        if (!box) throw new Error("Diagram canvas missing");
+        const before = await canvas.evaluate((element) => element.scrollLeft);
+        await page.mouse.move(box.x + box.width - 40, box.y + box.height - 30);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width - 340, box.y + box.height - 30, { steps: 8 });
+        await page.mouse.up();
+        const after = await canvas.evaluate((element) => element.scrollLeft);
+        if (after - before < 150)
+          throw new Error(`Drag did not pan diagram (${before} -> ${after})`);
+        await canvas.evaluate((element) => {
+          (element.firstElementChild as HTMLElement).style.minWidth = "";
+        });
         const rootCard = diagram.getByRole("button", { name: /^All qualified leads/ });
         await rootCard.waitFor();
         const firstToggle = diagram.getByRole("button", { name: /^Expand / }).first();
