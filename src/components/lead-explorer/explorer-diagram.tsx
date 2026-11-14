@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, Network } from "lucide-react";
+import { ChevronDown, Network } from "lucide-react";
 import { useExplorerQuery } from "@/hooks/use-lead-explorer";
 import {
   branchId,
@@ -23,21 +23,27 @@ type Props = {
   total: number | undefined;
 };
 
-const VISIBLE_CHILDREN = 12;
+const VISIBLE_CHILDREN = 8;
 // One accent per depth keeps levels distinguishable in light and dark themes.
 const DEPTH_ACCENT = [
-  "border-l-primary",
-  "border-l-sky-500",
-  "border-l-emerald-500",
-  "border-l-amber-500",
+  "border-t-primary",
+  "border-t-sky-500",
+  "border-t-emerald-500",
+  "border-t-amber-500",
 ];
-// Child rows draw their own connector: a vertical rail plus a horizontal stub.
-const CONNECTOR =
-  "relative pb-2 last:pb-0 before:absolute before:-left-6 before:top-0 before:bottom-0 before:w-px before:bg-border " +
-  "first:before:top-5 last:before:bottom-auto last:before:h-5 only:before:hidden " +
-  "after:absolute after:-left-6 after:top-5 after:h-px after:w-6 after:bg-border";
+// Top-down org-chart connectors: each child draws a rail segment to both neighbours
+// plus a drop line to its own card. First/last/only children trim the rail ends.
+const CHILD =
+  "relative flex flex-col items-center px-2 pt-6 " +
+  "before:absolute before:right-1/2 before:top-0 before:h-6 before:w-1/2 before:border-t before:border-muted-foreground/40 " +
+  "after:absolute after:left-1/2 after:top-0 after:h-6 after:w-1/2 after:border-l after:border-t after:border-muted-foreground/40 " +
+  "first:before:border-t-0 last:after:border-t-0 only:before:hidden";
+// Vertical stem from a parent card down to its children's rail.
+const LEVEL =
+  "animate-fade-in relative flex justify-center pt-6 " +
+  "before:absolute before:left-1/2 before:top-0 before:h-6 before:border-l before:border-muted-foreground/40";
 
-/** Left-to-right decision-tree style diagram of the same lazy, RLS-scoped branches. */
+/** Top-down decision-tree style diagram of the same lazy, RLS-scoped branches. */
 export function ExplorerDiagram(props: Props & { collapse: () => void }) {
   const rootSelected = props.path.length === 0;
   return (
@@ -50,36 +56,30 @@ export function ExplorerDiagram(props: Props & { collapse: () => void }) {
           Collapse all
         </Button>
       </div>
-      <div className="overflow-auto pb-2" tabIndex={-1}>
+      <div className="overflow-x-auto pb-4">
         <TreeView label={props.group === "area" ? "Leads by area" : "Leads by service"}>
-          <div
-            role="treeitem"
-            aria-level={1}
-            aria-expanded
-            aria-selected={rootSelected}
-            aria-label={`All qualified leads, ${props.total ?? "loading"} leads`}
-            tabIndex={-1}
-            className="flex w-max items-start rounded-lg outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            <button
-              type="button"
+          <div className="mx-auto flex w-max min-w-full justify-center">
+            <div
+              role="treeitem"
+              aria-level={1}
+              aria-expanded
+              aria-selected={rootSelected}
+              aria-label={`All qualified leads, ${props.total ?? "loading"} leads`}
               tabIndex={-1}
-              data-tree-select
-              onClick={() => props.select([])}
-              className={cn(
-                "flex h-10 w-56 shrink-0 items-center gap-2 rounded-lg border border-l-4 border-border bg-card px-3 text-left text-sm font-semibold shadow-sm transition-colors hover:bg-accent/50 motion-reduce:transition-none",
-                DEPTH_ACCENT[0],
-                rootSelected && "bg-primary/10 ring-1 ring-primary/30",
-              )}
+              className="flex flex-col items-center rounded-lg outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
             >
-              <span className="min-w-0 flex-1 truncate">All qualified leads</span>
-              <span className="crm-pill-text shrink-0 rounded-full bg-muted px-2 py-0.5 tabular-nums text-muted-foreground">
-                {props.total === undefined ? "—" : props.total.toLocaleString()}
-              </span>
-            </button>
-            <div role="group" className="animate-fade-in relative ml-6 pl-6">
-              <span aria-hidden="true" className="absolute -left-6 top-5 h-px w-6 bg-border" />
-              <DiagramLevel {...props} parent={[]} />
+              <NodeCard
+                label="All qualified leads"
+                total={props.total}
+                newCount={0}
+                depth={0}
+                selected={rootSelected}
+                ratio={1}
+                onSelect={() => props.select([])}
+              />
+              <div role="group" className={LEVEL}>
+                <DiagramLevel {...props} parent={[]} />
+              </div>
             </div>
           </div>
         </TreeView>
@@ -88,13 +88,105 @@ export function ExplorerDiagram(props: Props & { collapse: () => void }) {
   );
 }
 
+function NodeCard({
+  label,
+  total,
+  newCount,
+  depth,
+  selected,
+  ratio,
+  onSelect,
+  expandable,
+  expanded,
+  onToggle,
+}: {
+  label: string;
+  total: number | undefined;
+  newCount: number;
+  depth: number;
+  selected: boolean;
+  ratio: number;
+  onSelect: () => void;
+  expandable?: boolean;
+  expanded?: boolean;
+  onToggle?: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "relative w-44 rounded-xl border border-t-4 border-border bg-card shadow-sm transition-colors motion-reduce:transition-none hover:bg-accent/40",
+        DEPTH_ACCENT[Math.min(depth, DEPTH_ACCENT.length - 1)],
+        selected && "bg-primary/10 ring-2 ring-primary/40",
+        expandable && "mb-3",
+      )}
+    >
+      <button
+        type="button"
+        tabIndex={-1}
+        data-tree-select
+        onClick={onSelect}
+        className="flex min-h-[4.25rem] w-full flex-col items-center justify-center gap-1.5 rounded-xl px-2 pb-3 pt-2 text-center"
+      >
+        <span className="line-clamp-2 break-words text-sm font-medium leading-tight" title={label}>
+          {label}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="crm-pill-text rounded-full bg-muted px-2 py-0.5 tabular-nums text-muted-foreground">
+            {total === undefined ? "—" : total.toLocaleString()}
+          </span>
+          {newCount > 0 && (
+            <span className="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning">
+              {newCount} new
+            </span>
+          )}
+        </span>
+      </button>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-2 bottom-1 h-0.5 overflow-hidden rounded bg-muted"
+      >
+        <span
+          className="block h-full rounded bg-primary/50 transition-[width] duration-500 ease-out motion-reduce:transition-none"
+          style={{ width: `${Math.max(3, ratio * 100)}%` }}
+        />
+      </span>
+      {expandable && (
+        <button
+          type="button"
+          tabIndex={-1}
+          data-tree-toggle
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
+          onClick={onToggle}
+          className="absolute -bottom-3 left-1/2 z-10 grid h-6 w-6 -translate-x-1/2 place-items-center rounded-full border border-border bg-card shadow-sm hover:bg-accent"
+        >
+          <ChevronDown
+            className={cn(
+              "h-3.5 w-3.5 transition-transform motion-reduce:transition-none",
+              expanded && "rotate-180",
+            )}
+          />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function DiagramLevel(props: Props & { parent: string[] }) {
   const [showAll, setShowAll] = useState(false);
   const query = useExplorerQuery("nodes", props.group, props.parent, props.filters);
-  if (query.isPending) return <DiagramLoading />;
+  if (query.isPending)
+    return (
+      <>
+        {[0, 1, 2].map((key) => (
+          <div key={key} className={CHILD}>
+            <Skeleton role="status" aria-label="Loading branches" className="h-[4.25rem] w-44" />
+          </div>
+        ))}
+      </>
+    );
   if (query.isError)
     return (
-      <div role="alert" className="w-56 space-y-1 text-xs text-muted-foreground">
+      <div role="alert" className={cn(CHILD, "w-52 text-center text-xs text-muted-foreground")}>
         <p>{friendlyError(query.error)}</p>
         <Button size="sm" variant="outline" onClick={() => void query.refetch()}>
           Retry branches
@@ -102,7 +194,12 @@ function DiagramLevel(props: Props & { parent: string[] }) {
       </div>
     );
   const nodes = query.data?.action === "nodes" ? query.data.value : [];
-  if (!nodes.length) return <p className="w-56 text-xs text-muted-foreground">No branches</p>;
+  if (!nodes.length)
+    return (
+      <div className={cn(CHILD, "text-xs text-muted-foreground")}>
+        <span>No branches</span>
+      </div>
+    );
   const largest = Math.max(1, ...nodes.map((node) => node.total));
   const maxDepth = props.group === "area" ? 3 : 2;
   const depth = props.parent.length;
@@ -124,62 +221,22 @@ function DiagramLevel(props: Props & { parent: string[] }) {
             aria-expanded={expandable ? expanded : undefined}
             aria-selected={selected}
             tabIndex={-1}
-            className={cn(CONNECTOR, "flex w-max items-start outline-offset-2")}
+            className={cn(CHILD, "outline-offset-2")}
           >
-            <div
-              className={cn(
-                "relative flex h-10 w-56 shrink-0 items-center overflow-hidden rounded-lg border border-l-4 border-border bg-card text-sm shadow-sm transition-colors motion-reduce:transition-none hover:bg-accent/50",
-                DEPTH_ACCENT[Math.min(depth + 1, DEPTH_ACCENT.length - 1)],
-                selected && "bg-primary/10 ring-1 ring-primary/30",
-              )}
-            >
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute bottom-0 left-0 h-0.5 bg-primary/40 transition-[width] duration-500 ease-out motion-reduce:transition-none"
-                style={{ width: `${Math.max(2, (node.total / largest) * 100)}%` }}
-              />
-              <button
-                type="button"
-                tabIndex={-1}
-                data-tree-select
-                onClick={() => props.select(path)}
-                className="flex h-full min-w-0 flex-1 items-center gap-2 pl-2 text-left"
-              >
-                <span className="min-w-0 flex-1 truncate" title={label}>
-                  {label}
-                </span>
-                {node.new_count > 0 && (
-                  <span className="shrink-0 rounded bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning">
-                    {node.new_count} new
-                  </span>
-                )}
-                <span className="crm-pill-text shrink-0 rounded-full bg-muted px-2 py-0.5 tabular-nums text-muted-foreground">
-                  {node.total.toLocaleString()}
-                </span>
-              </button>
-              {expandable ? (
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  data-tree-toggle
-                  aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
-                  className="grid h-full w-8 shrink-0 place-items-center hover:bg-accent"
-                  onClick={() => props.toggle(path)}
-                >
-                  <ChevronRight
-                    className={cn(
-                      "h-3.5 w-3.5 transition-transform motion-reduce:transition-none",
-                      expanded && "rotate-90",
-                    )}
-                  />
-                </button>
-              ) : (
-                <span className="w-2 shrink-0" />
-              )}
-            </div>
+            <NodeCard
+              label={label}
+              total={node.total}
+              newCount={node.new_count}
+              depth={depth + 1}
+              selected={selected}
+              ratio={node.total / largest}
+              onSelect={() => props.select(path)}
+              expandable={expandable}
+              expanded={expanded}
+              onToggle={() => props.toggle(path)}
+            />
             {expandable && expanded && (
-              <div role="group" className="animate-fade-in relative ml-6 pl-6">
-                <span aria-hidden="true" className="absolute -left-6 top-5 h-px w-6 bg-border" />
+              <div role="group" className={LEVEL}>
                 <DiagramLevel {...props} parent={path} />
               </div>
             )}
@@ -187,27 +244,17 @@ function DiagramLevel(props: Props & { parent: string[] }) {
         );
       })}
       {nodes.length > VISIBLE_CHILDREN && (
-        <div className={cn(CONNECTOR, "w-56")}>
+        <div className={CHILD}>
           <Button
             size="sm"
             variant="outline"
-            className="h-10 w-full"
+            className="h-[4.25rem] w-32 whitespace-normal"
             onClick={() => setShowAll((value) => !value)}
           >
-            {showAll ? "Show fewer" : `Show all ${nodes.length.toLocaleString()} branches`}
+            {showAll ? "Show fewer" : `Show all ${nodes.length.toLocaleString()}`}
           </Button>
         </div>
       )}
     </>
-  );
-}
-
-function DiagramLoading() {
-  return (
-    <div role="status" aria-label="Loading branches" className="w-56 space-y-2">
-      {[0, 1, 2].map((key) => (
-        <Skeleton key={key} className="h-10 w-full" />
-      ))}
-    </div>
   );
 }

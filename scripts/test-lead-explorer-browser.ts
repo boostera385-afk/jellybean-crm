@@ -176,6 +176,33 @@ try {
       );
       if (overflow) throw new Error(`Horizontal overflow: ${width}/${theme}`);
       await page.screenshot({ path: join(out, `${width}-${theme}.png`), fullPage: false });
+      if (width >= 768) {
+        await page.getByRole("button", { name: "Diagram", exact: true }).click();
+        const diagram = page.getByRole("region", { name: "Lead hierarchy diagram" });
+        await diagram.waitFor();
+        const rootCard = diagram.getByRole("button", { name: /^All qualified leads/ });
+        await rootCard.waitFor();
+        const firstToggle = diagram.getByRole("button", { name: /^Expand / }).first();
+        await firstToggle.waitFor();
+        const parentBox = await rootCard.boundingBox();
+        const childBox = await firstToggle.boundingBox();
+        if (!parentBox || !childBox || childBox.y <= parentBox.y + parentBox.height - 1)
+          throw new Error("Diagram children are not below their parent");
+        await firstToggle.click();
+        await diagram.getByRole("group").nth(1).waitFor();
+        const grandchild = await diagram.getByRole("treeitem").nth(1).boundingBox();
+        const grandchildren = diagram.locator('[role="group"] [role="group"] [role="treeitem"]');
+        if ((await grandchildren.count()) && grandchild) {
+          const nested = await grandchildren.first().boundingBox();
+          if (!nested || nested.y <= grandchild.y)
+            throw new Error("Nested branch not below parent");
+        }
+        if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth))
+          throw new Error(`Diagram caused page overflow: ${width}/${theme}`);
+        await page.screenshot({ path: join(out, `${width}-${theme}-diagram.png`) });
+        await page.getByRole("button", { name: "List", exact: true }).click();
+        await page.getByRole("tree").waitFor();
+      }
       const opener = page.getByRole("button", { name: /^View / }).first();
       await opener.click();
       await page.getByRole("dialog").waitFor();
