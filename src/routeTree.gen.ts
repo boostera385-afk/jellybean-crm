@@ -24,6 +24,7 @@ import { Route as AppCsReportsRouteImport } from './routes/app.cs-reports'
 import { Route as AppForwardedLeadsRouteImport } from './routes/app.forwarded-leads'
 import { Route as AppGoogleSheetsRouteImport } from './routes/app.google-sheets'
 import { Route as AppLeadAssignmentRouteImport } from './routes/app.lead-assignment'
+import { Route as AppLeadExplorerRouteImport } from './routes/app.lead-explorer'
 import { Route as AppLogsRouteImport } from './routes/app.logs'
 import { Route as AppMapRouteImport } from './routes/app.map'
 import { Route as AppPendingLeadsRouteImport } from './routes/app.pending-leads'
@@ -109,6 +110,11 @@ const AppLeadAssignmentRoute = AppLeadAssignmentRouteImport.update({
   path: '/lead-assignment',
   getParentRoute: () => AppRoute,
 } as any)
+const AppLeadExplorerRoute = AppLeadExplorerRouteImport.update({
+  id: '/lead-explorer',
+  path: '/lead-explorer',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppLogsRoute = AppLogsRouteImport.update({
   id: '/logs',
   path: '/logs',
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/app/forwarded-leads': typeof AppForwardedLeadsRoute
   '/app/google-sheets': typeof AppGoogleSheetsRoute
   '/app/lead-assignment': typeof AppLeadAssignmentRoute
+  '/app/lead-explorer': typeof AppLeadExplorerRoute
   '/app/logs': typeof AppLogsRoute
   '/app/map': typeof AppMapRoute
   '/app/pending-leads': typeof AppPendingLeadsRoute
@@ -195,6 +202,7 @@ export interface FileRoutesByTo {
   '/app/forwarded-leads': typeof AppForwardedLeadsRoute
   '/app/google-sheets': typeof AppGoogleSheetsRoute
   '/app/lead-assignment': typeof AppLeadAssignmentRoute
+  '/app/lead-explorer': typeof AppLeadExplorerRoute
   '/app/logs': typeof AppLogsRoute
   '/app/map': typeof AppMapRoute
   '/app/pending-leads': typeof AppPendingLeadsRoute
@@ -222,6 +230,7 @@ export interface FileRoutesById {
   '/app/forwarded-leads': typeof AppForwardedLeadsRoute
   '/app/google-sheets': typeof AppGoogleSheetsRoute
   '/app/lead-assignment': typeof AppLeadAssignmentRoute
+  '/app/lead-explorer': typeof AppLeadExplorerRoute
   '/app/logs': typeof AppLogsRoute
   '/app/map': typeof AppMapRoute
   '/app/pending-leads': typeof AppPendingLeadsRoute
@@ -250,6 +259,7 @@ export interface FileRouteTypes {
     | '/app/forwarded-leads'
     | '/app/google-sheets'
     | '/app/lead-assignment'
+    | '/app/lead-explorer'
     | '/app/logs'
     | '/app/map'
     | '/app/pending-leads'
@@ -275,6 +285,7 @@ export interface FileRouteTypes {
     | '/app/forwarded-leads'
     | '/app/google-sheets'
     | '/app/lead-assignment'
+    | '/app/lead-explorer'
     | '/app/logs'
     | '/app/map'
     | '/app/pending-leads'
@@ -301,6 +312,7 @@ export interface FileRouteTypes {
     | '/app/forwarded-leads'
     | '/app/google-sheets'
     | '/app/lead-assignment'
+    | '/app/lead-explorer'
     | '/app/logs'
     | '/app/map'
     | '/app/pending-leads'
@@ -429,6 +441,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLeadAssignmentRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/lead-explorer': {
+      id: '/app/lead-explorer'
+      path: '/lead-explorer'
+      fullPath: '/app/lead-explorer'
+      preLoaderRoute: typeof AppLeadExplorerRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/logs': {
       id: '/app/logs'
       path: '/logs'
@@ -505,6 +524,7 @@ interface AppRouteChildren {
   AppForwardedLeadsRoute: typeof AppForwardedLeadsRoute
   AppGoogleSheetsRoute: typeof AppGoogleSheetsRoute
   AppLeadAssignmentRoute: typeof AppLeadAssignmentRoute
+  AppLeadExplorerRoute: typeof AppLeadExplorerRoute
   AppLogsRoute: typeof AppLogsRoute
   AppMapRoute: typeof AppMapRoute
   AppPendingLeadsRoute: typeof AppPendingLeadsRoute
@@ -526,6 +546,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppForwardedLeadsRoute: AppForwardedLeadsRoute,
   AppGoogleSheetsRoute: AppGoogleSheetsRoute,
   AppLeadAssignmentRoute: AppLeadAssignmentRoute,
+  AppLeadExplorerRoute: AppLeadExplorerRoute,
   AppLogsRoute: AppLogsRoute,
   AppMapRoute: AppMapRoute,
   AppPendingLeadsRoute: AppPendingLeadsRoute,

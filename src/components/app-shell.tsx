@@ -20,6 +20,7 @@ import {
   BellRing,
   Users,
   MapPinned,
+  ListTree,
 } from "lucide-react";
 
 import { CrmUpdatesNotifier } from "@/components/crm-updates-notifier";
@@ -58,6 +59,12 @@ const PENDING_ITEM: Item = {
   icon: BellRing,
 };
 
+const LEAD_EXPLORER_ITEM: Item = {
+  to: "/app/lead-explorer",
+  label: "Lead Explorer",
+  icon: ListTree,
+};
+
 const SERVICE_AREA_BASE_ITEM: Item = {
   to: "/app/service-area-base",
   label: "Service/Area Base",
@@ -75,6 +82,7 @@ const ADMIN: Item[] = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, shortcut: "D" },
   { to: "/app/raw-leads", label: "Raw Leads", icon: Table2, shortcut: "L" },
   { to: "/app/cs-leads", label: "CS Pipeline", icon: Headphones, shortcut: "P" },
+  LEAD_EXPLORER_ITEM,
   { to: "/app/pending-leads", label: "Pending leads", icon: BellRing },
   { to: "/app/crisp-chat", label: "Crisp Chat", icon: MessageSquare, shortcut: "C" },
   { to: "/app/browser-profiles", label: "Browser Profiles", icon: Globe, shortcut: "B" },
@@ -101,12 +109,14 @@ const MATURING: Item[] = [
 
 const CS: Item[] = [
   { to: "/app/cs-leads", label: "Dashboard", icon: LayoutDashboard },
+  LEAD_EXPLORER_ITEM,
   PENDING_ITEM,
   CRISP_ITEM,
 ];
 
 const CS_ADMIN_ITEMS: Item[] = [
   { to: "/app/cs-leads", label: "CS Pipeline", icon: Headphones },
+  LEAD_EXPLORER_ITEM,
   PENDING_ITEM,
   CRISP_ITEM,
   { to: "/app/lead-assignment", label: "Lead Assignment", icon: PieChart },
@@ -149,6 +159,7 @@ const ADMIN_FULL: Item[] = [
 const SUB_ADMIN: Item[] = ADMIN_FULL.filter(
   (item) =>
     item.to !== "/app/cs-leads" &&
+    item.to !== "/app/lead-explorer" &&
     item.to !== "/app/pending-leads" &&
     item.to !== "/app/service-area-base" &&
     item.to !== "/app/logs" &&
@@ -199,7 +210,13 @@ function navigationGroupsForRole(
     },
     {
       label: "Customer service",
-      paths: ["/app/cs-leads", "/app/pending-leads", "/app/crisp-chat", "/app/lead-assignment"],
+      paths: [
+        "/app/cs-leads",
+        "/app/lead-explorer",
+        "/app/pending-leads",
+        "/app/crisp-chat",
+        "/app/lead-assignment",
+      ],
     },
     { label: "Intelligence", paths: ["/app/analytics", "/app/reports"] },
     {

@@ -2376,6 +2376,19 @@ export type Database = {
         Args: { q: Database["public"]["Tables"]["qualified_leads"]["Row"] }
         Returns: string
       }
+      lead_explorer_query: {
+        Args: {
+          p_action: string
+          p_catalog?: Json
+          p_cursor?: Json
+          p_filters?: Json
+          p_group?: string
+          p_lead_id?: string
+          p_path?: Json
+        }
+        Returns: Json
+      }
+      lead_explorer_trim: { Args: { p_value: string }; Returns: string }
       list_pending_reminder_leads: {
         Args: never
         Returns: {

@@ -11,7 +11,7 @@ import {
 // Map each replicated table to the React Query keys that should refresh
 // when any user inserts/updates a row.
 const TABLE_QUERY_KEYS: Record<string, string[][]> = {
-  qualified_leads: [["cs_leads"], ["cs_sent_today"], ["forwarded-leads"]],
+  qualified_leads: [["cs_leads"], ["cs_sent_today"], ["forwarded-leads"], ["lead-explorer"]],
   incogniton_profiles: [["incog_profiles"]],
   shared_state: [["raw-leads-shared-start-row"], ["raw-leads-ai-lock"], ["lead-ai-prompt"]],
 };
@@ -83,7 +83,8 @@ export function useRealtimeSync(role: AppRole | null) {
           (payload: { eventType: string; new?: { key?: string; value?: unknown } }) => {
             if (payload.new?.key === GOOGLE_SHEETS_SHARED_STATE_KEY) {
               const cfg = payload.new.value as
-                { webhookUrl?: string; autoSync?: boolean } | undefined;
+                | { webhookUrl?: string; autoSync?: boolean }
+                | undefined;
               if (cfg && typeof cfg === "object") {
                 setGoogleSheetsConfigInMemory(cfg.webhookUrl, cfg.autoSync);
               }
