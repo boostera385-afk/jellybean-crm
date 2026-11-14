@@ -66,6 +66,15 @@ try {
       "utf8",
     ),
   );
+  await db.exec(
+    readFileSync(
+      new URL(
+        "../supabase/migrations/20261114120000_lead_explorer_followup_due.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
   assert.deepEqual(
     (await db.query("SELECT * FROM pg_policies ORDER BY policyname")).rows,
     policyBefore.rows,
@@ -90,7 +99,7 @@ try {
         [null, "TX", "CA", "NY", "\t\n "][i % 5],
         i % 7 ? `Main ${i % 3}` : null,
         i % 11 ? `Sub ${i % 2}` : null,
-        i % 2 ? "new" : "converted",
+        i % 2 ? "new" : i % 4 === 2 ? "need_follow_up" : "converted",
         i % 4 === 0 ? ids[2] : i % 4 === 1 ? null : ids[0],
         i % 9 === 0 ? ids[2] : ids[0],
       ],
@@ -197,6 +206,15 @@ try {
     assert.equal((await rpc("summary", "area", [], { query: "' OR true --" })).total, 0);
     assert.equal((await rpc("summary", "area", [], { query: "5551234567" })).total, 126);
     assert.equal((await rpc("summary", "area", [], { query: "Main 1" })).total, 36);
+    // Follow-up due matches CS Pipeline: past follow-up time AND Need Follow Up status.
+    const dueSummary = await rpc("summary", "area", [], { due: true });
+    const all = await rpc("summary", "area", []);
+    assert.ok(dueSummary.total > 0 && dueSummary.total < all.total);
+    assert.equal(dueSummary.total, all.followup_due);
+    assert.equal(
+      dueSummary.total,
+      (await rpc("summary", "area", [], { status: "need_follow_up" })).followup_due,
+    );
     for (const filters of [
       { status: "new" },
       { owner: "mine" },

@@ -19,7 +19,8 @@ export function ExplorerToolbar({
   clear: () => void;
   mobile: boolean;
 }) {
-  const selectClass = "h-10 min-w-0 rounded-lg border border-input px-3 text-sm";
+  const selectClass =
+    "h-10 min-w-0 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-ring";
   return (
     <section className="crm-section-panel space-y-4" aria-label="Explorer filters">
       <div className="flex flex-col gap-3 xl:flex-row">
@@ -137,6 +138,7 @@ export function ExplorerToolbar({
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
+              className="h-4 w-4 accent-primary"
               checked={state.important}
               onChange={(event) => update({ important: event.target.checked })}
             />
@@ -145,6 +147,7 @@ export function ExplorerToolbar({
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
+              className="h-4 w-4 accent-primary"
               checked={state.due}
               onChange={(event) => update({ due: event.target.checked })}
             />

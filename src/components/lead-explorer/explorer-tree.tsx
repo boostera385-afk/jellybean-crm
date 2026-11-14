@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { ChevronRight, FolderTree, RotateCcw } from "lucide-react";
 import { useExplorerQuery } from "@/hooks/use-lead-explorer";
 import {
@@ -22,6 +23,16 @@ type Props = {
 };
 
 export function ExplorerTree(props: Props & { collapse: () => void }) {
+  const scroller = useRef<HTMLDivElement>(null);
+  // Keep the selected branch visible when it changes via breadcrumbs or a shared link.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() =>
+      scroller.current
+        ?.querySelector<HTMLElement>('[aria-selected="true"]')
+        ?.scrollIntoView?.({ block: "nearest" }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [props.group, props.path]);
   return (
     <section
       className="crm-section-panel min-w-0 md:sticky md:top-4"
@@ -48,7 +59,7 @@ export function ExplorerTree(props: Props & { collapse: () => void }) {
       >
         All qualified leads
       </Button>
-      <div className="max-h-[65vh] overflow-auto p-1">
+      <div ref={scroller} className="max-h-[65vh] overflow-auto p-1">
         <TreeView label={props.group === "area" ? "Leads by area" : "Leads by service"}>
           <TreeLevel {...props} parent={[]} />
         </TreeView>
@@ -62,6 +73,8 @@ function TreeLevel(props: Props & { parent: string[] }) {
   if (query.isPending) return <TreeLoading />;
   if (query.isError) return <TreeError error={query.error} retry={() => void query.refetch()} />;
   const nodes = query.data?.action === "nodes" ? query.data.value : [];
+  const largest = Math.max(1, ...nodes.map((node) => node.total));
+  if (!nodes.length) return <p className="px-2 py-1 text-xs text-muted-foreground">No branches</p>;
   return nodes.map((node) => {
     const path = [...props.parent, node.key];
     const expandable = path.length < (props.group === "area" ? 3 : 2);
@@ -81,17 +94,22 @@ function TreeLevel(props: Props & { parent: string[] }) {
       >
         <div
           className={cn(
-            "flex min-h-10 items-center gap-1 rounded-lg px-1 text-sm transition-colors motion-reduce:transition-none hover:bg-accent/50",
+            "relative flex min-h-10 items-center gap-1 overflow-hidden rounded-lg px-1 text-sm transition-colors motion-reduce:transition-none hover:bg-accent/50",
             selected && "bg-primary/10 text-primary ring-1 ring-inset ring-primary/25",
           )}
         >
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 bg-primary/[0.06] transition-[width] duration-500 ease-out motion-reduce:transition-none"
+            style={{ width: `${Math.max(2, (node.total / largest) * 100)}%` }}
+          />
           {expandable ? (
             <button
               type="button"
               tabIndex={-1}
               data-tree-toggle
               aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
-              className="grid h-9 w-7 shrink-0 place-items-center rounded hover:bg-accent"
+              className="relative grid h-9 w-7 shrink-0 place-items-center rounded hover:bg-accent"
               onClick={() => props.toggle(path)}
             >
               <ChevronRight
@@ -102,14 +120,14 @@ function TreeLevel(props: Props & { parent: string[] }) {
               />
             </button>
           ) : (
-            <span className="w-7 shrink-0" />
+            <span className="relative w-7 shrink-0" />
           )}
           <button
             type="button"
             tabIndex={-1}
             data-tree-select
             onClick={() => props.select(path)}
-            className="flex min-w-0 flex-1 items-center gap-2 py-2 text-left"
+            className="relative flex min-w-0 flex-1 items-center gap-2 py-2 text-left"
           >
             <span className="min-w-0 flex-1 truncate" title={label}>
               {label}
@@ -125,7 +143,7 @@ function TreeLevel(props: Props & { parent: string[] }) {
           </button>
         </div>
         {expandable && expanded && (
-          <div role="group" className="ml-3 border-l border-border pl-2">
+          <div role="group" className="animate-fade-in ml-3 border-l border-border pl-2">
             <TreeLevel {...props} parent={path} />
           </div>
         )}

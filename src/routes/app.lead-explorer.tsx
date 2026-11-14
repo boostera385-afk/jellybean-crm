@@ -89,6 +89,9 @@ function ExplorerWorkspace() {
       const next = new Set(previous);
       for (let depth = 1; depth < path.length; depth++)
         next.add(branchId(state.group, path.slice(0, depth)));
+      // Selecting a branch also reveals its children.
+      if (path.length && path.length < (state.group === "area" ? 3 : 2))
+        next.add(branchId(state.group, path));
       return next;
     });
     update({ path });

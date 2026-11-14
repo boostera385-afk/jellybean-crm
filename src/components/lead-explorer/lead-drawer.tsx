@@ -103,8 +103,13 @@ export function LeadDrawer({
                 .filter((number): number is string => !!number)
                 .map((number, index) => (
                   <p key={index} className="flex items-center gap-2">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    {formatPhone(number)}
+                    <Phone className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                    <a
+                      href={`tel:${number.replace(/[^\d+]/g, "")}`}
+                      className="rounded text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                    >
+                      {formatPhone(number)}
+                    </a>
                   </p>
                 ))}
               <p className="text-muted-foreground">Created {formatPKT(lead.created_at)} PKT</p>

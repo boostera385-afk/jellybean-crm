@@ -25,7 +25,7 @@ export function useExplorerQuery(
     queryFn: () => request({ data: { action, group, path, filters, leadId, cursor: null } }),
     enabled: enabled && canExplore(auth.primaryRole),
     staleTime: 15_000,
-    refetchInterval: 30_000,
+    refetchInterval: 90_000, // realtime invalidates; polling is only a fallback
     retry: 1,
   });
 }
@@ -46,7 +46,7 @@ export function useExplorerResults(group: ExplorerGroup, path: string[], filters
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: canExplore(auth.primaryRole),
     staleTime: 15_000,
-    refetchInterval: 30_000,
+    refetchInterval: 90_000,
     retry: 1,
   });
 }

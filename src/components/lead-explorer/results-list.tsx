@@ -1,4 +1,5 @@
-import { ArrowUpRight, MapPin, SearchX } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { ArrowUpRight, BellRing, MapPin, SearchX } from "lucide-react";
 import { useExplorerResults } from "@/hooks/use-lead-explorer";
 import { locationPath, type ExplorerFilters, type ExplorerGroup } from "@/lib/lead-explorer";
 import { STATUS_LABEL, STATUS_TONE } from "@/lib/lead-statuses";
@@ -25,6 +26,21 @@ export function ExplorerResults({
   const query = useExplorerResults(group, path, filters);
   const rows = query.data?.pages.flatMap((page) => page.rows) ?? [];
   // Concurrent inserts can shift pages during refetch; never show a lead twice.
+  const sentinel = useRef<HTMLDivElement>(null);
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
+  // Load the next 50 rows as the list end approaches; the button remains as a fallback.
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node || !hasNextPage || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !isFetchingNextPage) void fetchNextPage();
+      },
+      { rootMargin: "400px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
   const unique = rows.filter(
     (row, index) => rows.findIndex((other) => other.id === row.id) === index,
   );
@@ -72,7 +88,7 @@ export function ExplorerResults({
             type="button"
             key={lead.id}
             onClick={() => open(lead.id)}
-            className="crm-lead-card block w-full min-w-0 text-left focus-visible:outline-2 focus-visible:outline-ring"
+            className="crm-lead-card animate-fade-in block w-full min-w-0 text-left transition-transform focus-visible:outline-2 focus-visible:outline-ring motion-safe:hover:-translate-y-px"
             aria-label={`View ${lead.customer_name || "Unnamed customer"}`}
           >
             <div className="flex items-start gap-3">
@@ -90,6 +106,13 @@ export function ExplorerResults({
                     {STATUS_LABEL[lead.cs_status] ?? lead.cs_status}
                   </span>
                   {lead.is_important && <span className="text-xs text-warning">Important</span>}
+                  {lead.cs_status === "need_follow_up" &&
+                    lead.followup_at &&
+                    new Date(lead.followup_at).getTime() <= Date.now() && (
+                      <span className="inline-flex items-center gap-1 text-xs text-warning">
+                        <BellRing className="h-3 w-3" aria-hidden="true" /> Follow-up due
+                      </span>
+                    )}
                 </div>
                 <p className="mt-1 break-words text-sm">{lead.service || "Unspecified service"}</p>
                 <p className="crm-lead-meta mt-1">
@@ -107,7 +130,7 @@ export function ExplorerResults({
         ))}
       </div>
       {query.hasNextPage && (
-        <div className="mt-4 flex justify-center">
+        <div ref={sentinel} className="mt-4 flex justify-center">
           <Button
             variant="outline"
             disabled={query.isFetchingNextPage}
