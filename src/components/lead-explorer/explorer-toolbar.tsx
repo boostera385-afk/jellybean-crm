@@ -155,10 +155,6 @@ export function ExplorerToolbar({
           </label>
         </div>
       </details>
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Search covers all permitted qualified leads. A branch narrows results. Search text is not
-        saved in links.
-      </p>
     </section>
   );
 }

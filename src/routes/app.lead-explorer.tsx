@@ -19,6 +19,7 @@ import {
 import { friendlyError } from "@/lib/error-messages";
 import { ExplorerToolbar } from "@/components/lead-explorer/explorer-toolbar";
 import { ExplorerTree, ExplorerDrilldown } from "@/components/lead-explorer/explorer-tree";
+import { ExplorerDiagram } from "@/components/lead-explorer/explorer-diagram";
 import { ExplorerResults } from "@/components/lead-explorer/results-list";
 import { LeadDrawer } from "@/components/lead-explorer/lead-drawer";
 
@@ -77,6 +78,14 @@ function ExplorerWorkspace() {
   );
   const summary = useExplorerQuery("summary", state.group, state.path, filters);
   const counts = summary.data?.action === "summary" ? summary.data.value : undefined;
+  // The diagram root always shows the whole filtered population, not the selected branch.
+  const rootSummary = useExplorerQuery(
+    "summary",
+    state.group,
+    [],
+    filters,
+    !mobile && state.view === "diagram",
+  );
   function update(patch: Partial<ExplorerSearch>, replace = false) {
     void navigate({
       search: (previous) => ({ ...previous, ...patch }),
@@ -139,27 +148,6 @@ function ExplorerWorkspace() {
           });
         }}
       />
-      <div
-        className="grid grid-cols-3 gap-2 sm:gap-3"
-        aria-label="Selected branch summary"
-        aria-live="polite"
-      >
-        {[
-          ["Matching leads", counts?.total],
-          ["New to contact", counts?.new_count],
-          ["Follow-up due", counts?.followup_due],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className="crm-surface-card flex min-w-0 flex-col items-start justify-between gap-2 border border-border px-3 py-3 sm:flex-row sm:items-center sm:px-4"
-          >
-            <span className="crm-card-label">{label}</span>
-            <span className="text-xl font-bold tabular-nums">
-              {typeof value === "number" ? value.toLocaleString() : "—"}
-            </span>
-          </div>
-        ))}
-      </div>
       {summary.isError && (
         <div
           role="alert"
@@ -172,33 +160,90 @@ function ExplorerWorkspace() {
           </Button>
         </div>
       )}
-      <nav
-        aria-label="Selected lead branch"
-        className="flex min-w-0 flex-wrap items-center gap-1 text-sm"
-      >
-        <ListTree className="mr-1 h-4 w-4 text-primary" />
-        <button
-          type="button"
-          className="rounded px-1 py-2 text-muted-foreground hover:text-primary"
-          onClick={() => select([])}
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <nav
+          aria-label="Selected lead branch"
+          className="flex min-w-0 flex-wrap items-center gap-1 text-sm"
         >
-          All leads
-        </button>
-        {state.path.map((key, index) => (
-          <span key={`${index}-${key}`} className="flex min-w-0 items-center gap-1">
-            <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-            <button
-              type="button"
-              aria-current={index === state.path.length - 1 ? "location" : undefined}
-              className="min-w-0 break-words rounded px-1 py-2 text-left hover:text-primary"
-              onClick={() => select(state.path.slice(0, index + 1))}
+          <ListTree className="mr-1 h-4 w-4 text-primary" />
+          <button
+            type="button"
+            className="rounded px-1 py-2 text-muted-foreground hover:text-primary"
+            onClick={() => select([])}
+          >
+            All leads
+          </button>
+          {state.path.map((key, index) => (
+            <span key={`${index}-${key}`} className="flex min-w-0 items-center gap-1">
+              <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <button
+                type="button"
+                aria-current={index === state.path.length - 1 ? "location" : undefined}
+                className="min-w-0 break-words rounded px-1 py-2 text-left hover:text-primary"
+                onClick={() => select(state.path.slice(0, index + 1))}
+              >
+                {branchLabel(state.group, index, key)}
+              </button>
+            </span>
+          ))}
+        </nav>
+        <div
+          className="flex flex-wrap items-center gap-2 text-xs"
+          aria-label="Selected branch summary"
+          aria-live="polite"
+        >
+          {[
+            ["Matching", counts?.total, "bg-primary/10 text-primary"],
+            ["New", counts?.new_count, "bg-warning/10 text-warning"],
+            ["Follow-up due", counts?.followup_due, "bg-muted text-muted-foreground"],
+          ].map(([label, value, tone]) => (
+            <span key={label as string} className={`rounded-full px-2.5 py-1 font-medium ${tone}`}>
+              {label}{" "}
+              <b className="tabular-nums">
+                {typeof value === "number" ? value.toLocaleString() : "—"}
+              </b>
+            </span>
+          ))}
+        </div>
+      </div>
+      {!mobile && (
+        <div
+          className="flex w-fit rounded-xl border border-border bg-muted p-1"
+          role="group"
+          aria-label="Hierarchy view"
+        >
+          {(["list", "diagram"] as const).map((view) => (
+            <Button
+              key={view}
+              size="sm"
+              variant={state.view === view ? "default" : "ghost"}
+              aria-pressed={state.view === view}
+              onClick={() => update({ view })}
             >
-              {branchLabel(state.group, index, key)}
-            </button>
-          </span>
-        ))}
-      </nav>
-      <div className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(240px,30%)_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)]">
+              {view === "list" ? "List" : "Diagram"}
+            </Button>
+          ))}
+        </div>
+      )}
+      {!mobile && state.view === "diagram" && (
+        <ExplorerDiagram
+          group={state.group}
+          path={state.path}
+          filters={filters}
+          expanded={expanded}
+          toggle={toggle}
+          select={select}
+          total={rootSummary.data?.action === "summary" ? rootSummary.data.value.total : undefined}
+          collapse={() => setExpanded(new Set())}
+        />
+      )}
+      <div
+        className={
+          !mobile && state.view === "diagram"
+            ? "min-w-0"
+            : "grid min-w-0 items-start gap-4 md:grid-cols-[minmax(240px,30%)_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)]"
+        }
+      >
         {mobile ? (
           <ExplorerDrilldown
             group={state.group}
@@ -206,7 +251,7 @@ function ExplorerWorkspace() {
             filters={filters}
             select={select}
           />
-        ) : (
+        ) : state.view === "diagram" ? null : (
           <ExplorerTree
             group={state.group}
             path={state.path}

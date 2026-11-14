@@ -20,6 +20,7 @@ const daySchema = z.string().date();
 export const explorerSearchSchema = z
   .object({
     group: groupSchema.catch("area").default("area"),
+    view: z.enum(["list", "diagram"]).catch("list").default("list"),
     path: z.array(branchKeySchema).max(3).catch([]).default([]),
     from: daySchema.optional().catch(undefined),
     to: daySchema.optional().catch(undefined),
