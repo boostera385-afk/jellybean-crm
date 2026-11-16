@@ -1,0 +1,17 @@
+/*
+ * Opt-in presentation adapter for Crisp web client v4.18.3.
+ * data-id scopes this to the OUTSIDE unread preview, not conversation history,
+ * launcher or unread badge. The two cc-* selectors are vendor internals:
+ * verify them after Crisp updates; if they change, native previews fall back.
+ */
+html[data-jb-chat-preview]
+  .crisp-client
+  [data-id="new_messages"]
+  .cc-1ts3v
+  > .cc-1k3vn:not(:last-child) {
+  display: none !important;
+}
+
+html[data-jb-chat-preview="hidden"] .crisp-client [data-id="new_messages"] {
+  display: none !important;
+}

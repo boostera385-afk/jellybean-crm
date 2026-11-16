@@ -1,7 +1,7 @@
 === JellyBean Visitor Presence ===
 Requires at least: 6.2
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPL-2.0-or-later
 
 Uses the existing Crisp widget to send signed, rate-limited arrival hints to your
@@ -27,6 +27,16 @@ loads while the plugin is active, independently of relay/key configuration.
 It does not hide Crisp or mark unread messages as read. Prefer removing the
 old Govee popup snippet in WPCode permanently. Deactivate this plugin to remove
 both the style protection and arrival relay.
+
+Version 1.3.0 adds an opt-in Compact message previews setting. Enable it only on
+the affected site: at most one native outside preview appears for eight seconds,
+then only Crisp's native launcher/unread count remains. Messages are not marked
+read, deleted or resent. Dismissal is stored in sessionStorage across same-tab
+navigation; a new incoming message can show a fresh preview. No new greeting
+source is added. Disable duplicate Crisp campaigns and WPCode greeting snippets;
+keep the CRM's first-visit and verified-return greeting rules as the sole sender.
+The preview adapter uses vendor DOM selectors verified against Crisp v4.18.3;
+recheck after widget updates. Disable the setting to restore native previews.
 
 This plugin makes outbound HTTPS POST requests to:
 https://fjscqsatzsmfivpczaud.supabase.co/functions/v1/crisp-site-arrival

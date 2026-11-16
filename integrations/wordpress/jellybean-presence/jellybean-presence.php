@@ -2,7 +2,7 @@
 /**
  * Plugin Name: JellyBean Visitor Presence
  * Description: Sends signed arrival hints to JellyBean using your existing Crisp widget. Does not install another chat widget.
- * Version: 1.2.0
+ * Version: 1.3.0
  * Requires at least: 6.2
  * Requires PHP: 7.4
  * License: GPL-2.0-or-later
@@ -70,6 +70,10 @@ final class JellyBean_Visitor_Presence {
         if ((isset($input['website_id']) && !is_string($input['website_id'])) ||
             (isset($input['key']) && !is_string($input['key']))) { return $old; }
         $id = isset($input['website_id']) ? strtolower(trim((string) $input['website_id'])) : '';
+        // Preview controls can be used without provisioning an arrival relay.
+        if (empty($input['enabled']) && '' === $id && empty($old['website_id'])) {
+            return array('enabled' => false, 'compact_preview' => !empty($input['compact_preview']));
+        }
         if (!preg_match('/^' . self::UUID . '$/D', $id)) {
             add_settings_error(self::OPTION, 'invalid_id', 'Enter the Crisp Website ID (UUID), not the plugin ID.');
             return $old;
@@ -83,7 +87,8 @@ final class JellyBean_Visitor_Presence {
             add_settings_error(self::OPTION, 'invalid_key', 'A dedicated 64-character site key and an HTTPS WordPress Site Address are required.');
             return $old;
         }
-        return array('website_id' => $id, 'key' => $key, 'enabled' => !empty($input['enabled']));
+        return array('website_id' => $id, 'key' => $key, 'enabled' => !empty($input['enabled']),
+            'compact_preview' => !empty($input['compact_preview']));
     }
 
     public static function page() {
@@ -105,11 +110,16 @@ final class JellyBean_Visitor_Presence {
             <form method="post" action="options.php">
                 <?php settings_fields('jellybean_presence_group'); ?>
                 <table class="form-table" role="presentation">
+                    <tr><th scope="row">Compact message previews</th><td>
+                        <label><input type="checkbox" name="jellybean_presence[compact_preview]" value="1" <?php checked(!empty($config['compact_preview'])); ?>>
+                        Show only the latest outside message, then hide the preview after eight seconds.</label>
+                        <p class="description">Enable only on the affected website. Crisp's unread badge and full conversation remain unchanged. This does not send greetings; keep CRM as the only greeting source and disable duplicate website campaigns/snippets.</p>
+                    </td></tr>
                     <tr><th scope="row">Enable arrival relay</th><td>
                         <input type="checkbox" name="jellybean_presence[enabled]" value="1" <?php checked(!empty($config['enabled'])); ?>>
                     </td></tr>
                     <tr><th scope="row"><label for="jb-website">Crisp Website ID</label></th><td>
-                        <input id="jb-website" class="regular-text" name="jellybean_presence[website_id]" value="<?php echo esc_attr(isset($config['website_id']) ? $config['website_id'] : ''); ?>" required>
+                        <input id="jb-website" class="regular-text" name="jellybean_presence[website_id]" value="<?php echo esc_attr(isset($config['website_id']) ? $config['website_id'] : ''); ?>">
                     </td></tr>
                     <tr><th scope="row"><label for="jb-key">Dedicated site signing key</label></th><td>
                         <input id="jb-key" type="password" class="regular-text" name="jellybean_presence[key]" value="" autocomplete="new-password" <?php disabled(defined('JELLYBEAN_PRESENCE_KEY')); ?>>
@@ -136,6 +146,10 @@ final class JellyBean_Visitor_Presence {
         // WPCode iframe, not Crisp, its launcher or other website controls.
         wp_enqueue_style('jellybean-chat-safety', plugins_url('assets/chat-safety.css', __FILE__), array(), '1.2.0');
         $config = self::config();
+        if (!empty($config['compact_preview'])) {
+            wp_enqueue_style('jellybean-chat-preview', plugins_url('assets/chat-preview.css', __FILE__), array(), '1.3.0');
+            wp_enqueue_script('jellybean-chat-preview', plugins_url('assets/chat-preview.js', __FILE__), array(), '1.3.0', true);
+        }
         if (empty($config['enabled']) || !self::configured($config)) {
             return;
         }

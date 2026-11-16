@@ -51,6 +51,13 @@ check(false !== strpos($inline, 'websiteId'), 'Only public configuration enqueue
 $sanitized = JellyBean_Visitor_Presence::sanitize(array('website_id' => $options['website_id'], 'key' => '', 'enabled' => '1'));
 check($sanitized['key'] === $options['key'], 'Blank password retains saved key');
 check(JellyBean_Visitor_Presence::sanitize(array('website_id' => 'bad')) === $options, 'Invalid ID preserves settings');
+$compact = JellyBean_Visitor_Presence::sanitize(array('website_id' => $options['website_id'], 'key' => '', 'compact_preview' => '1'));
+check($compact['compact_preview'] && $compact['key'] === $options['key'], 'Preview option preserves signing key');
+$saved_options = $options;
+$options = array();
+$standalone = JellyBean_Visitor_Presence::sanitize(array('compact_preview' => '1'));
+check($standalone['compact_preview'] && !$standalone['enabled'], 'Preview works without arrival enrollment');
+$options = $saved_options;
 check(JellyBean_Visitor_Presence::arrival(new Test_Request('{}'))->status === 400, 'Malformed arrival rejected');
 check(JellyBean_Visitor_Presence::arrival(new Test_Request(str_repeat('x', 1025)))->status === 413, 'Oversized arrival rejected');
 $result = JellyBean_Visitor_Presence::arrival($request);

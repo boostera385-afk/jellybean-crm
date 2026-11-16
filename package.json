@@ -18,7 +18,8 @@
     "test:run": "vitest run",
     "test:crisp-sql": "node scripts/test-crisp-pipeline.mjs",
     "test:backend-sql": "node scripts/test-backend-hot-paths.mjs",
-    "test:crisp-chat-safety": "node scripts/test-crisp-chat-safety.mjs"
+    "test:crisp-chat-safety": "node scripts/test-crisp-chat-safety.mjs",
+    "test:crisp-chat-preview": "node scripts/test-crisp-chat-preview.mjs"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",
