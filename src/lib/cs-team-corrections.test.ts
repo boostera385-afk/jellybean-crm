@@ -305,3 +305,128 @@ describe("facts from 15 days of real leads", () => {
     expect(message).toMatch(/so I can check the schedule for a free estimate visit\?$/);
   });
 });
+
+describe("first live drafts (Nov 18)", () => {
+  it.each([
+    [
+      "1 story house",
+      {
+        customerName: "Casey",
+        postText: "I need someone to clean my gutters on a 1 story house.",
+        service: "Gutter Cleaning",
+      },
+      "a gutter cleaning service for a 1 story house",
+      "gutter",
+      /single or double story/,
+    ],
+    [
+      "button broke off",
+      {
+        customerName: "Casey",
+        postText: "Anyone that knows how to fix a dryer? Middle control button broke off.",
+        service: "Appliance Repair",
+      },
+      "a dryer repair service because the middle control button broke off",
+      "dryer",
+      /what issue/,
+    ],
+    [
+      "water keeps going out",
+      {
+        customerName: "Casey",
+        postText: "My dishwasher, the water keeps going out when we put dishes inside.",
+        service: "Appliance Repair",
+      },
+      "a dishwasher repair service",
+      "dishwasher",
+      /what issue/,
+    ],
+  ])("%s: not asked again", async (_, input, context, target, asked) => {
+    expect(asks(await compose(input, context, target))).not.toMatch(asked);
+  });
+});
+
+describe("live drafts the team flagged (Nov 18)", () => {
+  it("Nina: a wrong Service field does not replace the customer's job", async () => {
+    const message = await compose(
+      {
+        customerName: "Nina",
+        postText: "I'm looking for a good and reasonably priced carpet and grout cleaner.",
+        context: "Looking for a carpet and grout cleaner.",
+        service: "Gutter Cleaning",
+      },
+      "a carpet and grout cleaning service",
+      "carpet",
+    );
+    expect(message).toContain("looking for a carpet and grout cleaning service.");
+    expect(message).not.toMatch(/gutter/i);
+  });
+
+  it("Lore: movers loading a fridge is a moving job", async () => {
+    const message = await compose(
+      {
+        customerName: "Lore",
+        postText:
+          "Looking for moving support for a friend, loading a fridge and heavy bed parts and lots of bags and boxes.",
+        context: "Needs movers to load a fridge, bed parts, bags, and boxes.",
+        service: "moving service",
+      },
+      "a moving service to load a fridge, heavy bed parts, bags, and boxes",
+      "refrigerator",
+    );
+    expect(asks(message)).toMatch(
+      /^Could you kindly share pictures of the items that need to be moved/,
+    );
+    expect(message).not.toMatch(/what issue|brand name/);
+  });
+
+  it("Justina: lights owned and pictures attached still asks two questions", async () => {
+    const message = await compose(
+      {
+        customerName: "Justina",
+        postText:
+          "Hi, can you do estimate to do Christmas light on a front my house? We have lights",
+        service: "Christmas Lights Installation",
+        imageCount: 1,
+        reference: "Had a conversation on FB",
+      },
+      "Christmas lights installation service for the front of your house",
+      "christmas_lights",
+    );
+    expect(asks(message)).toBe(
+      "Could you kindly let me know if your house is single or double story and share your complete address, so I can check the schedule for a visit?",
+    );
+  });
+
+  it("Kristie: 'do you provide the lights?' is not answered with 'do you have the lights?'", async () => {
+    const message = await compose(
+      {
+        customerName: "Kristie",
+        postText: "Do you install lights in Macon? Do you provide the lights or do we?",
+        service: "Christmas Lights Installation",
+        imageCount: 3,
+        reference: "Had a conversation on FB",
+      },
+      "Christmas lights installation service",
+      "christmas_lights",
+    );
+    expect(message).not.toMatch(/already have the lights|share a picture/);
+    expect(message).toMatch(/single or double story/);
+  });
+
+  it("Sandra: cabinet painting with a picture attached asks how many cabinets", async () => {
+    const message = await compose(
+      {
+        customerName: "Sandra",
+        postText: "Need a handyman for cabinet painting.",
+        service: "General Handyman Service",
+        imageCount: 1,
+      },
+      "a cabinet painting service",
+      "cabinet",
+    );
+    expect(asks(message)).toBe(
+      "Could you kindly let me know how many cabinets need to be painted and share your complete address, so I can check the schedule for a visit?",
+    );
+  });
+});
