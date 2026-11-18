@@ -26,12 +26,10 @@ function fetcher(serviceContext: string, targetObject: string, review: Review) {
     if (name === "cs_compose_target") content = { serviceContext, targetObject };
     else if (name === "cs_fit_questions")
       content = {
-        questions: payload.suggested
-          .filter(Boolean)
-          .map((id: string) => ({
-            id,
-            text: payload.menu.find((m: { id: string }) => m.id === id).text,
-          })),
+        questions: payload.suggested.filter(Boolean).map((id: string) => ({
+          id,
+          text: payload.menu.find((m: { id: string }) => m.id === id).text,
+        })),
       };
     else if (review === "fail") return new Response("{}", { status: 400 });
     else content = review;
@@ -88,7 +86,11 @@ describe("review step", () => {
       "fail",
     );
     expect(result.warnings).toContain("review_unavailable");
-    expect(message).toMatch(/Could you kindly let me know what issue/);
+    // "wheel popped off" already says what is wrong, so the draft asks for
+    // the availability and address instead, and the failed review keeps it.
+    expect(message).toMatch(
+      /Could you kindly let me know your availability and share your complete address/,
+    );
   });
 
   it("refuses a price, promise or invented detail", async () => {
@@ -105,7 +107,7 @@ describe("review step", () => {
         ],
       },
     );
-    expect(message).not.toMatch(/free/);
+    expect(message).not.toMatch(/service with a free estimate/);
     expect(result.warnings).toContain("review_opening_refused");
   });
 

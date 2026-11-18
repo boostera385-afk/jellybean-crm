@@ -225,6 +225,18 @@ export function nameCase(name: string): string {
     .replace(/(^|[-'’])(\p{L})/gu, (_, sep: string, letter: string) => sep + letter.toUpperCase());
 }
 
+/**
+ * What the visit is called. The team offers garage door customers a free
+ * estimate visit: 95% of the garage door replies delivered in Nov 2026 said
+ * so, and two of the three garage door drafts it corrected added it.
+ */
+export function visitFor(input: ComposerInput, plan: ComposePlan): string {
+  const garageDoor =
+    plan.targetObject === "garage_door" ||
+    /\bgarage door/i.test(`${input.service ?? ""} ${plan.serviceContext}`);
+  return garageDoor ? "a free estimate visit" : "a visit";
+}
+
 /** After "regarding" the team drops the indefinite article: "regarding carpet
  *  cleaning service", not "regarding a carpet cleaning service". */
 const dropArticle = (phrase: string) => phrase.replace(/^(?:an?)\s+/i, "");
@@ -247,7 +259,7 @@ function renderComposeText(input: ComposerInput, plan: ComposePlan, sender: stri
     : `Hi ${safeName}, this is ${sender}. I saw that you are looking for ${plan.serviceContext}.`;
   if (!plan.questions.length) return opening;
   const asks = joinAsks(plan.questions.map((question) => question.text));
-  return `${opening} Could you kindly ${asks}, so I can check the schedule for a visit?`;
+  return `${opening} Could you kindly ${asks}, so I can check the schedule for ${visitFor(input, plan)}?`;
 }
 
 export type AiOptions = {

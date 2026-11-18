@@ -33,6 +33,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     to drop one.
   - **Regression set**: `scripts/fixtures/cs-team-corrections.json`, the 22
     corrected leads, for `scripts/smoke-compose-live.ts`.
+  - **From 15 days of delivered replies** (2,899 messages): garage door
+    replies now end "free estimate visit", as ~95% of the team's did; gutter
+    cleaning asks single or double story first (34% replied vs 6% for the
+    size of the house); and phrasings the detector missed ("our own lights",
+    "isnt cooling", "not spinning", "shaking", "popped off", "single level
+    house") now count as answered, so ~170 kinds of re-asked questions stop.
   - Risk: one more model call per draft (cost, a few seconds). Verify: apply
     the migration, deploy `cs-compose-lead`, run the smoke script on the
     fixture, and check `warnings` for `review_*` on a few drafts.

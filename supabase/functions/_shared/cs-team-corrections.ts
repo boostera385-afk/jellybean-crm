@@ -254,10 +254,18 @@ export const TEAM_RULES: TeamRule[] = [
     // "...a gutter cleaning service for a double story house. Could you kindly
     // share the size of the house and your complete address"
     id: "gutter_clean",
-    match: ({ object, action }) =>
+    // Single or double story first: in Nov 2026 it drew replies from 34% of
+    // customers, the size of the house from 6%. Size only once the post
+    // already says how many stories ("...a double story house").
+    match: ({ object, action, detection, sources }) =>
       object === "gutter" && action === "clean"
         ? [
-            { intent: "SIZE", phrase: "share the size of the house" },
+            isAnswered("STORIES", detection, object, sources)
+              ? { intent: "SIZE", phrase: "share the size of the house" }
+              : {
+                  intent: "STORIES",
+                  phrase: "let me know if your house is single or double story",
+                },
             { intent: "ADDRESS", phrase: "share your complete address" },
           ]
         : null,
@@ -307,7 +315,13 @@ export function teamCorrection(
       );
       if (extra) kept.push(extra);
     }
-    if (kept.length === 2 && CLOSERS.has(kept[0].intent) && !CLOSERS.has(kept[1].intent))
+    // Closers go last, and the address goes very last: "let me know your
+    // availability and share your complete address".
+    if (
+      kept.length === 2 &&
+      ((CLOSERS.has(kept[0].intent) && !CLOSERS.has(kept[1].intent)) ||
+        (kept[0].intent === "ADDRESS" && kept[1].intent === "AVAILABILITY"))
+    )
       kept.reverse();
     return { id: rule.id, asks: kept, openingMustName: rule.openingMustName };
   }

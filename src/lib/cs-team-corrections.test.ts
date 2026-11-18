@@ -135,7 +135,7 @@ describe("team corrections", () => {
       { customerName: "Mandi", postText: "Need garage door repair", service: "Garage Door Repair" },
       "a garage door repair service",
       "garage_door",
-      "Could you kindly let me know what issue you are facing with your garage door and share your complete address, so I can check the schedule for a visit?",
+      "Could you kindly let me know what issue you are facing with your garage door and share your complete address, so I can check the schedule for a free estimate visit?",
     ],
     [
       "siding",
@@ -233,4 +233,75 @@ describe("nameCase", () => {
     ["JD", "JD"],
     ["Nicole", "Nicole"],
   ])("%s -> %s", (input, expected) => expect(nameCase(input)).toBe(expected));
+});
+
+describe("facts from 15 days of real leads", () => {
+  it.each([
+    [
+      "own lights",
+      {
+        customerName: "Casey",
+        postText: "Looking for someone to install our own lights.",
+        service: "Holiday Light Installation",
+      },
+      "a holiday light installation service",
+      "christmas_lights",
+      /already have the lights/,
+    ],
+    [
+      "washer not spinning",
+      {
+        customerName: "Casey",
+        postText: "My washer is not spinning.",
+        service: "Appliance Repair",
+      },
+      "a washer repair service",
+      "washer",
+      /what issue/,
+    ],
+    [
+      "fridge isnt cooling",
+      {
+        customerName: "Casey",
+        postText: "My Samsung refrigerator isnt cooling or freezing.",
+        service: "Appliance Repair",
+      },
+      "a Samsung refrigerator repair service",
+      "refrigerator",
+      /what issue|brand name/,
+    ],
+    [
+      "garage door shaking",
+      {
+        customerName: "Casey",
+        postText: "My garage door is shaking quite a bit whenever it opens.",
+        service: "Garage Door",
+      },
+      "a garage door repair service",
+      "garage_door",
+      /what issue/,
+    ],
+  ])("%s: not asked again", async (_, input, context, target, asked) => {
+    expect(asks(await compose(input, context, target))).not.toMatch(asked);
+  });
+
+  it("gutter cleaning asks single or double story when the post does not say", async () => {
+    const message = await compose(
+      { customerName: "Casey", postText: "Need my gutters cleaned", service: "Gutter Cleaning" },
+      "a gutter cleaning service",
+      "gutter",
+    );
+    expect(asks(message)).toBe(
+      "Could you kindly let me know if your house is single or double story and share your complete address, so I can check the schedule for a visit?",
+    );
+  });
+
+  it("garage door replies offer a free estimate visit", async () => {
+    const message = await compose(
+      { customerName: "Casey", postText: "Need garage door repair", service: "Garage Door" },
+      "a garage door repair service",
+      "garage_door",
+    );
+    expect(message).toMatch(/so I can check the schedule for a free estimate visit\?$/);
+  });
 });
