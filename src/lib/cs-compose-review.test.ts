@@ -223,3 +223,29 @@ describe("correction examples", () => {
     expect(pickExamples("Rug Cleaning", "a rug cleaning service", [saved])[0]).toBe(saved);
   });
 });
+
+describe("live draft fixes (Nov 18)", () => {
+  it("lets the reviewer replace a team question the lead already answers", async () => {
+    const dryer = {
+      customerName: "Casey",
+      postText: "My dryer has a problem",
+      service: "Dryer Repair",
+    };
+    const { message, result } = await compose(dryer, "a dryer repair service", "dryer", {
+      problems: ["issue already given"],
+      opening: "a dryer repair service",
+      questions: ["send me a picture of the dryer", "share the brand name of the dryer"],
+    });
+    expect(result.warnings).toContain("review_questions");
+    expect(message).toMatch(/send me a picture of the dryer and share the brand name/);
+  });
+
+  it("puts the availability before the address", async () => {
+    const { message } = await compose(garage, "a garage door repair service", "garage_door", {
+      problems: [],
+      opening: "a garage door repair service",
+      questions: ["share your complete address", "let me know your availability"],
+    });
+    expect(message).toMatch(/let me know your availability and share your complete address/);
+  });
+});

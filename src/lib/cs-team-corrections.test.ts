@@ -305,3 +305,43 @@ describe("facts from 15 days of real leads", () => {
     expect(message).toMatch(/so I can check the schedule for a free estimate visit\?$/);
   });
 });
+
+describe("first live drafts (Nov 18)", () => {
+  it.each([
+    [
+      "1 story house",
+      {
+        customerName: "Casey",
+        postText: "I need someone to clean my gutters on a 1 story house.",
+        service: "Gutter Cleaning",
+      },
+      "a gutter cleaning service for a 1 story house",
+      "gutter",
+      /single or double story/,
+    ],
+    [
+      "button broke off",
+      {
+        customerName: "Casey",
+        postText: "Anyone that knows how to fix a dryer? Middle control button broke off.",
+        service: "Appliance Repair",
+      },
+      "a dryer repair service because the middle control button broke off",
+      "dryer",
+      /what issue/,
+    ],
+    [
+      "water keeps going out",
+      {
+        customerName: "Casey",
+        postText: "My dishwasher, the water keeps going out when we put dishes inside.",
+        service: "Appliance Repair",
+      },
+      "a dishwasher repair service",
+      "dishwasher",
+      /what issue/,
+    ],
+  ])("%s: not asked again", async (_, input, context, target, asked) => {
+    expect(asks(await compose(input, context, target))).not.toMatch(asked);
+  });
+});

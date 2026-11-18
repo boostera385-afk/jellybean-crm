@@ -150,6 +150,20 @@ export const CLOSERS = new Set<AskIntent>(["ADDRESS", "AVAILABILITY"]);
 /** Asks the fit step may not bring in in place of a question about the job. */
 export const GENERIC = new Set<AskIntent>(["ADDRESS", "AVAILABILITY", "SCOPE"]);
 
+/**
+ * Two asks in the order the team writes them: address and availability close
+ * the message, and the address comes very last ("let me know your
+ * availability and share your complete address").
+ */
+export function inTeamOrder<T extends { intent: AskIntent }>(asks: T[]): T[] {
+  if (asks.length !== 2) return asks;
+  const [a, b] = asks;
+  const swap =
+    (CLOSERS.has(a.intent) && !CLOSERS.has(b.intent)) ||
+    (a.intent === "ADDRESS" && b.intent === "AVAILABILITY");
+  return swap ? [b, a] : asks;
+}
+
 export const fitMenuIds = (options: SelectedAsk[]) => options.map((_, index) => `q${index + 1}`);
 
 /**
@@ -213,8 +227,5 @@ export function applyFit(
     const generic = intents.some((intent) => GENERIC.has(intent) && !before.has(intent));
     if (generic || chosen.length < suggested.length) return null;
   }
-  // Keep the team's order: address and availability close the message.
-  if (chosen.length === 2 && CLOSERS.has(chosen[0].intent) && !CLOSERS.has(chosen[1].intent))
-    chosen.reverse();
-  return chosen;
+  return inTeamOrder(chosen);
 }

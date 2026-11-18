@@ -41,9 +41,9 @@ const EXTRA_FACTS: Partial<Record<AskIntent, RegExp>> = {
   OWNERSHIP:
     /\b(?:our|my) own (?:\w+ )?(?:lights?|springs?|fans?|tvs?|mounts?|parts?|materials?|fixtures?|faucets?|toilets?)\b|\b(?:i|we)(?:'ve| have) (?:got |bought |purchased )?(?:the|all the|a|my|our) (?:\w+ )?(?:lights?|springs?|fans?|tv mount|mount|parts?|materials?|fixtures?|faucet|toilet|kit)\b/i,
   PROBLEM:
-    /\b(?:isn'?t|is not|aren'?t|are not|not|stopped|quit)\s+(?:cooling|heating|freezing|spinning|draining|working|closing|opening|starting|igniting|turning on|making ice|getting hot|getting cold)\b|\b(?:doesn'?t|does not|don'?t|won'?t|will not|can'?t)\s+(?:move|open|close|work|cool|heat|spin|drain|start|turn on|lock|latch|flush)\b|\b(?:shak(?:es|ing)|grinding|squeak\w*|rattl\w*|noisy|loud noise|popped off|came off|fell off|off (?:the )?track|error code|\w+ code\b(?= ?(?:on|error|showing))|tripp(?:ing|ed)|sparking|flooding|overflow\w*|dripping)\b/i,
+    /\b(?:isn'?t|is not|aren'?t|are not|not|stopped|quit)\s+(?:cooling|heating|freezing|spinning|draining|working|closing|opening|starting|igniting|turning on|making ice|getting hot|getting cold)\b|\b(?:doesn'?t|does not|don'?t|won'?t|will not|can'?t)\s+(?:move|open|close|work|cool|heat|spin|drain|start|turn on|lock|latch|flush)\b|\b(?:shak(?:es|ing)|grinding|squeak\w*|rattl\w*|noisy|loud noise|popped off|came off|fell off|off (?:the )?track|error code|\w+ code\b(?= ?(?:on|error|showing))|tripp(?:ing|ed)|sparking|flooding|overflow\w*|dripping|broke(?: off)?|flashing|beeping|keeps? (?:leaking|going out|coming out|running|shutting off|turning off|tripping|beeping|flashing))\b/i,
   STORIES:
-    /\b(?:single|one|1|two|2)[- ]?(?:level|floor) (?:house|home)\b|\branch(?:[- ]style)? (?:house|home)\b|\bbungalow\b/i,
+    /\b(?:1|one|single)[- ]?(?:story|storey|stories)\b|\b(?:single|one|1|two|2)[- ]?(?:level|floor) (?:house|home)\b|\branch(?:[- ]style)? (?:house|home)\b|\bbungalow\b/i,
 };
 
 /** Moving within one property, or loading into the customer's own van, is not

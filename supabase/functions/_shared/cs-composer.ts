@@ -30,7 +30,7 @@ import {
   ungroundedWords,
 } from "./cs-context-grounding.ts";
 
-export const CS_COMPOSER_VERSION = "2026-11-18.catalogue-v3.7-reviewed";
+export const CS_COMPOSER_VERSION = "2026-11-18.catalogue-v3.8-live-fixes";
 export const CS_COMPOSER_MODEL = "gpt-5.4-nano-2026-03-17";
 
 export type ComposerInput = {
@@ -585,7 +585,6 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
       asks,
       menu: [...asks, ...selection.options.filter((o) => !asks.some((a) => a.intent === o.intent))],
       examples: pickExamples(input.service, serviceContext, options.review.examples ?? []),
-      ruleLocked: ruleApplied,
       openingMustName: ruleApplied ? corrected?.openingMustName : undefined,
       checkOpening: (phrase) =>
         parseTargeting({ serviceContext: phrase, targetObject: "none" }, []).serviceContext,

@@ -32,7 +32,7 @@ import {
 import { isAnswered, type Detection } from "./cs-detect.ts";
 import {
   ASK_VERB,
-  CLOSERS,
+  inTeamOrder,
   GENERIC,
   INTENT_WORDS,
   ITEM_WORDS,
@@ -62,7 +62,10 @@ Read the draft as the customer would and fix what is wrong:
    "a gutter cleaning service for a double story house"). Leave out add-ons
    that do not change the work ("local", "improvement").
 2. Each question is about THIS job and asks for something the lead does not
-   already tell us.
+   already tell us. If the draft asks for something the lead already says
+   ("what issue" when they said the button broke off; "single or double
+   story" for a 1 story house), replace it with another question about the
+   job from the menu or the examples.
 3. Ask about the job itself (a picture of the right area, the size, the brand,
    what is wrong, whether they already have the part) before the address or
    availability. Ask for the address or availability only when the examples
@@ -109,8 +112,6 @@ export type ReviewContext = {
   asks: SelectedAsk[];
   menu: SelectedAsk[];
   examples: CorrectionExample[];
-  /** A team rule chose these asks: the reviewer may reword, not replace them. */
-  ruleLocked: boolean;
   /** The opening has to keep naming this (a team rule's requirement). */
   openingMustName?: RegExp;
   /** The same checks the composer applies to the model's opening. */
@@ -194,8 +195,10 @@ function checkQuestions(value: unknown, ctx: ReviewContext): SelectedAsk[] | nul
   const intents = asks.map((ask) => ask.intent);
   if (intents.includes("SCOPE") && intents.includes("PROBLEM")) return null;
   const before = new Set(ctx.asks.map((ask) => ask.intent));
-  // A team rule's questions are the team's own call: keep what they ask.
-  if (ctx.ruleLocked && intents.some((intent) => !before.has(intent))) return null;
+  // A team rule's question may still be swapped, but only for another
+  // question about the job: the reviewer catches facts the detector missed
+  // ("button broke off" already says what is wrong). The generic swap below
+  // stays refused for rule and catalogue questions alike.
   // The swap the team kept correcting: a job question traded for a generic one.
   if (intents.some((intent) => GENERIC.has(intent) && !before.has(intent))) return null;
   if (
@@ -206,9 +209,7 @@ function checkQuestions(value: unknown, ctx: ReviewContext): SelectedAsk[] | nul
     !namesObject(ctx.serviceContext, ctx.targetObject)
   )
     return null;
-  if (asks.length === 2 && CLOSERS.has(asks[0].intent) && !CLOSERS.has(asks[1].intent))
-    asks.reverse();
-  return asks;
+  return inTeamOrder(asks);
 }
 
 function checkOpening(value: unknown, ctx: ReviewContext): string | null {
