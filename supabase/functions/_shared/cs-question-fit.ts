@@ -84,7 +84,7 @@ export const FIT_SCHEMA = (ids: string[]) => ({
 });
 
 /** What a question has to keep saying to still be the same question. */
-const INTENT_WORDS: Record<AskIntent, RegExp> = {
+export const INTENT_WORDS: Record<AskIntent, RegExp> = {
   PHOTO: /\b(?:pictures?|photos?|videos?)\b/i,
   ADDRESS: /\baddress\b/i,
   SIZE: /\b(?:size|how big|length|width|height|dimensions?|measurements?|sq|square)\b/i,
@@ -94,12 +94,12 @@ const INTENT_WORDS: Record<AskIntent, RegExp> = {
   OWNERSHIP: /\balready have\b/i,
   QUANTITY: /\b(?:how many|number of|quantity)\b/i,
   STORIES: /\b(?:stor(?:e?y|ies|eys)|floors?|levels?)\b/i,
-  SCOPE: /\b(?:needs? to be done|what exactly|scope)\b/i,
+  SCOPE: /\b(?:needs? to be done|what exactly|scope|which)\b/i,
 };
 
 /** Item names the catalogue knows ("spring", "mini split", "furnace"): never
  *  borrowed from another job's phrase, only taken from this lead. */
-const ITEM_WORDS = new Set(
+export const ITEM_WORDS = new Set(
   [
     ...Object.values(CS_ASK_CATALOGUE.objectLabels).flat(),
     ...Object.values(CS_ASK_CATALOGUE.objectNouns).flat(),
@@ -113,7 +113,7 @@ const ITEM_WORDS = new Set(
  * the drawers" without letting a phrase measured for a furnace lend "furnace".
  */
 const intentWords = new Map<AskIntent, string>();
-function teamWordsFor(intent: AskIntent): string {
+export function teamWordsFor(intent: AskIntent): string {
   let words = intentWords.get(intent);
   if (words === undefined) {
     const phrases = [
@@ -142,13 +142,13 @@ function teamWordsFor(intent: AskIntent): string {
   return words;
 }
 
-const ASK_VERB = /^(?:share|let me know|send|tell me|confirm|provide)\b/i;
+export const ASK_VERB = /^(?:share|let me know|send|tell me|confirm|provide)\b/i;
 
 /** Asks the team only ever puts last: "...and share your complete address". */
-const CLOSERS = new Set<AskIntent>(["ADDRESS", "AVAILABILITY"]);
+export const CLOSERS = new Set<AskIntent>(["ADDRESS", "AVAILABILITY"]);
 
 /** Asks the fit step may not bring in in place of a question about the job. */
-const GENERIC = new Set<AskIntent>(["ADDRESS", "AVAILABILITY", "SCOPE"]);
+export const GENERIC = new Set<AskIntent>(["ADDRESS", "AVAILABILITY", "SCOPE"]);
 
 export const fitMenuIds = (options: SelectedAsk[]) => options.map((_, index) => `q${index + 1}`);
 

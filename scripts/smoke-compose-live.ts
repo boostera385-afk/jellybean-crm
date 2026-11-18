@@ -2,6 +2,10 @@
  * Run the REAL shared draft/review/guard pipeline, never an approximate replica.
  * bun run scripts/smoke-compose-live.ts <cases.json>
  *
+ * The CS team's hand corrections are a ready-made case file (names replaced):
+ *   OPENAI_API_KEY=... bun run scripts/smoke-compose-live.ts scripts/fixtures/cs-team-corrections.json
+ * Run it before each composer release.
+ *
  * Local: OPENAI_API_KEY + array of ComposerInput cases. Optional forbiddenKeys
  * per case gate a regression; labels are not learned from delivered messages.
  * Deployed: CS_TEST_USER_JWT + SUPABASE_URL + array of {leadId, forbiddenKeys?}.
@@ -47,7 +51,11 @@ for (const [index, entry] of cases.entries()) {
           "Set OPENAI_API_KEY for local model testing, or use authenticated deployed leadId cases",
         );
       if (!entry.input) throw new Error("Local case requires input");
-      const result = await composeAnswerAware(entry.input, { apiKey, fitQuestions: true });
+      const result = await composeAnswerAware(entry.input, {
+        apiKey,
+        fitQuestions: true,
+        review: {},
+      });
       output = {
         rephrased: renderComposePlan(entry.input, result.plan, "Alex"),
         version: result.version,

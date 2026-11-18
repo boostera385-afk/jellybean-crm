@@ -11,6 +11,15 @@ import {
 } from "./cs-ask-policy.ts";
 import { applyFit, CS_FIT_PROMPT, FIT_SCHEMA, fitMenuIds } from "./cs-question-fit.ts";
 import { teamCorrection } from "./cs-team-corrections.ts";
+import { pickExamples, type CorrectionExample } from "./cs-compose-examples.ts";
+import {
+  applyReview,
+  CS_REVIEW_MODEL,
+  CS_REVIEW_PROMPT,
+  REVIEW_SCHEMA,
+  reviewPayload,
+  type ReviewContext,
+} from "./cs-compose-review.ts";
 import {
   distinctiveServiceWords,
   fallbackServiceContext,
@@ -21,7 +30,7 @@ import {
   ungroundedWords,
 } from "./cs-context-grounding.ts";
 
-export const CS_COMPOSER_VERSION = "2026-11-18.catalogue-v3.6-team-corrections";
+export const CS_COMPOSER_VERSION = "2026-11-18.catalogue-v3.7-reviewed";
 export const CS_COMPOSER_MODEL = "gpt-5.4-nano-2026-03-17";
 
 export type ComposerInput = {
@@ -241,23 +250,28 @@ function renderComposeText(input: ComposerInput, plan: ComposePlan, sender: stri
   return `${opening} Could you kindly ${asks}, so I can check the schedule for a visit?`;
 }
 
-type AiOptions = {
+export type AiOptions = {
   apiKey: string;
   model?: string;
   /** Let the model fit the catalogue's questions to the lead (cs-question-fit). */
   fitQuestions?: boolean;
   stylePreferences?: string;
+  /** Read the finished reply against the lead with a stronger model and fix
+   *  it (cs-compose-review). `examples` are saved team corrections; the
+   *  built-in seed is always available. */
+  review?: { examples?: CorrectionExample[]; model?: string };
   fetcher?: typeof fetch;
   signal?: AbortSignal;
 };
 
 /** One strict-JSON model call, retried once on a network error, 429 or 5xx. */
-async function requestJson(
+export async function requestJson(
   options: AiOptions,
   system: string,
   payload: unknown,
   name: string,
   schema: unknown,
+  effort: "low" | "medium" = "low",
 ): Promise<unknown> {
   const fetcher = options.fetcher ?? fetch;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -271,7 +285,7 @@ async function requestJson(
           : AbortSignal.timeout(45_000),
         body: JSON.stringify({
           model: options.model ?? CS_COMPOSER_MODEL,
-          reasoning_effort: "low",
+          reasoning_effort: effort,
           max_completion_tokens: 2000,
           store: false,
           messages: [
@@ -522,7 +536,8 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
     serviceContext,
     selection.options,
   );
-  if (corrected && fragmentsAreSafe(corrected.asks)) {
+  const ruleApplied = Boolean(corrected && fragmentsAreSafe(corrected.asks));
+  if (corrected && ruleApplied) {
     asks = corrected.asks;
     checks.push(`team_rule_${corrected.id}`);
   } else if (options.fitQuestions && asks.length) {
@@ -544,6 +559,51 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
         a.length === b.length && a.every((ask, i) => ask.fragment === b[i].fragment);
       if (!same(fitted, asks)) checks.push("questions_fitted");
       asks = fitted;
+    }
+  }
+
+  if (options.review && asks.length) {
+    const ctx: ReviewContext = {
+      lead,
+      detection,
+      targetObject,
+      sources,
+      service: input.service,
+      serviceContext,
+      asks,
+      menu: [...asks, ...selection.options.filter((o) => !asks.some((a) => a.intent === o.intent))],
+      examples: pickExamples(input.service, serviceContext, options.review.examples ?? []),
+      ruleLocked: ruleApplied,
+      openingMustName: ruleApplied ? corrected?.openingMustName : undefined,
+      checkOpening: (phrase) =>
+        parseTargeting({ serviceContext: phrase, targetObject: "none" }, []).serviceContext,
+    };
+    const draftMessage = renderComposePlan(
+      input,
+      {
+        serviceContext,
+        targetObject,
+        ladderKey: selection.ladderKey,
+        questions: asks.map((ask) => ({ key: ask.intent, object: ask.object, text: ask.fragment })),
+      },
+      "{agent}",
+    );
+    try {
+      const value = await requestJson(
+        { ...bounded, model: options.review.model ?? CS_REVIEW_MODEL },
+        CS_REVIEW_PROMPT,
+        reviewPayload(input, ctx, draftMessage),
+        "cs_review_reply",
+        REVIEW_SCHEMA,
+        "medium",
+      );
+      const reviewed = applyReview(value, ctx);
+      serviceContext = reviewed.serviceContext;
+      asks = reviewed.asks;
+      checks.push(...reviewed.outcome);
+    } catch {
+      // The draft already passed every check: send it as it is.
+      checks.push("review_unavailable");
     }
   }
 
@@ -569,6 +629,7 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
     plan,
     warnings: [...new Set(warnings)],
     model: options.model ?? CS_COMPOSER_MODEL,
+    reviewModel: options.review ? (options.review.model ?? CS_REVIEW_MODEL) : null,
     version: CS_COMPOSER_VERSION,
     catalogueRows: CS_ASK_CATALOGUE.meta.rows,
   };

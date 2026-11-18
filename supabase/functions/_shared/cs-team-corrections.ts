@@ -280,7 +280,7 @@ export function teamCorrection(
   sources: string,
   serviceContext: string,
   fallback: SelectedAsk[],
-): { id: string; asks: SelectedAsk[] } | null {
+): { id: string; asks: SelectedAsk[]; openingMustName?: RegExp } | null {
   const ctx: RuleContext = {
     object: targetObject,
     action: detection.action,
@@ -309,7 +309,7 @@ export function teamCorrection(
     }
     if (kept.length === 2 && CLOSERS.has(kept[0].intent) && !CLOSERS.has(kept[1].intent))
       kept.reverse();
-    return { id: rule.id, asks: kept };
+    return { id: rule.id, asks: kept, openingMustName: rule.openingMustName };
   }
   return null;
 }
