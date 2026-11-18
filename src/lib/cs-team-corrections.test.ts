@@ -380,7 +380,7 @@ describe("live drafts the team flagged (Nov 18)", () => {
     expect(message).not.toMatch(/what issue|brand name/);
   });
 
-  it("Justina: lights owned and pictures attached still asks two questions", async () => {
+  it("Justina: lights already owned still asks two questions", async () => {
     const message = await compose(
       {
         customerName: "Justina",
@@ -394,7 +394,7 @@ describe("live drafts the team flagged (Nov 18)", () => {
       "christmas_lights",
     );
     expect(asks(message)).toBe(
-      "Could you kindly let me know if your house is single or double story and share your complete address, so I can check the schedule for a visit?",
+      "Could you kindly share a picture of where you want to install the lights and let me know if your house is single or double story, so I can check the schedule for a visit?",
     );
   });
 
@@ -410,11 +410,11 @@ describe("live drafts the team flagged (Nov 18)", () => {
       "Christmas lights installation service",
       "christmas_lights",
     );
-    expect(message).not.toMatch(/already have the lights|share a picture/);
+    expect(message).not.toMatch(/already have the lights/);
     expect(message).toMatch(/single or double story/);
   });
 
-  it("Sandra: cabinet painting with a picture attached asks how many cabinets", async () => {
+  it("Sandra: cabinet painting asks how many cabinets, not their size", async () => {
     const message = await compose(
       {
         customerName: "Sandra",
@@ -426,7 +426,7 @@ describe("live drafts the team flagged (Nov 18)", () => {
       "cabinet",
     );
     expect(asks(message)).toBe(
-      "Could you kindly let me know how many cabinets need to be painted and share your complete address, so I can check the schedule for a visit?",
+      "Could you kindly share a picture of the cabinets and let me know how many cabinets need to be painted, so I can check the schedule for a visit?",
     );
   });
 });

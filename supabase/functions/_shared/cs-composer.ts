@@ -483,8 +483,6 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
     };
   const sources = normalizeSource(parts.join("\n"));
   const detection = detect(parts);
-  // Pictures already on the lead are pictures we have: never ask for more.
-  if ((input.imageCount ?? 0) > 0) detection.facts.PHOTO = true;
   const bounded = { ...options, signal: options.signal ?? AbortSignal.timeout(110_000) };
   const lead = groundingParts(input);
   const checks: string[] = [];
