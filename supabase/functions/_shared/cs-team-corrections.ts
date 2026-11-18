@@ -27,6 +27,8 @@ type RuleContext = {
   action: string | null;
   service: string;
   sources: string;
+  /** The opening as composed: "a moving service to load a fridge". */
+  serviceContext: string;
   detection: Detection;
 };
 
@@ -38,6 +40,9 @@ export type TeamRule = {
   match: (ctx: RuleContext) => RuleAsk[] | null;
   /** The opening has to name this, or the questions would point at nothing. */
   openingMustName?: RegExp;
+  /** Asked, in order, in place of a rule ask the customer already answered,
+   *  so the reply still asks two things ("We have lights" -> stories). */
+  spare?: RuleAsk[];
 };
 
 const APPLIANCES = new Set([
@@ -58,6 +63,27 @@ const HANGING =
   /\b(?:hang|hanging|hung|mount|mounting)\b[^.!?\n]*?\b(picture|painting|artwork|mirror|frame|canvas)(s?)\b/i;
 
 export const TEAM_RULES: TeamRule[] = [
+  {
+    // "...a moving service. Could you kindly share pictures of the items that
+    // need to be moved and the complete pickup and drop off addresses"
+    id: "moving",
+    // Checked first: on a move the item is only what is carried, so "movers
+    // to load a fridge" is a moving job, not a fridge repair. "Moving" is
+    // read from the Service field and the opening only: in a post it can
+    // describe a fault ("the door is not moving").
+    match: ({ object, action, service, sources, serviceContext, detection }) =>
+      object === "furniture_move" ||
+      action === "move" ||
+      /\b(?:moving|movers?|move|relocat\w*|transport\w*)\b/i.test(`${service} ${serviceContext}`) ||
+      /\b(?:movers?|transport\w*)\b/i.test(sources)
+        ? [
+            { intent: "PHOTO", phrase: "share pictures of the items that need to be moved" },
+            detection.sameSite
+              ? { intent: "ADDRESS", phrase: "share your complete address" }
+              : { intent: "ADDRESS", phrase: "share the complete pickup and drop off addresses" },
+          ]
+        : null,
+  },
   {
     // "...an ac unit and popcorn ceiling repair service. Could you kindly share
     // a picture of the popcorn ceiling that needs to be repaired and let me
@@ -210,6 +236,12 @@ export const TEAM_RULES: TeamRule[] = [
     // of where you want to install the Christmas lights and let me know if you
     // already have the lights" (permanent and Govee lights the same)
     id: "lights_install",
+    // "We have lights" or pictures already attached: ask the stories, which
+    // set the ladder and the price, then the address.
+    spare: [
+      { intent: "STORIES", phrase: "let me know if your house is single or double story" },
+      { intent: "ADDRESS", phrase: "share your complete address" },
+    ],
     match: ({ object, action }) =>
       (object === "christmas_lights" || (object === "light_fixture" && action === "install")) &&
       (action === "install" || action === null)
@@ -218,6 +250,19 @@ export const TEAM_RULES: TeamRule[] = [
             { intent: "OWNERSHIP", phrase: "let me know if you already have the lights" },
           ]
         : null,
+  },
+  {
+    // Cabinet painting is priced by the number of cabinets, not their size
+    // ("let me know the size of the cabinets" read oddly to the team).
+    id: "cabinet_paint",
+    match: ({ object, sources }) =>
+      object === "cabinet" && /\bpaint\w*/i.test(sources)
+        ? [
+            { intent: "PHOTO", phrase: "share a picture of the cabinets" },
+            { intent: "QUANTITY", phrase: "let me know how many cabinets need to be painted" },
+          ]
+        : null,
+    spare: [{ intent: "ADDRESS", phrase: "share your complete address" }],
   },
   {
     // "...a garage door repair service. Could you kindly let me know what issue
@@ -231,22 +276,6 @@ export const TEAM_RULES: TeamRule[] = [
               phrase: "let me know what issue you are facing with your garage door",
             },
             { intent: "ADDRESS", phrase: "share your complete address" },
-          ]
-        : null,
-  },
-  {
-    // "...a moving service. Could you kindly share pictures of the items that
-    // need to be moved and the complete pickup and drop off addresses"
-    id: "moving",
-    match: ({ object, action, service, sources, detection }) =>
-      object === "furniture_move" ||
-      action === "move" ||
-      /\b(?:moving|movers?|transport\w*)\b/i.test(`${service} ${sources}`)
-        ? [
-            { intent: "PHOTO", phrase: "share pictures of the items that need to be moved" },
-            detection.sameSite
-              ? { intent: "ADDRESS", phrase: "share your complete address" }
-              : { intent: "ADDRESS", phrase: "share the complete pickup and drop off addresses" },
           ]
         : null,
   },
@@ -294,14 +323,17 @@ export function teamCorrection(
     action: detection.action,
     service: service ?? "",
     sources,
+    serviceContext,
     detection,
   };
   for (const rule of TEAM_RULES) {
     const asks = rule.match(ctx);
     if (!asks) continue;
     if (rule.openingMustName && !rule.openingMustName.test(serviceContext)) continue;
-    const kept: SelectedAsk[] = asks
-      .filter((ask) => !isAnswered(ask.intent, detection, targetObject, sources))
+    const open = (ask: RuleAsk) => !isAnswered(ask.intent, detection, targetObject, sources);
+    const kept: SelectedAsk[] = [...asks.filter(open), ...(rule.spare ?? []).filter(open)]
+      .filter((ask, i, all) => all.findIndex((other) => other.intent === ask.intent) === i)
+      .slice(0, 2)
       .map((ask) => ({ intent: ask.intent, object: targetObject, fragment: ask.phrase }));
     if (!kept.length) continue;
     if (kept.length < 2) {

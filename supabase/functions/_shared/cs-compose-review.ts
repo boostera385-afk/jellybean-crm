@@ -223,7 +223,9 @@ function checkOpening(value: unknown, ctx: ReviewContext): string | null {
   if (ungroundedWords(phrase, ctx.lead).length) return null;
   if (ctx.openingMustName && !ctx.openingMustName.test(phrase)) return null;
   if (!namesObject(phrase, ctx.targetObject)) return null;
-  const distinctive = distinctiveServiceWords(ctx.service);
+  const distinctive = distinctiveServiceWords(ctx.service).filter((word) =>
+    phraseUsesAny(ctx.sources, [word]),
+  );
   if (
     distinctive.length &&
     phraseUsesAny(ctx.serviceContext, distinctive) &&
