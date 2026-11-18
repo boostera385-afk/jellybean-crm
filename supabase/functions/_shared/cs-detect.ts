@@ -3,9 +3,9 @@
  * action is wanted, and which facts the customer has already supplied.
  *
  * Every pattern here comes from the generated catalogue, which is produced by
- * scripts/build-ask-catalogue.py from the delivered-lead export. The script is
- * the single source of truth; nothing in this file hard-codes a pattern, so the
- * runtime cannot drift away from the data the ask policy was measured on.
+ * scripts/build-ask-catalogue.py from the delivered-lead export, except
+ * EXTRA_FACTS below: phrasings found in real leads that the catalogue missed,
+ * which made drafts ask for something the customer had already said.
  *
  * No database, env or SDK imports - shared by the app, the Edge Function and
  * the tests.
@@ -30,6 +30,21 @@ const FACT_MATCHERS = Object.entries(CS_ASK_CATALOGUE.factPatterns).map(([name, 
   all: compile(source, "gi"),
 }));
 const PHOTO_NEGATION = compile(CS_ASK_CATALOGUE.photoNegation);
+
+/**
+ * Facts the generated patterns miss, from 15 days of delivered drafts
+ * (Nov 2026): 68 asked "do you already have the lights" of customers who had
+ * said so, 74 asked "what issue are you facing" after the issue was described.
+ * Each adds to the catalogue's pattern; none can unset a fact.
+ */
+const EXTRA_FACTS: Partial<Record<AskIntent, RegExp>> = {
+  OWNERSHIP:
+    /\b(?:our|my) own (?:\w+ )?(?:lights?|springs?|fans?|tvs?|mounts?|parts?|materials?|fixtures?|faucets?|toilets?)\b|\b(?:i|we)(?:'ve| have) (?:got |bought |purchased )?(?:the|all the|a|my|our) (?:\w+ )?(?:lights?|springs?|fans?|tv mount|mount|parts?|materials?|fixtures?|faucet|toilet|kit)\b/i,
+  PROBLEM:
+    /\b(?:isn'?t|is not|aren'?t|are not|not|stopped|quit)\s+(?:cooling|heating|freezing|spinning|draining|working|closing|opening|starting|igniting|turning on|making ice|getting hot|getting cold)\b|\b(?:doesn'?t|does not|don'?t|won'?t|will not|can'?t)\s+(?:move|open|close|work|cool|heat|spin|drain|start|turn on|lock|latch|flush)\b|\b(?:shak(?:es|ing)|grinding|squeak\w*|rattl\w*|noisy|loud noise|popped off|came off|fell off|off (?:the )?track|error code|\w+ code\b(?= ?(?:on|error|showing))|tripp(?:ing|ed)|sparking|flooding|overflow\w*|dripping)\b/i,
+  STORIES:
+    /\b(?:single|one|1|two|2)[- ]?(?:level|floor) (?:house|home)\b|\branch(?:[- ]style)? (?:house|home)\b|\bbungalow\b/i,
+};
 
 /** Moving within one property, or loading into the customer's own van, is not
  *  a pickup-and-delivery route and must never produce a drop-off question. */
@@ -112,6 +127,8 @@ export function detect(sources: string[]): Detection {
       facts[matcher.name] = matcher.test.test(text);
     }
   }
+  for (const [name, pattern] of Object.entries(EXTRA_FACTS))
+    if (!facts[name] && pattern.test(text)) facts[name] = true;
   return { objects, action, facts, sameSite: SAME_SITE.test(text) };
 }
 

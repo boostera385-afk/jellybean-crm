@@ -13,6 +13,36 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- CS first-reply composer learns from the team's corrections.
+  - **Team question pairs** (`cs-team-corrections.ts`): for 15 kinds of job
+    (carpet/rug, drywall, appliance repair, dryer vent, windows, ceiling fan,
+    lights, garage door, gutters, moving, siding, popcorn ceiling, picture
+    hanging...) the reply asks what the team corrected drafts to ask, and the
+    model can no longer swap those questions for the address or availability.
+  - **Review step** (`cs-compose-review.ts`): a stronger model
+    (`gpt-5.4-mini`) reads the finished reply against the customer's post and
+    fixes the opening and questions, guided by corrected drafts for the same
+    kind of job. Every fix is checked like the rest of the pipeline (no new
+    words, prices, promises or already-answered questions); a refused part
+    keeps the draft's own version, and a failed call sends the draft as is.
+  - **Corrections are saved** (`cs_compose_corrections` + trigger): each AI
+    draft is stored beside the text the agent keeps in Marketing Notes, names
+    masked, and edited ones become review examples. Set `status = 'rejected'`
+    to drop one.
+  - **Regression set**: `scripts/fixtures/cs-team-corrections.json`, the 22
+    corrected leads, for `scripts/smoke-compose-live.ts`.
+  - **From 15 days of delivered replies** (2,899 messages): garage door
+    replies now end "free estimate visit", as ~95% of the team's did; gutter
+    cleaning asks single or double story first (34% replied vs 6% for the
+    size of the house); and phrasings the detector missed ("our own lights",
+    "isnt cooling", "not spinning", "shaking", "popped off", "single level
+    house") now count as answered, so ~170 kinds of re-asked questions stop.
+  - Risk: one more model call per draft (cost, a few seconds). Verify: apply
+    the migration, deploy `cs-compose-lead`, run the smoke script on the
+    fixture, and check `warnings` for `review_*` on a few drafts.
+
 ### Changed
 
 - Raw-leads AI prompt: the saved rule "if someone is recommending a guy or

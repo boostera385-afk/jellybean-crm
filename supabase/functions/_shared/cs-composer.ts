@@ -10,6 +10,16 @@ import {
   type SelectedAsk,
 } from "./cs-ask-policy.ts";
 import { applyFit, CS_FIT_PROMPT, FIT_SCHEMA, fitMenuIds } from "./cs-question-fit.ts";
+import { teamCorrection } from "./cs-team-corrections.ts";
+import { pickExamples, type CorrectionExample } from "./cs-compose-examples.ts";
+import {
+  applyReview,
+  CS_REVIEW_MODEL,
+  CS_REVIEW_PROMPT,
+  REVIEW_SCHEMA,
+  reviewPayload,
+  type ReviewContext,
+} from "./cs-compose-review.ts";
 import {
   distinctiveServiceWords,
   fallbackServiceContext,
@@ -20,7 +30,7 @@ import {
   ungroundedWords,
 } from "./cs-context-grounding.ts";
 
-export const CS_COMPOSER_VERSION = "2026-11-05.catalogue-v3.5-polished";
+export const CS_COMPOSER_VERSION = "2026-11-18.catalogue-v3.7-reviewed";
 export const CS_COMPOSER_MODEL = "gpt-5.4-nano-2026-03-17";
 
 export type ComposerInput = {
@@ -66,7 +76,17 @@ in the sentence "I saw that you are looking for ___." Include the article. The
 house form looks like "a garage door repair service", "an electrician to replace
 the office lights", "a junk removal service to clear out a storage unit".
 Cover every job the customer mentioned; do not drop the second appliance or
-room. No greeting, no agent name, no question, no promise, no price, no
+room.
+When the lead names the part, the fault or the kind of house, add it after the
+job, in the customer's words, the way the team does:
+  "a garage door repair service for spring replacement"
+  "a garage door repair service because one of the wheels popped off"
+  "a gutter cleaning service for a double story house"
+Name the job plainly and leave out add-on words that do not change the work,
+such as "local", "improvement", "general" or "professional": "a moving
+service", not "a local moving service"; "a siding repair service", not "a
+siding repair and improvement service". End the job with "service" ("a Govee
+lights installation service") unless it names a trade ("an electrician to ..."). No greeting, no agent name, no question, no promise, no price, no
 availability or scheduling claim, no brackets, placeholders or invented details.
 Write correct English: subject and verb agree ("that stopped freezing", not
 "that are suddenly stopped freezing"), say "service" once, and capitalise names
@@ -192,6 +212,31 @@ export function referralPlatform(reference: string | null | undefined): string |
   return null;
 }
 
+/**
+ * A first name as the team writes it: "CAROL" and "carol" become "Carol".
+ * A name typed in mixed case ("McKenzie", "DeShawn") is kept as typed, and so
+ * are two-letter capitals, which are usually initials ("JD").
+ */
+export function nameCase(name: string): string {
+  const shouting = name === name.toUpperCase() && name.replace(/[^\p{L}]/gu, "").length > 2;
+  if (!shouting && name !== name.toLowerCase()) return name;
+  return name
+    .toLowerCase()
+    .replace(/(^|[-'’])(\p{L})/gu, (_, sep: string, letter: string) => sep + letter.toUpperCase());
+}
+
+/**
+ * What the visit is called. The team offers garage door customers a free
+ * estimate visit: 95% of the garage door replies delivered in Nov 2026 said
+ * so, and two of the three garage door drafts it corrected added it.
+ */
+export function visitFor(input: ComposerInput, plan: ComposePlan): string {
+  const garageDoor =
+    plan.targetObject === "garage_door" ||
+    /\bgarage door/i.test(`${input.service ?? ""} ${plan.serviceContext}`);
+  return garageDoor ? "a free estimate visit" : "a visit";
+}
+
 /** After "regarding" the team drops the indefinite article: "regarding carpet
  *  cleaning service", not "regarding a carpet cleaning service". */
 const dropArticle = (phrase: string) => phrase.replace(/^(?:an?)\s+/i, "");
@@ -202,7 +247,7 @@ export function renderComposePlan(input: ComposerInput, plan: ComposePlan, sende
 
 function renderComposeText(input: ComposerInput, plan: ComposePlan, sender: string): string {
   const first = input.customerName.trim().split(/\s+/)[0];
-  const safeName = first && /^[\p{L}\p{M}'’.-]+$/u.test(first) ? first : "there";
+  const safeName = first && /^[\p{L}\p{M}'’.-]+$/u.test(first) ? nameCase(first) : "there";
   const platform = referralPlatform(input.reference);
   if (noFurtherServiceRequested(sourceParts(input)))
     return `Hi ${safeName}, this is ${sender}. ${NO_SERVICE_ACKNOWLEDGMENT}`;
@@ -214,26 +259,31 @@ function renderComposeText(input: ComposerInput, plan: ComposePlan, sender: stri
     : `Hi ${safeName}, this is ${sender}. I saw that you are looking for ${plan.serviceContext}.`;
   if (!plan.questions.length) return opening;
   const asks = joinAsks(plan.questions.map((question) => question.text));
-  return `${opening} Could you kindly ${asks}, so I can check the schedule for a visit?`;
+  return `${opening} Could you kindly ${asks}, so I can check the schedule for ${visitFor(input, plan)}?`;
 }
 
-type AiOptions = {
+export type AiOptions = {
   apiKey: string;
   model?: string;
   /** Let the model fit the catalogue's questions to the lead (cs-question-fit). */
   fitQuestions?: boolean;
   stylePreferences?: string;
+  /** Read the finished reply against the lead with a stronger model and fix
+   *  it (cs-compose-review). `examples` are saved team corrections; the
+   *  built-in seed is always available. */
+  review?: { examples?: CorrectionExample[]; model?: string };
   fetcher?: typeof fetch;
   signal?: AbortSignal;
 };
 
 /** One strict-JSON model call, retried once on a network error, 429 or 5xx. */
-async function requestJson(
+export async function requestJson(
   options: AiOptions,
   system: string,
   payload: unknown,
   name: string,
   schema: unknown,
+  effort: "low" | "medium" = "low",
 ): Promise<unknown> {
   const fetcher = options.fetcher ?? fetch;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -247,7 +297,7 @@ async function requestJson(
           : AbortSignal.timeout(45_000),
         body: JSON.stringify({
           model: options.model ?? CS_COMPOSER_MODEL,
-          reasoning_effort: "low",
+          reasoning_effort: effort,
           max_completion_tokens: 2000,
           store: false,
           messages: [
@@ -362,7 +412,7 @@ async function requestFit(
       "cs_fit_questions",
       FIT_SCHEMA(ids),
     );
-    return applyFit(value, selection.options, lead);
+    return applyFit(value, selection.options, lead, selection.asks);
   } catch {
     return null;
   }
@@ -487,7 +537,22 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
   if (!fragmentsAreSafe(selection.asks)) throw new Error("Unsupported composer opening");
 
   let asks = selection.asks;
-  if (options.fitQuestions && asks.length) {
+  // A pair the team set by hand for this kind of job wins over the measured
+  // one, and is not refitted: the fitting step is where drafts swapped a
+  // job-specific question for the address or availability.
+  const corrected = teamCorrection(
+    detection,
+    input.service,
+    targetObject,
+    sources,
+    serviceContext,
+    selection.options,
+  );
+  const ruleApplied = Boolean(corrected && fragmentsAreSafe(corrected.asks));
+  if (corrected && ruleApplied) {
+    asks = corrected.asks;
+    checks.push(`team_rule_${corrected.id}`);
+  } else if (options.fitQuestions && asks.length) {
     const fitted = await requestFit(bounded, input, serviceContext, selection, lead);
     // The fitted questions answer to the same opening rule as the catalogue's:
     // "the unit" needs an opening that names the unit.
@@ -506,6 +571,51 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
         a.length === b.length && a.every((ask, i) => ask.fragment === b[i].fragment);
       if (!same(fitted, asks)) checks.push("questions_fitted");
       asks = fitted;
+    }
+  }
+
+  if (options.review && asks.length) {
+    const ctx: ReviewContext = {
+      lead,
+      detection,
+      targetObject,
+      sources,
+      service: input.service,
+      serviceContext,
+      asks,
+      menu: [...asks, ...selection.options.filter((o) => !asks.some((a) => a.intent === o.intent))],
+      examples: pickExamples(input.service, serviceContext, options.review.examples ?? []),
+      ruleLocked: ruleApplied,
+      openingMustName: ruleApplied ? corrected?.openingMustName : undefined,
+      checkOpening: (phrase) =>
+        parseTargeting({ serviceContext: phrase, targetObject: "none" }, []).serviceContext,
+    };
+    const draftMessage = renderComposePlan(
+      input,
+      {
+        serviceContext,
+        targetObject,
+        ladderKey: selection.ladderKey,
+        questions: asks.map((ask) => ({ key: ask.intent, object: ask.object, text: ask.fragment })),
+      },
+      "{agent}",
+    );
+    try {
+      const value = await requestJson(
+        { ...bounded, model: options.review.model ?? CS_REVIEW_MODEL },
+        CS_REVIEW_PROMPT,
+        reviewPayload(input, ctx, draftMessage),
+        "cs_review_reply",
+        REVIEW_SCHEMA,
+        "medium",
+      );
+      const reviewed = applyReview(value, ctx);
+      serviceContext = reviewed.serviceContext;
+      asks = reviewed.asks;
+      checks.push(...reviewed.outcome);
+    } catch {
+      // The draft already passed every check: send it as it is.
+      checks.push("review_unavailable");
     }
   }
 
@@ -531,6 +641,7 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
     plan,
     warnings: [...new Set(warnings)],
     model: options.model ?? CS_COMPOSER_MODEL,
+    reviewModel: options.review ? (options.review.model ?? CS_REVIEW_MODEL) : null,
     version: CS_COMPOSER_VERSION,
     catalogueRows: CS_ASK_CATALOGUE.meta.rows,
   };

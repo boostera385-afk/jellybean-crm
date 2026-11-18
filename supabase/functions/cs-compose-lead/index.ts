@@ -9,6 +9,7 @@ import {
   type ComposerInput,
 } from "../_shared/cs-composer.ts";
 import { senderForTick, fallbackTick } from "../_shared/cs-compose-senders.ts";
+import { maskNames, type CorrectionExample } from "../_shared/cs-compose-examples.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -89,7 +90,11 @@ export async function handleCompose(req: Request): Promise<Response> {
           cases.slice(start, start + 3).map(async (test) => {
             if (!test.input || JSON.stringify(test.input).length > 8000)
               throw new Error("Invalid evaluation fixture");
-            const result = await composeAnswerAware(test.input, { apiKey, fitQuestions: true });
+            const result = await composeAnswerAware(test.input, {
+              apiKey,
+              fitQuestions: true,
+              review: {},
+            });
             const message = renderComposePlan(test.input, result.plan, "Alex");
             const keys = result.plan.questions.map((q) => q.key);
             return {
@@ -206,10 +211,27 @@ export async function handleCompose(req: Request): Promise<Response> {
       pref?.policyVersion === CS_COMPOSER_VERSION && typeof pref.text === "string"
         ? pref.text.slice(0, 2000)
         : "";
+    // The team's saved corrections, for the review step. A failure here only
+    // means the built-in examples are used.
+    const { data: savedRows } = await admin
+      .from("cs_compose_corrections")
+      .select("service, draft, final")
+      .not("final", "is", null)
+      .neq("status", "rejected")
+      .order("corrected_at", { ascending: false })
+      .limit(80);
+    const examples: CorrectionExample[] = (savedRows ?? []).map(
+      (row: { service: string | null; draft: string; final: string }) => ({
+        service: row.service ?? "",
+        draft: row.draft,
+        corrected: row.final,
+      }),
+    );
     const result = await composeAnswerAware(input, {
       apiKey,
       stylePreferences,
       fitQuestions: true,
+      review: { examples },
     });
     const { data: tick, error: tickError } = await admin.rpc("cs_next_compose_sender_tick");
     const sender = senderForTick(!tickError && tick !== null ? Number(tick) : fallbackTick());
@@ -224,6 +246,15 @@ export async function handleCompose(req: Request): Promise<Response> {
       })
       .eq("id", runId);
     if (auditError) throw new Error("Could not record compose result");
+    // Kept beside whatever the agent saves, so their edits become examples.
+    // Best effort: a failed insert never blocks the draft.
+    const { error: draftError } = await admin.from("cs_compose_corrections").insert({
+      run_id: runId,
+      lead_id: leadId,
+      service: lead.service,
+      draft: maskNames(rephrased, lead.customer_name).slice(0, 1000),
+    });
+    if (draftError) console.error(JSON.stringify({ event: "cs_compose_draft_not_saved", runId }));
     // Draft only. Saving is an explicit existing UI action; never send a
     // message or overwrite saved notes merely by generating/evaluating one.
     console.log(
@@ -232,6 +263,7 @@ export async function handleCompose(req: Request): Promise<Response> {
         runId,
         version: result.version,
         model: result.model,
+        reviewModel: result.reviewModel,
         questions: result.plan.questions.length,
         warnings: result.warnings,
       }),

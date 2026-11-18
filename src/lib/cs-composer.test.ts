@@ -48,7 +48,7 @@ describe("first-contact sensible-question regressions", () => {
     expect(score).toMatchObject({ pass: true, forbidden: [], forbiddenPhrases: [] });
     if (keys.length)
       expect(message).toMatch(
-        /^Hi Casey, this is Alex\. I saw that you are looking for .+\. Could you kindly .+, so I can check the schedule for a visit\?$/,
+        /^Hi Casey, this is Alex\. I saw that you are looking for .+\. Could you kindly .+, so I can check the schedule for (?:a|a free estimate) visit\?$/,
       );
     if (test.maxQuestions === 0) expect(fetcher).not.toHaveBeenCalled();
   });

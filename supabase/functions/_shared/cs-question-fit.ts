@@ -38,9 +38,12 @@ most often for this kind of job.
 Return the questions to send, at most two, by their menu id:
 - Keep the suggested pair when it makes sense for this customer.
 - Swap a question only when it does not fit this lead: it asks about the wrong
-  item, it does not apply to the work described, or it is vague on its own
-  (e.g. "the size" without saying of what, "the replacement" without saying
-  which part).
+  item or it does not apply to the work described. A question that is only
+  vague ("the size", "some pictures") is NOT swapped: name the item instead
+  ("the size of the carpet area", "a picture of the swingsets").
+- Never swap a question about the job (picture, size, issue, brand, how many,
+  whether they already have the part) for the address, the availability or
+  "what exactly needs to be done": the team asks about the job first.
 - Send two questions unless only one on the menu makes sense.
 
 For each question, "text" is the menu wording, adjusted only to fit this lead:
@@ -51,7 +54,9 @@ For each question, "text" is the menu wording, adjusted only to fit this lead:
 Keep the question's meaning and its opening verb ("share", "let me know").
 Use only words that appear in the menu question or in the lead. Never add a
 detail, number, brand, promise, price or question the lead and the menu do not
-contain. If the menu wording already fits, return it unchanged.
+contain. Do not copy how the customer describes their own photo or
+attachment ("circled in red", "in the picture above") into a question.
+If the menu wording already fits, return it unchanged.
 Every question must be correct English, the way the team writes it: keep the
 article ("share a picture of the door", never "share picture of"), use "if"
 after "let me know" ("let me know if you already have the lights", never "let
@@ -79,7 +84,7 @@ export const FIT_SCHEMA = (ids: string[]) => ({
 });
 
 /** What a question has to keep saying to still be the same question. */
-const INTENT_WORDS: Record<AskIntent, RegExp> = {
+export const INTENT_WORDS: Record<AskIntent, RegExp> = {
   PHOTO: /\b(?:pictures?|photos?|videos?)\b/i,
   ADDRESS: /\baddress\b/i,
   SIZE: /\b(?:size|how big|length|width|height|dimensions?|measurements?|sq|square)\b/i,
@@ -89,12 +94,12 @@ const INTENT_WORDS: Record<AskIntent, RegExp> = {
   OWNERSHIP: /\balready have\b/i,
   QUANTITY: /\b(?:how many|number of|quantity)\b/i,
   STORIES: /\b(?:stor(?:e?y|ies|eys)|floors?|levels?)\b/i,
-  SCOPE: /\b(?:needs? to be done|what exactly|scope)\b/i,
+  SCOPE: /\b(?:needs? to be done|what exactly|scope|which)\b/i,
 };
 
 /** Item names the catalogue knows ("spring", "mini split", "furnace"): never
  *  borrowed from another job's phrase, only taken from this lead. */
-const ITEM_WORDS = new Set(
+export const ITEM_WORDS = new Set(
   [
     ...Object.values(CS_ASK_CATALOGUE.objectLabels).flat(),
     ...Object.values(CS_ASK_CATALOGUE.objectNouns).flat(),
@@ -108,7 +113,7 @@ const ITEM_WORDS = new Set(
  * the drawers" without letting a phrase measured for a furnace lend "furnace".
  */
 const intentWords = new Map<AskIntent, string>();
-function teamWordsFor(intent: AskIntent): string {
+export function teamWordsFor(intent: AskIntent): string {
   let words = intentWords.get(intent);
   if (words === undefined) {
     const phrases = [
@@ -137,10 +142,13 @@ function teamWordsFor(intent: AskIntent): string {
   return words;
 }
 
-const ASK_VERB = /^(?:share|let me know|send|tell me|confirm|provide)\b/i;
+export const ASK_VERB = /^(?:share|let me know|send|tell me|confirm|provide)\b/i;
 
 /** Asks the team only ever puts last: "...and share your complete address". */
-const CLOSERS = new Set<AskIntent>(["ADDRESS", "AVAILABILITY"]);
+export const CLOSERS = new Set<AskIntent>(["ADDRESS", "AVAILABILITY"]);
+
+/** Asks the fit step may not bring in in place of a question about the job. */
+export const GENERIC = new Set<AskIntent>(["ADDRESS", "AVAILABILITY", "SCOPE"]);
 
 export const fitMenuIds = (options: SelectedAsk[]) => options.map((_, index) => `q${index + 1}`);
 
@@ -179,6 +187,7 @@ export function applyFit(
   value: unknown,
   options: SelectedAsk[],
   lead: string[],
+  suggested: SelectedAsk[] = [],
 ): SelectedAsk[] | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const questions = (value as { questions?: unknown }).questions;
@@ -196,6 +205,14 @@ export function applyFit(
   }
   const intents = chosen.map((ask) => ask.intent);
   if (intents.includes("SCOPE") && intents.includes("PROBLEM")) return null;
+  // The team corrected drafts where a question about the job had been swapped
+  // for the address, the availability or "what exactly needs to be done", or
+  // where the second question was dropped. Keep the suggested pair then.
+  if (suggested.length) {
+    const before = new Set(suggested.map((ask) => ask.intent));
+    const generic = intents.some((intent) => GENERIC.has(intent) && !before.has(intent));
+    if (generic || chosen.length < suggested.length) return null;
+  }
   // Keep the team's order: address and availability close the message.
   if (chosen.length === 2 && CLOSERS.has(chosen[0].intent) && !CLOSERS.has(chosen[1].intent))
     chosen.reverse();

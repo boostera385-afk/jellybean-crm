@@ -1,0 +1,248 @@
+[
+  {
+    "name": "team correction 1: Drywall Repair",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Need drywall repair",
+      "service": "Drywall Repair",
+      "reference": "Had a conversation on Nextdoor"
+    },
+    "mustMention": ["sq ft", "picture of the drywall"],
+    "forbiddenPhrases": ["free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 2: Garage Door Repair",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Need garage door repair, spring replacement",
+      "service": "Garage Door Repair"
+    },
+    "mustMention": ["spring"],
+    "forbiddenPhrases": ["free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 3: Carpet Cleaning",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Looking for carpet cleaning",
+      "service": "Carpet Cleaning",
+      "reference": "Had a conversation on FB"
+    },
+    "mustMention": ["carpet area", "size"],
+    "forbiddenPhrases": ["complete address", "free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 4: Gutter Cleaning",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Gutter cleaning for a double story house",
+      "service": "Gutter Cleaning"
+    },
+    "mustMention": ["double story", "size of the house"],
+    "forbiddenPhrases": ["free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 5: Moving",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Need transport service for playground swingsets",
+      "service": "Moving",
+      "reference": "Had a conversation on FB"
+    },
+    "mustMention": ["swingsets"],
+    "forbiddenPhrases": ["some pictures", "free"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 6: Garage Door Repair",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Garage door wheel popped off in the middle",
+      "service": "Garage Door Repair"
+    },
+    "mustMention": ["wheel"],
+    "forbiddenPhrases": ["free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 7: Govee Lights Installation",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Need Govee lights installed",
+      "service": "Govee Lights Installation",
+      "reference": "Had a conversation on FB"
+    },
+    "mustMention": ["Govee", "already have the lights"],
+    "forbiddenPhrases": ["what exactly needs to be done", "free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 8: Garage Door Repair",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Need garage door repair",
+      "service": "Garage Door Repair"
+    },
+    "mustMention": ["what issue you are facing with your garage door"],
+    "forbiddenPhrases": ["free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 9: Moving",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Need a local moving service",
+      "service": "Moving"
+    },
+    "mustMention": ["items that need to be moved", "pickup and drop off"],
+    "forbiddenPhrases": ["local moving", "free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 10: Window Cleaning",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Need window cleaning",
+      "service": "Window Cleaning"
+    },
+    "mustMention": ["how many windows", "windows"],
+    "forbiddenPhrases": ["complete address", "free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 11: Dryer Repair",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Need dryer repair",
+      "service": "Dryer Repair"
+    },
+    "mustMention": ["issue", "brand name"],
+    "forbiddenPhrases": ["free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 12: Siding Repair",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Siding repair and improvement",
+      "service": "Siding Repair"
+    },
+    "mustMention": ["siding", "picture"],
+    "forbiddenPhrases": ["improvement", "free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 13: Appliance Repair",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Need appliance repair",
+      "service": "Appliance Repair"
+    },
+    "mustMention": ["which appliance"],
+    "forbiddenPhrases": ["free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 14: Carpet Cleaning",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Need carpet cleaning",
+      "service": "Carpet Cleaning"
+    },
+    "mustMention": ["carpet area", "size"],
+    "forbiddenPhrases": ["complete address", "free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 15: Microwave Repair",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Microwave repair needed",
+      "service": "Microwave Repair"
+    },
+    "mustMention": ["issue", "brand name"],
+    "forbiddenPhrases": ["free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 16: Holiday Light Installation",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Holiday light installation, Christmas lights",
+      "service": "Holiday Light Installation"
+    },
+    "mustMention": ["already have the lights"],
+    "forbiddenPhrases": ["free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 17: Popcorn Ceiling Repair",
+    "input": {
+      "customerName": "Casey",
+      "postText": "AC unit and popcorn ceiling repair",
+      "service": "Popcorn Ceiling Repair"
+    },
+    "mustMention": ["popcorn ceiling", "ceiling height"],
+    "forbiddenPhrases": ["free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 18: Electrician",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Electrician to replace a ceiling fan with a new fixture",
+      "service": "Electrician"
+    },
+    "mustMention": ["already have the replacement fan", "picture"],
+    "forbiddenPhrases": ["complete address", "free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 19: Dryer Vent Cleaning",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Dryer vent cleaning",
+      "service": "Dryer Vent Cleaning"
+    },
+    "mustMention": ["availability", "complete address"],
+    "forbiddenPhrases": ["free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 20: Rug Cleaning",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Rug cleaning",
+      "service": "Rug Cleaning"
+    },
+    "mustMention": ["rug area", "size"],
+    "forbiddenPhrases": ["complete address", "free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 21: Christmas Light Installation",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Permanent Christmas light installation, area circled in red",
+      "service": "Christmas Light Installation"
+    },
+    "mustMention": ["already have the lights"],
+    "forbiddenPhrases": ["circled in red", "free", "some pictures"],
+    "minQuestions": 2
+  },
+  {
+    "name": "team correction 22: Handyman",
+    "input": {
+      "customerName": "Casey",
+      "postText": "Handyman to hang a large picture",
+      "service": "Handyman"
+    },
+    "mustMention": ["size of the picture"],
+    "forbiddenPhrases": ["what exactly needs to be done", "free", "some pictures"],
+    "minQuestions": 2
+  }
+]
