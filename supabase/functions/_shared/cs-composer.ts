@@ -10,6 +10,7 @@ import {
   type SelectedAsk,
 } from "./cs-ask-policy.ts";
 import { applyFit, CS_FIT_PROMPT, FIT_SCHEMA, fitMenuIds } from "./cs-question-fit.ts";
+import { teamCorrection } from "./cs-team-corrections.ts";
 import {
   distinctiveServiceWords,
   fallbackServiceContext,
@@ -20,7 +21,7 @@ import {
   ungroundedWords,
 } from "./cs-context-grounding.ts";
 
-export const CS_COMPOSER_VERSION = "2026-11-05.catalogue-v3.5-polished";
+export const CS_COMPOSER_VERSION = "2026-11-18.catalogue-v3.6-team-corrections";
 export const CS_COMPOSER_MODEL = "gpt-5.4-nano-2026-03-17";
 
 export type ComposerInput = {
@@ -66,7 +67,17 @@ in the sentence "I saw that you are looking for ___." Include the article. The
 house form looks like "a garage door repair service", "an electrician to replace
 the office lights", "a junk removal service to clear out a storage unit".
 Cover every job the customer mentioned; do not drop the second appliance or
-room. No greeting, no agent name, no question, no promise, no price, no
+room.
+When the lead names the part, the fault or the kind of house, add it after the
+job, in the customer's words, the way the team does:
+  "a garage door repair service for spring replacement"
+  "a garage door repair service because one of the wheels popped off"
+  "a gutter cleaning service for a double story house"
+Name the job plainly and leave out add-on words that do not change the work,
+such as "local", "improvement", "general" or "professional": "a moving
+service", not "a local moving service"; "a siding repair service", not "a
+siding repair and improvement service". End the job with "service" ("a Govee
+lights installation service") unless it names a trade ("an electrician to ..."). No greeting, no agent name, no question, no promise, no price, no
 availability or scheduling claim, no brackets, placeholders or invented details.
 Write correct English: subject and verb agree ("that stopped freezing", not
 "that are suddenly stopped freezing"), say "service" once, and capitalise names
@@ -192,6 +203,19 @@ export function referralPlatform(reference: string | null | undefined): string |
   return null;
 }
 
+/**
+ * A first name as the team writes it: "CAROL" and "carol" become "Carol".
+ * A name typed in mixed case ("McKenzie", "DeShawn") is kept as typed, and so
+ * are two-letter capitals, which are usually initials ("JD").
+ */
+export function nameCase(name: string): string {
+  const shouting = name === name.toUpperCase() && name.replace(/[^\p{L}]/gu, "").length > 2;
+  if (!shouting && name !== name.toLowerCase()) return name;
+  return name
+    .toLowerCase()
+    .replace(/(^|[-'’])(\p{L})/gu, (_, sep: string, letter: string) => sep + letter.toUpperCase());
+}
+
 /** After "regarding" the team drops the indefinite article: "regarding carpet
  *  cleaning service", not "regarding a carpet cleaning service". */
 const dropArticle = (phrase: string) => phrase.replace(/^(?:an?)\s+/i, "");
@@ -202,7 +226,7 @@ export function renderComposePlan(input: ComposerInput, plan: ComposePlan, sende
 
 function renderComposeText(input: ComposerInput, plan: ComposePlan, sender: string): string {
   const first = input.customerName.trim().split(/\s+/)[0];
-  const safeName = first && /^[\p{L}\p{M}'’.-]+$/u.test(first) ? first : "there";
+  const safeName = first && /^[\p{L}\p{M}'’.-]+$/u.test(first) ? nameCase(first) : "there";
   const platform = referralPlatform(input.reference);
   if (noFurtherServiceRequested(sourceParts(input)))
     return `Hi ${safeName}, this is ${sender}. ${NO_SERVICE_ACKNOWLEDGMENT}`;
@@ -362,7 +386,7 @@ async function requestFit(
       "cs_fit_questions",
       FIT_SCHEMA(ids),
     );
-    return applyFit(value, selection.options, lead);
+    return applyFit(value, selection.options, lead, selection.asks);
   } catch {
     return null;
   }
@@ -487,7 +511,21 @@ export async function composeAnswerAware(input: ComposerInput, options: AiOption
   if (!fragmentsAreSafe(selection.asks)) throw new Error("Unsupported composer opening");
 
   let asks = selection.asks;
-  if (options.fitQuestions && asks.length) {
+  // A pair the team set by hand for this kind of job wins over the measured
+  // one, and is not refitted: the fitting step is where drafts swapped a
+  // job-specific question for the address or availability.
+  const corrected = teamCorrection(
+    detection,
+    input.service,
+    targetObject,
+    sources,
+    serviceContext,
+    selection.options,
+  );
+  if (corrected && fragmentsAreSafe(corrected.asks)) {
+    asks = corrected.asks;
+    checks.push(`team_rule_${corrected.id}`);
+  } else if (options.fitQuestions && asks.length) {
     const fitted = await requestFit(bounded, input, serviceContext, selection, lead);
     // The fitted questions answer to the same opening rule as the catalogue's:
     // "the unit" needs an opening that names the unit.
