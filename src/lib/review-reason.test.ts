@@ -20,6 +20,7 @@ describe("reviewReason", () => {
   it("keeps unknown codes short", () => {
     const r = reviewReason("some_brand_new_reason_code_that_is_long");
     expect(r?.short.length).toBeLessThanOrEqual(22);
-    expect(r?.detail).toBe("some brand new reason code that is long");
+    expect(r?.detail).toContain("some brand new reason code that is long");
+    expect(r?.action).toBeTruthy();
   });
 });

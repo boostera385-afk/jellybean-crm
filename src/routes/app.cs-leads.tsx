@@ -70,6 +70,7 @@ import {
   MessagesSquare,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   Dialog,
   DialogContent,
@@ -110,7 +111,7 @@ import { SERVICE_CATEGORIES } from "@/data/service-options";
 
 import { cn } from "@/lib/utils";
 import { greetingNameMismatch } from "@/lib/compose-greeting";
-import { reviewReason } from "@/lib/review-reason";
+import { reviewReason, type ReviewReason } from "@/lib/review-reason";
 import { confirmDiscardUnsaved } from "@/components/confirm-dialog-store";
 
 type ContactMethod = "texted" | "called";
@@ -2637,7 +2638,7 @@ function LeadCard({
         )}
         <div className="hidden">{initials || "·"}</div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1.5">
             <div className="flex items-center gap-1.5 min-w-0">
               <h3 className="crm-lead-title truncate">{lead.customer_name}</h3>
               <button
@@ -2653,7 +2654,7 @@ function LeadCard({
                 <Copy className="h-3 w-3" />
               </button>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">
               {/* Leads outside AI automation (created before 4 Nov) keep the
                   original view: the manual status plus the AI comparison chip. */}
               {ai &&
@@ -2670,19 +2671,21 @@ function LeadCard({
                 needsReview={needsReview}
                 reviewReasonCode={lead.ai_review_reason}
               />
-              <StatusHistoryButton leadId={lead.id} customerName={lead.customer_name} />
-              {needsReview && <CxQuickChatButton lead={lead} />}
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onOpen();
-                }}
-                className="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-[11px] font-semibold text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                aria-label={`Open lead details for ${lead.customer_name}`}
-              >
-                Open
-              </button>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <StatusHistoryButton leadId={lead.id} customerName={lead.customer_name} />
+                {needsReview && <CxQuickChatButton lead={lead} />}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpen();
+                  }}
+                  className="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-[11px] font-semibold text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  aria-label={`Open lead details for ${lead.customer_name}`}
+                >
+                  Open
+                </button>
+              </div>
             </div>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -3096,17 +3099,51 @@ function StatusBadge({
           by {updatedByName}
         </span>
       ) : null}
-      {needsReview && (
-        <span
-          className="inline-flex max-w-[15rem] items-center gap-1 rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-800 dark:text-amber-200"
-          title={reason ? `Needs Review: ${reason.detail}` : "Needs Review"}
-        >
-          <AlertTriangle className="h-3 w-3 shrink-0" />
-          <span className="whitespace-nowrap">Needs Review</span>
-          {reason && <span className="truncate font-medium opacity-80">· {reason.short}</span>}
-        </span>
-      )}
+      {needsReview && <NeedsReviewBadge reason={reason} />}
     </span>
+  );
+}
+
+/** Amber "Needs Review · reason" pill. Hover or keyboard focus opens a card
+ * with what happened and what to do; the CX chat pop-up shows the same text
+ * for touch screens. */
+function NeedsReviewBadge({ reason }: { reason: ReviewReason | null }) {
+  const pill = (
+    <span
+      tabIndex={reason ? 0 : undefined}
+      onClick={(event) => event.stopPropagation()}
+      className={cn(
+        "inline-flex max-w-full min-w-0 items-center gap-1 rounded-full border border-amber-400 bg-amber-400/15 px-2 py-1 text-[11px] font-bold text-amber-800 dark:text-amber-100",
+        reason &&
+          "cursor-help focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400",
+      )}
+    >
+      <AlertTriangle className="h-3 w-3 shrink-0" />
+      <span className="whitespace-nowrap">Needs Review</span>
+      {reason && <span className="truncate font-semibold">· {reason.short}</span>}
+    </span>
+  );
+  if (!reason) return pill;
+  return (
+    <HoverCard openDelay={150} closeDelay={80}>
+      <HoverCardTrigger asChild>{pill}</HoverCardTrigger>
+      <HoverCardContent
+        side="bottom"
+        align="start"
+        className="w-72 max-w-[calc(100vw-2rem)] p-3"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <p className="flex items-center gap-1.5 text-[12px] font-bold text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          Needs Review · {reason.short}
+        </p>
+        <p className="mt-1.5 text-[12.5px] leading-snug text-foreground">{reason.detail}</p>
+        <p className="mt-2 border-t border-border pt-2 text-[12px] leading-snug text-muted-foreground">
+          <span className="font-semibold text-foreground">What to do: </span>
+          {reason.action}
+        </p>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
@@ -3185,7 +3222,7 @@ function StatusHistoryButton({
           setOpen(true);
         }}
         className={cn(
-          "inline-flex items-center gap-1 rounded-lg border border-border font-semibold text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+          "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-foreground/25 bg-background/70 font-semibold text-foreground shadow-sm transition-colors hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
           compact ? "h-6 px-2 text-[10.5px]" : "h-7 px-2.5 text-[11px]",
         )}
         aria-label={`Status history for ${customerName}`}
@@ -3312,12 +3349,12 @@ function CxQuickChatButton({
           setOpen(true);
         }}
         className={cn(
-          "inline-flex items-center gap-1 rounded-lg border border-amber-400/60 bg-amber-500/10 font-semibold text-amber-800 transition-colors hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-amber-200",
+          "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-amber-500 bg-amber-400 font-semibold text-amber-950 shadow-sm transition-colors hover:bg-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
           compact ? "h-6 px-2 text-[10.5px]" : "h-7 px-2.5 text-[11px]",
         )}
         aria-label={`Customer chat for ${lead.customer_name}`}
       >
-        <MessagesSquare className="h-3 w-3" />
+        <MessagesSquare className="h-3.5 w-3.5" />
         CX chat
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -3337,6 +3374,7 @@ function CxQuickChatButton({
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
                 <span className="font-semibold">{reason.short}:</span> {reason.detail}
+                <span className="mt-0.5 block font-medium">{reason.action}</span>
               </span>
             </div>
           )}
