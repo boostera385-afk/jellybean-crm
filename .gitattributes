@@ -6,3 +6,8 @@
 *.png binary
 *.jpg binary
 *.jpeg binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.zip binary
