@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JellyJar</title>
+  <script src="theme-init.js"></script>
+  <link rel="stylesheet" href="popup-ui.css" />
+</head>
+<body>
+  <main class="app" id="appRoot">
+    <header class="header">
+      <div class="brand">
+        <span class="brand-mark-shell"><img class="brand-mark" src="jellyjar-bean.svg" alt="" /></span>
+        <div>
+          <div class="brand-name">JellyJar</div>
+          <div class="brand-sub">Lead capture companion</div>
+        </div>
+      </div>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch color theme">
+        <img id="themeIcon" src="icons/moon.svg" alt="" />
+      </button>
+    </header>
+
+    <section class="hero" aria-label="Capture status">
+      <div class="status-line">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span class="pill pill-warn" id="connPill">Connecting</span>
+        <span class="sheets-pill sheets-warn" id="sheetsPill">CRM</span>
+      </div>
+      <h1>Ready to capture</h1>
+      <p>Capture leads from your current page and sync them to JellyBean.</p>
+      <button id="startStopBtn" class="primary-action btn-p" type="button">Start capture</button>
+    </section>
+
+    <section class="setup-group" aria-label="Quick capture settings">
+      <div class="setup-row source-row">
+        <img class="setup-icon" src="icons/search.svg" alt="" />
+        <div class="setup-copy">
+          <label for="sourceMode">Source</label>
+          <select id="sourceMode">
+            <option value="recent">Recent</option>
+            <option value="search" selected>Search</option>
+            <option value="both">Recent and search</option>
+            <option value="neighborhood">Neighborhood</option>
+          </select>
+        </div>
+        <img class="setup-chevron" src="icons/chevron-down.svg" alt="" />
+      </div>
+      <button class="setup-row keyword-row" id="editKeywordsBtn" type="button">
+        <img class="setup-icon" src="icons/notes.svg" alt="" />
+        <span class="setup-copy">
+          <span class="setup-label">Keywords</span>
+          <span class="setup-value" id="keywordSummary">Add keywords</span>
+        </span>
+        <img class="setup-chevron" src="icons/chevron-right.svg" alt="" />
+      </button>
+    </section>
+
+    <section class="stats-strip" aria-label="Session results">
+      <div class="stat"><div class="stat-n" id="statTotal">0</div><div class="stat-l">Captured</div></div>
+      <div class="stat"><div class="stat-n" id="statSynced">0</div><div class="stat-l">Synced</div></div>
+      <div class="stat"><div class="stat-n" id="statLastSync">0</div><div class="stat-l">Queued</div></div>
+      <div class="stat"><div class="stat-n" id="statCycles">0</div><div class="stat-l">Failed</div></div>
+    </section>
+
+    <details class="section-drawer" id="activityDrawer">
+      <summary class="drawer-summary">
+        <span class="drawer-leading"><img src="icons/clock.svg" alt="" /><span>Activity</span></span>
+        <img class="drawer-chevron" src="icons/chevron-right.svg" alt="" />
+      </summary>
+      <div class="drawer-body">
+        <div class="status-box">
+          <div id="status">Initializing…</div>
+          <div id="scanDiag" class="hint">Waiting for the first run.</div>
+        </div>
+
+        <section class="section">
+          <div class="queue-header">
+            <div>
+              <div class="section-title">Live activity</div>
+              <div class="section-note">What the runner is doing now</div>
+            </div>
+            <span class="ops-badge" id="opsBadge">Idle</span>
+          </div>
+          <div class="ops-grid">
+            <div class="ops-item"><div class="ops-k">Run mode</div><div class="ops-v" id="runModeValue">Idle</div></div>
+            <div class="ops-item"><div class="ops-k">Current source</div><div class="ops-v" id="currentSourceValue">—</div></div>
+            <div class="ops-item"><div class="ops-k">Current action</div><div class="ops-v" id="currentActionValue">Waiting</div></div>
+            <div class="ops-item"><div class="ops-k">Active for</div><div class="ops-v" id="activeForValue">0s</div></div>
+            <div class="ops-item"><div class="ops-k">Next action</div><div class="ops-v" id="nextActionValue">No job scheduled</div></div>
+            <div class="ops-item"><div class="ops-k">Next in</div><div class="ops-v" id="nextInValue">—</div></div>
+          </div>
+          <div class="ops-foot">
+            <div class="ops-line"><strong>Filters:</strong> <span id="filtersLine">Waiting for settings.</span></div>
+            <div class="ops-line"><strong>CRM:</strong> <span id="sheetFlowLine">Waiting for connection.</span></div>
+            <div class="ops-line"><strong>Stop state:</strong> <span id="stopStateLine">No stop command sent.</span></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="queue-header">
+            <div class="queue-title">Writer queue <span class="queue-badge empty" id="queueBadge">0</span></div>
+            <div class="queue-hint" id="queueHint">Rows waiting to sync</div>
+          </div>
+          <div class="queue-rows" id="queueRows"><div class="queue-empty">No rows queued.</div></div>
+        </section>
+
+        <section class="section">
+          <div class="queue-header">
+            <div class="queue-title">Scan logs <span class="queue-badge empty" id="logsBadge">0</span></div>
+            <div class="queue-hint" id="logsHint">Recent picked and skipped leads</div>
+          </div>
+          <div class="queue-rows" id="logsPreview"><div class="queue-empty">No scan logs yet.</div></div>
+          <div class="btn-row3" style="margin-top:10px;">
+            <button id="exportLogsCsvBtn" class="btn-s" type="button">CSV</button>
+            <button id="exportLogsXlsxBtn" class="btn-s" type="button">XLSX</button>
+            <button id="clearLogsBtn" class="btn-d" type="button">Clear</button>
+          </div>
+        </section>
+      </div>
+    </details>
+
+    <details class="section-drawer" id="settingsDrawer">
+      <summary class="drawer-summary">
+        <span class="drawer-leading"><img src="icons/settings.svg" alt="" /><span>Settings</span></span>
+        <img class="drawer-chevron" src="icons/chevron-right.svg" alt="" />
+      </summary>
+      <div class="drawer-body">
+        <section class="section">
+          <h2 class="section-title">CRM connection</h2>
+          <p class="section-note">Where captured leads are sent</p>
+          <div class="form-grid" style="margin-top:12px;">
+            <div>
+              <label for="webhookUrl">Webhook URL</label>
+              <div class="webhook-row">
+                <input id="webhookUrl" type="url" placeholder="https://jellybean-crm.lovable.app/api/public/nextdoor-leads" />
+                <button id="testSheetsBtn" class="btn-test" type="button">Test</button>
+              </div>
+            </div>
+            <div class="row2">
+              <div><label for="incogAccountName">Account name</label><input id="incogAccountName" type="text" placeholder="Profile A" /></div>
+              <div><label for="accountArea">Account area</label><input id="accountArea" type="text" placeholder="Rancho Palos Verdes" /></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 class="section-title">Match rules</h2>
+          <p class="section-note">Choose what counts as a useful lead</p>
+          <div class="form-grid" style="margin-top:12px;">
+            <label class="check-row" for="smartMatch">
+              <input id="smartMatch" type="checkbox" />
+              <span class="check-copy"><strong>Use smart match</strong><span class="mini-note">Include built-in service matching alongside exact phrases.</span></span>
+            </label>
+            <div><label for="keywords">Keywords</label><textarea id="keywords" placeholder="garage door, water heater, fence repair"></textarea></div>
+            <div><label for="excludeKeywords">Exclude keywords</label><textarea id="excludeKeywords" placeholder="hiring, for sale, lost dog"></textarea></div>
+
+            <div id="searchUrlWrap" style="display:none;">
+              <div class="form-grid">
+                <div>
+                  <label for="searchPlanMode">Search behavior</label>
+                  <select id="searchPlanMode"><option value="rotation">Default rotation</option><option value="single">Single keyword</option></select>
+                </div>
+                <div id="singleSearchWrap" style="display:none;">
+                  <div class="row2">
+                    <div>
+                      <label for="singleSearchKeyword">Search keyword</label>
+                      <input id="singleSearchKeyword" type="text" list="singleSearchPresets" value="handyman" placeholder="Type any keyword" />
+                      <datalist id="singleSearchPresets">
+                        <option value="handyman"></option><option value="garage"></option><option value="plumbing"></option><option value="appliance"></option><option value="HVAC"></option><option value="looking for"></option><option value="Moving, junk removal"></option>
+                      </datalist>
+                    </div>
+                    <div><label for="singleSearchMinutes">Run minutes</label><input id="singleSearchMinutes" type="number" min="1" value="15" /></div>
+                  </div>
+                </div>
+                <div><label for="searchUrl">Search URL</label><textarea id="searchUrl" placeholder="Paste a Nextdoor search URL"></textarea><p class="field-hint" id="searchUrlHint">Used as the default search URL.</p></div>
+              </div>
+            </div>
+
+            <div id="neighborhoodWrap" style="display:none;">
+              <div class="form-grid">
+                <div class="row2">
+                  <div><label for="neighborhoodStateCode">State code</label><input id="neighborhoodStateCode" type="text" value="ca" placeholder="ca" /></div>
+                  <div><label>First posts</label><input type="text" value="20 per neighborhood" disabled /></div>
+                </div>
+                <div><label for="neighborhoodList">City and neighborhood list</label><textarea id="neighborhoodList" placeholder="Los Angeles | Highland Park"></textarea></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 class="section-title">Timing</h2>
+          <p class="section-note">Tune freshness, scrolling, and breaks</p>
+          <div class="form-grid" style="margin-top:12px;">
+            <details class="subdrawer" open>
+              <summary><span>Time range</span><span class="subcard-toggle">Post age</span></summary>
+              <div class="subcard-body">
+                <div class="time-range-row" id="timeRangeBtns">
+                  <button class="time-btn" data-hours="12" type="button">12 hrs</button><button class="time-btn active" data-hours="24" type="button">24 hrs</button><button class="time-btn" data-hours="48" type="button">2 days</button><button class="time-btn" data-hours="72" type="button">3 days</button><button class="time-btn" data-hours="168" type="button">1 week</button><button class="time-btn" data-hours="custom" type="button">Custom</button>
+                </div>
+                <div class="custom-range" id="customRange">
+                  <div><label for="rangeStart">From</label><input type="date" id="rangeStart" /></div>
+                  <div><label for="rangeEnd">To</label><input type="date" id="rangeEnd" /></div>
+                </div>
+              </div>
+            </details>
+
+            <details class="subdrawer">
+              <summary><span>Scroll</span><span class="subcard-toggle">Speed and delay</span></summary>
+              <div class="subcard-body">
+                <div><label>Scroll speed</label><div class="seg-group" id="scrollSpeedGroup"><div class="seg-btn" data-speed="slow">Slow</div><div class="seg-btn active" data-speed="normal">Normal</div><div class="seg-btn" data-speed="fast">Fast</div></div></div>
+                <div><label>Scroll delay</label><div class="seg-group" id="scrollDelayGroup"><div class="seg-btn active" data-delay="1000">1 sec</div><div class="seg-btn" data-delay="2000">2 sec</div><div class="seg-btn" data-delay="3000">3 sec</div></div></div>
+              </div>
+            </details>
+
+            <details class="subdrawer">
+              <summary><span>Cycle</span><span class="subcard-toggle">Run and break</span></summary>
+              <div class="subcard-body">
+                <div class="row2">
+                  <div><label for="scrollMinutes">Scroll minutes</label><input id="scrollMinutes" type="number" min="1" value="15" /></div>
+                  <div><label for="restMinutes">Rest minutes</label><input id="restMinutes" type="number" min="0" value="0" /></div>
+                </div>
+                <div><label>Run duration</label><div class="seg-group" id="cycleDurGroup"><div class="seg-btn" data-dur="1">1 hr</div><div class="seg-btn" data-dur="2">2 hrs</div><div class="seg-btn" data-dur="12">12 hrs</div><div class="seg-btn" data-dur="24">24 hrs</div><div class="seg-btn active" data-dur="0">Always</div></div></div>
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 class="section-title">Data and runner</h2>
+          <div class="btn-row3" style="margin-top:10px;">
+            <button id="restartBtn" class="btn-s" type="button">Restart</button>
+            <button id="exportBtn" class="btn-s" type="button">Export leads</button>
+            <button id="clearBtn" class="btn-d" type="button">Clear data</button>
+          </div>
+          <button id="stopBtn" class="btn-amber" type="button" style="display:none; width:100%; margin-top:8px;">Stop all activity</button>
+        </section>
+      </div>
+    </details>
+
+  </main>
+
+  <script src="defaults.js"></script>
+  <script src="include-defaults.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

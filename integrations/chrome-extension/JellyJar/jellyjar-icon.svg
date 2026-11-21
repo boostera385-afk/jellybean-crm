@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="tile" x1="8" y1="5" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#818cf8"/><stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="bean" x1="23" y1="21" x2="43" y2="44" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f472b6"/><stop offset=".5" stop-color="#d946ef"/><stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#312e81" flood-opacity=".42"/>
+    </filter>
+  </defs>
+  <rect x="3" y="3" width="58" height="58" rx="18" fill="url(#tile)"/>
+  <rect x="4" y="4" width="56" height="56" rx="17" fill="none" stroke="#fff" stroke-opacity=".22"/>
+  <path d="M43.7 23.3c4.9 6.5.8 17-7.2 21.3-7.3 4-16.5 1.2-17.2-5.7-.5-5.2 3.8-8.1 8.2-9.8 4.8-1.8 5.9-7.8 10.5-8.4 2.2-.3 4.2.6 5.7 2.6Z" fill="url(#bean)" filter="url(#shadow)"/>
+  <path d="M38.8 24.7c1.7.2 2.7 1.2 3.4 2.5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-opacity=".72"/>
+</svg>
