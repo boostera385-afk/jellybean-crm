@@ -2192,6 +2192,17 @@ export type Database = {
         }
         Returns: boolean
       }
+      cs_lead_quo_chat: {
+        Args: { p_lead_id: string; p_limit?: number }
+        Returns: {
+          body: string
+          direction: string
+          has_media: boolean
+          id: string
+          message_created_at: string
+          status: string
+        }[]
+      }
       cs_leads_status_counts: { Args: never; Returns: Json }
       cs_leads_status_counts_filtered: {
         Args: {

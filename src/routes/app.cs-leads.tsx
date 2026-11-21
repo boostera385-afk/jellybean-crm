@@ -67,6 +67,7 @@ import {
   ExternalLink,
   AlertTriangle,
   History,
+  MessagesSquare,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -109,6 +110,7 @@ import { SERVICE_CATEGORIES } from "@/data/service-options";
 
 import { cn } from "@/lib/utils";
 import { greetingNameMismatch } from "@/lib/compose-greeting";
+import { reviewReason } from "@/lib/review-reason";
 import { confirmDiscardUnsaved } from "@/components/confirm-dialog-store";
 
 type ContactMethod = "texted" | "called";
@@ -2166,12 +2168,16 @@ function CsLeadsTable({
                       updatedByAi={lead.cs_status_updated_by_ai}
                       updatedByName={lead.cs_status_updated_by_name}
                       needsReview={lead.ai_review_required}
+                      reviewReasonCode={lead.ai_review_reason}
                     />
-                    <StatusHistoryButton
-                      leadId={lead.id}
-                      customerName={lead.customer_name}
-                      compact
-                    />
+                    <div className="flex flex-wrap items-center gap-1">
+                      <StatusHistoryButton
+                        leadId={lead.id}
+                        customerName={lead.customer_name}
+                        compact
+                      />
+                      {lead.ai_review_required && <CxQuickChatButton lead={lead} compact />}
+                    </div>
                   </div>
                 </td>
                 {showAiStatus && (
@@ -2662,8 +2668,10 @@ function LeadCard({
                 updatedByAi={statusUpdatedByAi}
                 updatedByName={statusUpdatedByAi ? null : statusUpdatedByName}
                 needsReview={needsReview}
+                reviewReasonCode={lead.ai_review_reason}
               />
               <StatusHistoryButton leadId={lead.id} customerName={lead.customer_name} />
+              {needsReview && <CxQuickChatButton lead={lead} />}
               <button
                 type="button"
                 onClick={(event) => {
@@ -3051,13 +3059,17 @@ function StatusBadge({
   updatedByAi = false,
   updatedByName = null,
   needsReview = false,
+  reviewReasonCode = null,
 }: {
   status: string;
   updatedByAi?: boolean;
   /** Who last set the status by hand; shown when the AI did not set it. */
   updatedByName?: string | null;
   needsReview?: boolean;
+  /** qualified_leads.ai_review_reason; shown as a short label on the badge. */
+  reviewReasonCode?: string | null;
 }) {
+  const reason = needsReview ? reviewReason(reviewReasonCode) : null;
   const tone = STATUS_TONE[status] ?? "bg-muted text-muted-foreground border-border";
   return (
     <span className="inline-flex items-center gap-1.5 flex-wrap">
@@ -3085,8 +3097,13 @@ function StatusBadge({
         </span>
       ) : null}
       {needsReview && (
-        <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-800 dark:text-amber-200">
-          <AlertTriangle className="h-3 w-3" /> Needs Review
+        <span
+          className="inline-flex max-w-[15rem] items-center gap-1 rounded-full border border-amber-400/60 bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-800 dark:text-amber-200"
+          title={reason ? `Needs Review: ${reason.detail}` : "Needs Review"}
+        >
+          <AlertTriangle className="h-3 w-3 shrink-0" />
+          <span className="whitespace-nowrap">Needs Review</span>
+          {reason && <span className="truncate font-medium opacity-80">· {reason.short}</span>}
         </span>
       )}
     </span>
@@ -3236,6 +3253,142 @@ function StatusHistoryButton({
               ))}
             </ol>
           )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+type QuoChatMessage = {
+  id: string;
+  direction: string;
+  body: string;
+  status: string | null;
+  has_media: boolean;
+  message_created_at: string;
+};
+
+const QUO_CHAT_LIMIT = 40;
+
+/** "CX chat" button + pop-up for Need Review leads: the review reason and the
+ * customer's latest saved Quo messages, so the reviewer can decide the status
+ * without leaving the pipeline. Read-only; access follows the lead read rule
+ * (cs_lead_quo_chat). */
+function CxQuickChatButton({
+  lead,
+  compact = false,
+}: {
+  lead: Pick<Lead, "id" | "customer_name" | "customer_number" | "ai_review_reason">;
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+  const reason = reviewReason(lead.ai_review_reason);
+  const chat = useQuery({
+    queryKey: ["cs_lead_quo_chat", lead.id],
+    enabled: open,
+    queryFn: async (): Promise<QuoChatMessage[]> => {
+      const { data, error } = await supabase.rpc("cs_lead_quo_chat", {
+        p_lead_id: lead.id,
+        p_limit: QUO_CHAT_LIMIT,
+      });
+      if (error) throw error;
+      return (data ?? []) as QuoChatMessage[];
+    },
+    staleTime: 30_000,
+  });
+  const messages = chat.data ?? [];
+
+  useEffect(() => {
+    if (open && messages.length) endRef.current?.scrollIntoView({ block: "end" });
+  }, [open, messages.length]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(true);
+        }}
+        className={cn(
+          "inline-flex items-center gap-1 rounded-lg border border-amber-400/60 bg-amber-500/10 font-semibold text-amber-800 transition-colors hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-amber-200",
+          compact ? "h-6 px-2 text-[10.5px]" : "h-7 px-2.5 text-[11px]",
+        )}
+        aria-label={`Customer chat for ${lead.customer_name}`}
+      >
+        <MessagesSquare className="h-3 w-3" />
+        CX chat
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent
+          className="max-w-md max-h-[85vh] flex flex-col gap-3"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <DialogHeader>
+            <DialogTitle>Customer chat</DialogTitle>
+            <DialogDescription>
+              {lead.customer_name}
+              {lead.customer_number ? ` · ${formatPhone(lead.customer_number)}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {reason && (
+            <div className="flex items-start gap-1.5 rounded-lg border border-amber-400/50 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-900 dark:text-amber-100">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                <span className="font-semibold">{reason.short}:</span> {reason.detail}
+              </span>
+            </div>
+          )}
+          <div className="min-h-[8rem] flex-1 overflow-y-auto rounded-lg border border-border bg-surface/40 p-3">
+            {chat.isLoading ? (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading chat…
+              </p>
+            ) : chat.isError ? (
+              <p className="text-sm text-destructive">{friendlyError(chat.error)}</p>
+            ) : messages.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No saved Quo messages for this lead yet.
+              </p>
+            ) : (
+              <ol className="flex flex-col gap-2">
+                {messages.map((m) => {
+                  const mine = m.direction === "outgoing";
+                  return (
+                    <li
+                      key={m.id}
+                      className={cn("flex flex-col", mine ? "items-end" : "items-start")}
+                    >
+                      <div
+                        className={cn(
+                          "max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-[12.5px] leading-snug",
+                          mine
+                            ? "rounded-br-sm bg-primary/15 text-foreground"
+                            : "rounded-bl-sm bg-muted text-foreground",
+                        )}
+                      >
+                        {m.body || (m.has_media ? "Image" : "(empty message)")}
+                        {m.body && m.has_media && (
+                          <span className="block text-[11px] opacity-70">+ image</span>
+                        )}
+                      </div>
+                      <span className="mt-0.5 px-1 text-[10px] text-muted-foreground">
+                        {mine ? "Us" : "Customer"} ·{" "}
+                        {formatCsPipelineDateTime(m.message_created_at)}
+                        {mine && m.status ? ` · ${m.status}` : ""}
+                      </span>
+                    </li>
+                  );
+                })}
+                <div ref={endRef} />
+              </ol>
+            )}
+          </div>
+          <p className="text-[10.5px] text-muted-foreground">
+            Latest {QUO_CHAT_LIMIT} saved Quo messages · read-only. Set the status on the card to
+            clear Needs Review.
+          </p>
         </DialogContent>
       </Dialog>
     </>
@@ -3999,9 +4152,11 @@ function LeadDrawer({
                         updatedByAi={lead.cs_status_updated_by_ai}
                         updatedByName={lead.cs_status_updated_by_name}
                         needsReview={lead.ai_review_required}
+                        reviewReasonCode={lead.ai_review_reason}
                       />
                     )}
                   <StatusHistoryButton leadId={lead.id} customerName={lead.customer_name} />
+                  {lead.ai_review_required && <CxQuickChatButton lead={lead} />}
                 </div>
                 {ai &&
                   canShowAiSuggestion(
