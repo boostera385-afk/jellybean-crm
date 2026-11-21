@@ -10,8 +10,8 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 
 export const EXTENSION_BUCKET = "crm-downloads";
-export const EXTENSION_OBJECT = "scraping-extension.zip";
-export const EXTENSION_DOWNLOAD_NAME = "jellyjar-extension.zip";
+export const EXTENSION_OBJECT = "JellyJar.zip";
+export const EXTENSION_DOWNLOAD_NAME = "JellyJar.zip";
 
 // Bounds the extension also enforces (apply-crm-config.js clamps to 10–3600).
 export const MIN_SEARCH_SECONDS = 15;

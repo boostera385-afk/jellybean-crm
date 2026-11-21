@@ -14,8 +14,8 @@ settings** (table `public.extension_settings`):
 - **Exclude keywords**: posts containing any of these are skipped.
 
 When someone clicks **Extension** on that page, the CRM downloads
-`crm-downloads/scraping-extension.zip`, writes the saved settings into its
-`JellyJar/crm-config.js`, and hands over `jellyjar-extension.zip`. So:
+`crm-downloads/JellyJar.zip`, writes the saved settings into its
+`JellyJar/crm-config.js`, and hands over `JellyJar.zip`. So:
 
 - A new download always has the current settings.
 - An installed extension keeps its settings until it is downloaded and loaded
@@ -31,7 +31,7 @@ here uses the built-in searches and keyword lists (`background.js`,
 
 1. Raise `version` in `JellyJar/manifest.json`.
 2. Zip the `JellyJar` folder (the zip must contain `JellyJar/manifest.json`).
-3. Upload it to Supabase Storage as `crm-downloads/scraping-extension.zip`,
+3. Upload it to Supabase Storage as `crm-downloads/JellyJar.zip`,
    replacing the old file.
 
 Load it in Chrome from `chrome://extensions` → Developer mode → Load unpacked
