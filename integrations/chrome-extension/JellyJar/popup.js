@@ -836,13 +836,28 @@ function buildSingleSearchUrl(keyword) {
   return url.toString();
 }
 
+// Built-in rotation size in background.js, shown when the download has no CRM searches.
+const BUILT_IN_SEARCH_COUNT = 11;
+
+function describeSearchRotation() {
+  const crmSearches = Array.isArray(JELLYJAR_CRM_SEARCHES) ? JELLYJAR_CRM_SEARCHES : [];
+  if (!crmSearches.length) {
+    return `Runs the built-in ${BUILT_IN_SEARCH_COUNT}-search schedule once, then stops.`;
+  }
+  const totalSeconds = crmSearches.reduce((sum, entry) => sum + entry.durationSeconds, 0);
+  const minutes = Math.max(1, Math.round(totalSeconds / 60));
+  const names = crmSearches.map((entry) => entry.label).join(", ");
+  const count = crmSearches.length === 1 ? "1 search" : `${crmSearches.length} searches`;
+  return `Runs ${count} from JellyBean (about ${minutes} min) once, then stops: ${names}.`;
+}
+
 function renderSearchPlan() {
   const isSingle = cleanText(els.searchPlanMode.value).toLowerCase() === "single";
   els.singleSearchWrap.style.display = isSingle ? "block" : "none";
   els.searchUrl.readOnly = isSingle;
   els.searchUrlHint.textContent = isSingle
     ? "Generated automatically from the selected keyword."
-    : "Runs the fixed 11-search schedule once, then stops.";
+    : describeSearchRotation();
   if (isSingle) {
     els.searchUrl.value = buildSingleSearchUrl(els.singleSearchKeyword.value);
   }

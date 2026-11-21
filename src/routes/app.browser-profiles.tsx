@@ -39,7 +39,18 @@ import {
   FolderPlus,
   X,
   Check,
+  Settings2,
 } from "lucide-react";
+import { ExtensionSettingsDialog } from "@/components/extension-settings-dialog";
+import {
+  buildExtensionZip,
+  EXTENSION_BUCKET,
+  EXTENSION_DOWNLOAD_NAME,
+  EXTENSION_OBJECT,
+  EXTENSION_SETTINGS_QUERY_KEY,
+  fetchExtensionSettings,
+  type ExtensionSettings,
+} from "@/lib/extension-settings";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { cn } from "@/lib/utils";
@@ -381,6 +392,7 @@ function Inner() {
 
   const [downloadingBridge, setDownloadingBridge] = useState(false);
   const [downloadingExtension, setDownloadingExtension] = useState(false);
+  const [extensionSettingsOpen, setExtensionSettingsOpen] = useState(false);
 
   const handleDownloadBridge = async () => {
     setDownloadingBridge(true);
@@ -401,20 +413,57 @@ function Inner() {
     }
   };
 
+  // Downloads the extension zip with the saved extension settings written into
+  // it (crm-config.js), so a fresh install starts with the team's current list.
   const handleDownloadExtension = async () => {
     setDownloadingExtension(true);
     try {
       const { data, error } = await supabase.storage
-        .from("crm-downloads")
-        .createSignedUrl("scraping-extension.zip", 60 * 10);
+        .from(EXTENSION_BUCKET)
+        .createSignedUrl(EXTENSION_OBJECT, 60 * 10);
 
       if (error || !data?.signedUrl) {
         toast.error("Failed to generate download link for Extension.");
         return;
       }
-      window.open(data.signedUrl, "_blank");
+
+      let settings: ExtensionSettings | null = null;
+      try {
+        settings = await qc.fetchQuery({
+          queryKey: EXTENSION_SETTINGS_QUERY_KEY,
+          queryFn: fetchExtensionSettings,
+        });
+      } catch {
+        settings = null;
+      }
+      if (!settings) {
+        toast.warning("Couldn't load the extension settings", {
+          description: "Downloading the extension with its built-in searches and keywords.",
+        });
+        window.open(data.signedUrl, "_blank");
+        return;
+      }
+
+      const response = await fetch(data.signedUrl);
+      if (!response.ok) throw new Error(`Download failed (${response.status}).`);
+      const built = await buildExtensionZip(await response.blob(), settings);
+      const url = URL.createObjectURL(built.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = EXTENSION_DOWNLOAD_NAME;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+      if (!built.supportsCrmSettings) {
+        toast.warning("This extension version ignores the CRM settings", {
+          description:
+            "The zip in storage is older than JellyJar 7.3.0. Upload the new version to use the searches and keywords saved here.",
+        });
+      }
     } catch (e) {
-      toast.error("An unexpected error occurred.");
+      toast.error(e instanceof Error ? e.message : "An unexpected error occurred.");
     } finally {
       setDownloadingExtension(false);
     }
@@ -594,6 +643,9 @@ function Inner() {
               <Download className="h-3.5 w-3.5 mr-1.5" />
             )}{" "}
             Extension
+          </Button>
+          <Button variant="outline" onClick={() => setExtensionSettingsOpen(true)}>
+            <Settings2 className="h-3.5 w-3.5 mr-1.5" /> Extension settings
           </Button>
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="h-3.5 w-3.5 mr-1.5" /> Import
@@ -1029,6 +1081,12 @@ function Inner() {
           </DialogContent>
         </Dialog>
       )}
+
+      <ExtensionSettingsDialog
+        open={extensionSettingsOpen}
+        onOpenChange={setExtensionSettingsOpen}
+        canEdit={auth.roles.includes("admin") || auth.roles.includes("sub_admin")}
+      />
 
       {/* How to find profile ID */}
       <Dialog open={howToOpen} onOpenChange={setHowToOpen}>

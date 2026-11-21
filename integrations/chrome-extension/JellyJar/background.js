@@ -2,11 +2,12 @@
 
 const DEFAULT_SEARCH_URL = "https://nextdoor.com/search/posts/?ccid=48929a0f-a231-49bc-ad47-6932dec901b8&navigationScreen=FEED&ssid=b71b3118-bde1-4804-a7ac-fdcc4769ca5e&query=garage+door+repair&postDistance=50&postDistanceUnit=MILES&postDateFilter=TODAY";
 const SINGLE_SEARCH_TEMPLATE_URL = "https://nextdoor.com/search/posts/?ccid=48929a0f-a231-49bc-ad47-6932dec901b8&navigationScreen=FEED&ssid=b71b3118-bde1-4804-a7ac-fdcc4769ca5e&query=handyman&postDistance=50&postDistanceUnit=MILES&postDateFilter=TODAY";
-importScripts("defaults.js", "include-defaults.js");
+importScripts("defaults.js", "include-defaults.js", "crm-config.js", "apply-crm-config.js");
 
 const DEFAULT_WEBHOOK_URL = "https://jellybean-crm.lovable.app/api/public/nextdoor-leads";
 const SEARCH_DURATION_VARIATION_SECONDS = 5;
-const SEARCH_URL_SEQUENCE = [
+// Built-in rotation, used when the download has no CRM searches (crm-config.js).
+const BUILT_IN_SEARCH_SEQUENCE = [
   { label: "Search: garage door repair", durationSeconds: 60, url: DEFAULT_SEARCH_URL },
   { label: "Search: appliance repair", durationSeconds: 60, url: "https://nextdoor.com/search/posts/?ccid=48929a0f-a231-49bc-ad47-6932dec901b8&navigationScreen=FEED&ssid=acdab0f0-eda8-4927-95ae-0d04d7e18f4f&query=Appliance%20Repair&postDistance=50&postDistanceUnit=MILES&postDateFilter=TODAY" },
   { label: "Search: painting", durationSeconds: 60, url: "https://nextdoor.com/search/posts/?ccid=48929a0f-a231-49bc-ad47-6932dec901b8&navigationScreen=FEED&ssid=6544aedf-21f0-4caf-91e9-5a5874585923&query=Painting&postDistance=50&postDistanceUnit=MILES&postDateFilter=TODAY" },
@@ -234,7 +235,7 @@ function getCycleSegments(config) {
         searchUrl: buildSingleKeywordSearchUrl(keyword),
       }];
     }
-    return buildSearchCycleSegments(totalScrollMs, true);
+    return buildSearchCycleSegments(config, true);
   }
   if (sourceMode !== "both") {
     return [{ sourceMode: sourceMode === "search" ? "search" : "recent", durationMs: totalScrollMs, cycleStart: true, label: sourceMode === "search" ? "Search" : "Recent" }];
@@ -251,15 +252,28 @@ function getCycleSegments(config) {
         label: `Search: ${singleKeyword}`,
         searchUrl: buildSingleKeywordSearchUrl(singleKeyword),
       }]
-    : buildSearchCycleSegments(secondHalf, false);
+    : buildSearchCycleSegments(config, false);
   return [
     { sourceMode: "recent", durationMs: firstHalf, cycleStart: true, label: "Recent" },
     ...searchSegments,
   ];
 }
 
-function buildSearchCycleSegments(_totalDurationMs, cycleStart) {
-  return SEARCH_URL_SEQUENCE.map((entry, index) => {
+// The searches to rotate through: the CRM list baked into this download, or
+// the built-in list when there is none.
+function getSearchSequence() {
+  if (Array.isArray(JELLYJAR_CRM_SEARCHES) && JELLYJAR_CRM_SEARCHES.length) {
+    return JELLYJAR_CRM_SEARCHES.map((entry) => ({
+      label: `Search: ${entry.label}`,
+      durationSeconds: entry.durationSeconds,
+      url: buildSingleKeywordSearchUrl(entry.query),
+    }));
+  }
+  return BUILT_IN_SEARCH_SEQUENCE;
+}
+
+function buildSearchCycleSegments(_config, cycleStart) {
+  return getSearchSequence().map((entry, index) => {
     const baseDurationSeconds = Math.max(1, Number(entry.durationSeconds || 60));
     const variationSeconds = index % 2 === 0
       ? SEARCH_DURATION_VARIATION_SECONDS
@@ -449,6 +463,18 @@ async function getConfig() {
       keywords: DEFAULT_INCLUDE_KEYWORDS,
       restMinutes: 0,
       scrollDelayMs: Number(cfg.scrollDelayMs || 1000),
+    };
+    await storageSet({ [CONFIG_KEY]: effectiveConfig });
+  }
+  // A download from the CRM carries its keyword lists. Apply them once per CRM
+  // revision: edits made in the popup afterwards stay until the next download
+  // with newer CRM settings replaces them.
+  if (JELLYJAR_CRM_REVISION && Number(effectiveConfig.crmConfigRevision || 0) !== JELLYJAR_CRM_REVISION) {
+    effectiveConfig = {
+      ...effectiveConfig,
+      crmConfigRevision: JELLYJAR_CRM_REVISION,
+      keywords: DEFAULT_INCLUDE_KEYWORDS,
+      excludeKeywords: DEFAULT_EXCLUDE_KEYWORDS,
     };
     await storageSet({ [CONFIG_KEY]: effectiveConfig });
   }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JellyJar",
-  "version": "7.2.6",
+  "version": "7.3.0",
   "description": "JellyBean's focused Nextdoor lead capture companion.",
   "permissions": [
     "storage",

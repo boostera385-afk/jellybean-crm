@@ -912,6 +912,36 @@ export type Database = {
           },
         ]
       }
+      extension_settings: {
+        Row: {
+          exclude_keywords: string[]
+          id: number
+          include_keywords: string[]
+          revision: number
+          searches: Json
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          exclude_keywords?: string[]
+          id?: number
+          include_keywords?: string[]
+          revision?: number
+          searches?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          exclude_keywords?: string[]
+          id?: number
+          include_keywords?: string[]
+          revision?: number
+          searches?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       incogniton_profiles: {
         Row: {
           account_area: string | null
