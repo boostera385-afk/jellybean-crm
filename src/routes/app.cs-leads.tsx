@@ -2638,8 +2638,8 @@ function LeadCard({
         )}
         <div className="hidden">{initials || "·"}</div>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1.5">
-            <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
               <h3 className="crm-lead-title truncate">{lead.customer_name}</h3>
               <button
                 type="button"
@@ -2654,39 +2654,39 @@ function LeadCard({
                 <Copy className="h-3 w-3" />
               </button>
             </div>
-            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">
-              {/* Leads outside AI automation (created before 4 Nov) keep the
-                  original view: the manual status plus the AI comparison chip. */}
-              {ai &&
-                !lead.ai_status_automation_started_at &&
-                canShowAiSuggestion(
-                  status,
-                  ai.ai_status,
-                  status === lead.cs_status && lead.cs_status_updated_by_ai,
-                ) && <AiTagChip ai={ai} />}
-              <StatusBadge
-                status={status}
-                updatedByAi={statusUpdatedByAi}
-                updatedByName={statusUpdatedByAi ? null : statusUpdatedByName}
-                needsReview={needsReview}
-                reviewReasonCode={lead.ai_review_reason}
-              />
-              <div className="flex flex-wrap items-center gap-1.5">
-                <StatusHistoryButton leadId={lead.id} customerName={lead.customer_name} />
-                {needsReview && <CxQuickChatButton lead={lead} />}
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpen();
-                  }}
-                  className="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-[11px] font-semibold text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  aria-label={`Open lead details for ${lead.customer_name}`}
-                >
-                  Open
-                </button>
-              </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <StatusHistoryButton leadId={lead.id} customerName={lead.customer_name} compact />
+              {needsReview && <CxQuickChatButton lead={lead} compact />}
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpen();
+                }}
+                className="inline-flex h-6 items-center whitespace-nowrap rounded-lg border border-foreground/25 bg-background/70 px-2 text-[10.5px] font-semibold text-foreground shadow-sm transition-colors hover:border-primary/60 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                aria-label={`Open lead details for ${lead.customer_name}`}
+              >
+                Open
+              </button>
             </div>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {/* Leads outside AI automation (created before 4 Nov) keep the
+                original view: the manual status plus the AI comparison chip. */}
+            {ai &&
+              !lead.ai_status_automation_started_at &&
+              canShowAiSuggestion(
+                status,
+                ai.ai_status,
+                status === lead.cs_status && lead.cs_status_updated_by_ai,
+              ) && <AiTagChip ai={ai} />}
+            <StatusBadge
+              status={status}
+              updatedByAi={statusUpdatedByAi}
+              updatedByName={statusUpdatedByAi ? null : statusUpdatedByName}
+              needsReview={needsReview}
+              reviewReasonCode={lead.ai_review_reason}
+            />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {lead.out_of_base && (
