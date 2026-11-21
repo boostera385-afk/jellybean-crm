@@ -70,7 +70,12 @@ import {
   MessagesSquare,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardPortal,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import {
   Dialog,
   DialogContent,
@@ -3127,22 +3132,26 @@ function NeedsReviewBadge({ reason }: { reason: ReviewReason | null }) {
   return (
     <HoverCard openDelay={150} closeDelay={80}>
       <HoverCardTrigger asChild>{pill}</HoverCardTrigger>
-      <HoverCardContent
-        side="bottom"
-        align="start"
-        className="w-72 max-w-[calc(100vw-2rem)] p-3"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <p className="flex items-center gap-1.5 text-[12px] font-bold text-amber-700 dark:text-amber-300">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          Needs Review · {reason.short}
-        </p>
-        <p className="mt-1.5 text-[12.5px] leading-snug text-foreground">{reason.detail}</p>
-        <p className="mt-2 border-t border-border pt-2 text-[12px] leading-snug text-muted-foreground">
-          <span className="font-semibold text-foreground">What to do: </span>
-          {reason.action}
-        </p>
-      </HoverCardContent>
+      {/* Portal to <body> so the next lead card can never cover it. */}
+      <HoverCardPortal>
+        <HoverCardContent
+          side="bottom"
+          align="start"
+          collisionPadding={12}
+          className="z-[60] w-72 max-w-[calc(100vw-2rem)] p-3"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <p className="flex items-center gap-1.5 text-[12px] font-bold text-amber-700 dark:text-amber-300">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            Needs Review · {reason.short}
+          </p>
+          <p className="mt-1.5 text-[12.5px] leading-snug text-foreground">{reason.detail}</p>
+          <p className="mt-2 border-t border-border pt-2 text-[12px] leading-snug text-muted-foreground">
+            <span className="font-semibold text-foreground">What to do: </span>
+            {reason.action}
+          </p>
+        </HoverCardContent>
+      </HoverCardPortal>
     </HoverCard>
   );
 }
