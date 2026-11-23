@@ -72,11 +72,8 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { cn } from "@/lib/utils";
 import { downloadCsv, formatPhone, normalizePhone } from "@/lib/crm-lite";
-import {
-  analyzeRawLeadsWithAi,
-  autoRephraseLeadWithAi,
-  FROZEN_LEAD_PROMPT,
-} from "@/lib/raw-leads-ai.functions";
+import { analyzeRawLeadsWithAi, FROZEN_LEAD_PROMPT } from "@/lib/raw-leads-ai.functions";
+import { autoComposeNewLead } from "@/lib/auto-compose";
 import {
   checkDuplicatePhone,
   fetchRawLeadCache,
@@ -1348,7 +1345,14 @@ function Inner() {
         const lead = leadByKey.get(entry.row_key);
         return lead ? { ...entry, lead } : entry;
       });
-      toast.success(`AI checked ${result.analyzed}: ${result.yes} Yes, ${result.no} No`);
+      if (result.analyzed > 0) {
+        toast.success(`AI checked ${result.analyzed}: ${result.yes} Yes, ${result.no} No`);
+      } else if (result.inProgress > 0) {
+        // Another open Raw Leads page is checking these posts right now. Give
+        // it time to finish instead of asking again every second; its
+        // decisions come back on the next check.
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
     } catch (e) {
       toast.error(friendlyError(e));
     } finally {
@@ -2690,7 +2694,6 @@ function QualifyDialog({
   const [busy, setBusy] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const qc = useQueryClient();
-  const autoRephraseFn = useServerFn(autoRephraseLeadWithAi);
 
   async function send(values: LeadFormValues) {
     setBusy(true);
@@ -2745,7 +2748,7 @@ function QualifyDialog({
           pinned_important: values.isImportant,
           cs_status: "new",
         });
-        void autoRephraseFn({ data: { leadId: insertedLead.id } }).catch((err) => {
+        void autoComposeNewLead(insertedLead.id).catch((err) => {
           console.error("[Auto-rephrase] Failed for forwarded lead:", insertedLead.id, err);
         });
       }

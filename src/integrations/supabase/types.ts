@@ -825,6 +825,21 @@ export type Database = {
         }
         Relationships: []
       }
+      cs_auto_compose_claims: {
+        Row: {
+          claimed_at: string
+          lead_id: string
+        }
+        Insert: {
+          claimed_at?: string
+          lead_id: string
+        }
+        Update: {
+          claimed_at?: string
+          lead_id?: string
+        }
+        Relationships: []
+      }
       cs_compose_eval_jobs: {
         Row: {
           cases: Json
@@ -1543,6 +1558,21 @@ export type Database = {
           },
         ]
       }
+      raw_lead_ai_claims: {
+        Row: {
+          claimed_at: string
+          row_key: string
+        }
+        Insert: {
+          claimed_at?: string
+          row_key: string
+        }
+        Update: {
+          claimed_at?: string
+          row_key?: string
+        }
+        Relationships: []
+      }
       raw_lead_cache: {
         Row: {
           assigned_myself_at: string | null
@@ -1980,6 +2010,14 @@ export type Database = {
       batch_update_raw_lead_decisions: {
         Args: { decisions: Json }
         Returns: number
+      }
+      claim_raw_leads_for_ai: {
+        Args: { p_row_keys: string[] }
+        Returns: string[]
+      }
+      cs_claim_auto_compose: {
+        Args: { p_lead_id: string }
+        Returns: boolean
       }
       browser_profile_performance: {
         Args: { _from: string; _to: string }

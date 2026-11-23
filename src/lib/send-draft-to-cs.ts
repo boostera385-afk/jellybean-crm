@@ -8,7 +8,7 @@ import { formatPhone } from "@/lib/crm-lite";
 import { extractNextdoorPostId, canonicalizeLeadLink } from "@/lib/lead-link-canonicalizer";
 import { FACEBOOK_LEAD_REFERENCE } from "@/lib/lead-form-utils";
 import type { LeadDraft } from "@/lib/lead-drafts";
-import { autoRephraseLeadWithAi } from "@/lib/raw-leads-ai.functions";
+import { autoComposeNewLead } from "@/lib/auto-compose";
 
 export class DraftValidationError extends Error {
   missing: string[];
@@ -127,7 +127,7 @@ export async function sendDraftToCS(draft: LeadDraft, ctx: SendDraftContext): Pr
   if (error) throw new Error(error.message);
 
   if (insertedLead?.id) {
-    void autoRephraseLeadWithAi({ data: { leadId: insertedLead.id } }).catch((err) => {
+    void autoComposeNewLead(insertedLead.id).catch((err) => {
       console.error("[Auto-rephrase] Failed for draft lead:", insertedLead.id, err);
     });
   }
