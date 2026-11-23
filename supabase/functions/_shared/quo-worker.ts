@@ -164,6 +164,21 @@ export async function processQuoJob(
             policyVersion: previous.policy_version,
           } as AiResult)
         : null;
+      // The customer-words fingerprint lives in the saved run result, not in
+      // lead_ai_status. Best effort: without it only an identical chat is reused.
+      if (cached && typeof previous?.run_id === "string") {
+        try {
+          const { data: lastRun } = await db
+            .from("lead_ai_status_runs")
+            .select("result")
+            .eq("id", previous.run_id)
+            .maybeSingle();
+          const saved = (lastRun?.result as { customerHash?: unknown } | null)?.customerHash;
+          if (typeof saved === "string") cached.customerHash = saved;
+        } catch {
+          /* keep the full-chat comparison only */
+        }
+      }
       // Phone calls too: many outcomes are only said on a call. Best effort --
       // without them the lead is judged from its texts, as before.
       let calls: QuoMessage[] = [];
