@@ -41,6 +41,9 @@ export type AiResult = {
   historyHash: string | null;
   model: string;
   policyVersion: string;
+  /** Fingerprint of the customer's own words only (their texts and the calls
+   *  they spoke on). Saved with each run's result; see classifyQuoHistory. */
+  customerHash?: string | null;
 };
 export const emptyResult = (state: AiResult["state"], reasonCode: string): AiResult => ({
   state,
@@ -521,13 +524,29 @@ export async function classifyQuoHistory(options: {
   });
   if (input.length > 180_000)
     return { ...emptyResult("review", "history_too_large"), messageCount: messages.length };
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
-  const historyHash = Array.from(new Uint8Array(digest), (b) =>
-    b.toString(16).padStart(2, "0"),
-  ).join("");
+  const sha256 = async (text: string) =>
+    Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))),
+      (b) => b.toString(16).padStart(2, "0"),
+    ).join("");
+  const historyHash = await sha256(input);
+  // The model is told only the customer's words are evidence. Our own follow-up
+  // texts and delivery updates change historyHash but not this.
+  const customerHash = await sha256(
+    JSON.stringify({
+      assignedAt,
+      service: options.service,
+      customer: messages
+        .filter(fromCustomer)
+        .map(({ id, text, media, call }) =>
+          call ? { id, type: "call", text } : { id, text, hasMedia: Boolean(media?.length) },
+        ),
+    }),
+  );
   const withMeta = (r: AiResult): AiResult => ({
     ...r,
     historyHash,
+    customerHash,
     messageCount: messages.length,
   });
   const transport = transportResult(
@@ -560,13 +579,20 @@ export async function classifyQuoHistory(options: {
   // That includes "not sure" (review / insufficient_evidence): the model sees
   // no clock, so the same chat gets the same answer, and asking again only
   // repeated the OpenAI call each time the lead was rechecked.
-  const sameRead =
-    previous?.historyHash === historyHash &&
-    previous.policyVersion === AI_STATUS_VERSION &&
-    previous.model === AI_STATUS_MODEL;
+  const samePolicy =
+    previous?.policyVersion === AI_STATUS_VERSION && previous.model === AI_STATUS_MODEL;
+  const sameRead = samePolicy && previous?.historyHash === historyHash;
+  // Nothing new from the customer since the model last read this lead: only our
+  // own messages (or their delivery status) changed. Reuse its answer instead
+  // of paying to read the whole chat again.
+  const sameCustomerWords =
+    samePolicy &&
+    Boolean(previous?.customerHash) &&
+    previous?.customerHash === customerHash &&
+    (previous.reasonCode === "customer_intent" || previous.reasonCode === "insufficient_evidence");
   if (
     previous &&
-    sameRead &&
+    (sameRead || sameCustomerWords) &&
     ((previous.state === "classified" &&
       (INTENT_STATUSES.includes(previous.status as (typeof INTENT_STATUSES)[number]) ||
         previous.status === "converted")) ||
