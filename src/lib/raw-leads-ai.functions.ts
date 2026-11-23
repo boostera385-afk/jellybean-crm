@@ -158,6 +158,18 @@ function extractOutputText(response: OpenAiResponse) {
   return parts.join("\n").trim();
 }
 
+/** A post's existing yes/no decision (AI column, else the sheet's Lead value). */
+function existingDecision(
+  column: string | null | undefined,
+  sheetValue: string | null | undefined,
+): LeadDecision | null {
+  if (column === "yes" || column === "no") return column;
+  const raw = (sheetValue ?? "").trim().toLowerCase();
+  if (raw === "yes" || raw === "y" || raw === "true") return "yes";
+  if (["no", "n", "false", "review", "maybe"].includes(raw)) return "no";
+  return null;
+}
+
 function trimForAi(value: string) {
   const trimmed = value.trim();
   if (trimmed.length <= MAX_POST_TEXT_CHARS) return trimmed;
@@ -321,19 +333,24 @@ export const analyzeRawLeadsWithAi = createServerFn({ method: "POST" })
     // Chunk the .in() lookup — long row_keys can push the PostgREST GET URL
     // past its length limit and surface as a generic "Bad Request".
     const CHUNK = 10;
-    const rows: Array<{ row_key: string; data: unknown; duplicate_detected: boolean | null }> = [];
+    const rows: Array<{
+      row_key: string;
+      data: unknown;
+      duplicate_detected: boolean | null;
+      lead: string | null;
+    }> = [];
     for (let i = 0; i < orderedKeys.length; i += CHUNK) {
       const slice = orderedKeys.slice(i, i + CHUNK);
       const { data: part, error } = await supabaseAdmin
         .from("raw_lead_cache")
-        .select("row_key, data, duplicate_detected")
+        .select("row_key, data, duplicate_detected, lead")
         .in("row_key", slice);
       if (error) throw new Error(error.message);
       if (part) rows.push(...part);
     }
 
     const byKey = new Map(rows.map((row) => [row.row_key, row]));
-    const leads = orderedKeys
+    const eligible = orderedKeys
       .map((rowKey) => {
         const row = byKey.get(rowKey);
         const payload = (row?.data ?? {}) as Record<string, string | null | undefined>;
@@ -341,6 +358,7 @@ export const analyzeRawLeadsWithAi = createServerFn({ method: "POST" })
           rowKey,
           postText: payload["Post Text"] ?? "",
           isDuplicate: row?.duplicate_detected === true,
+          decided: existingDecision(row?.lead, payload["Lead"]),
         };
       })
       // Skip duplicates — no point spending AI credits classifying them.
@@ -348,10 +366,31 @@ export const analyzeRawLeadsWithAi = createServerFn({ method: "POST" })
       // Posts under 20 chars are too short for reliable AI classification.
       .filter((lead) => lead.postText.trim().length >= 20);
 
-    if (leads.length === 0) throw new Error("No selected raw leads have post text to analyze");
+    if (eligible.length === 0) throw new Error("No selected raw leads have post text to analyze");
+
+    // Posts that already have a decision (another user's AI check, or a sheet
+    // value) are never sent again; they are returned so the page catches up.
+    const alreadyDecided: RawLeadAiResult[] = eligible.flatMap((lead) =>
+      lead.decided ? [{ row_key: lead.rowKey, lead: lead.decided }] : [],
+    );
+    const undecided = eligible.filter((lead) => !lead.decided);
+
+    // Claim the rest so two open Raw Leads pages can't classify the same post.
+    let claimedKeys = new Set<string>();
+    if (undecided.length) {
+      const { data: claimed, error: claimError } = await supabaseAdmin.rpc(
+        "claim_raw_leads_for_ai",
+        { p_row_keys: undecided.map((lead) => lead.rowKey) },
+      );
+      if (claimError) throw new Error(claimError.message);
+      claimedKeys = new Set(claimed ?? []);
+    }
+    const leads = undecided.filter((lead) => claimedKeys.has(lead.rowKey));
+    const inProgress = undecided.length - leads.length;
 
     const systemPrompt = data.prompt?.trim() || FROZEN_LEAD_PROMPT;
     const results: RawLeadAiResult[] = [];
+    let batchError: unknown = null;
     for (let i = 0; i < leads.length; i += OPENAI_BATCH_SIZE) {
       const slice = leads.slice(i, i + OPENAI_BATCH_SIZE);
       const batch = slice.map((lead, idx) => ({
@@ -359,30 +398,48 @@ export const analyzeRawLeadsWithAi = createServerFn({ method: "POST" })
         id: String(idx + 1),
         postText: lead.postText,
       }));
-      const batchResults = await classifyBatch({ systemPrompt, batch });
-      results.push(...batchResults);
+      try {
+        const batchResults = await classifyBatch({ systemPrompt, batch });
+        // Save each batch as soon as it is classified, so a later failing
+        // batch doesn't throw away decisions that were already paid for.
+        const { error: updateError } = await supabaseAdmin.rpc("batch_update_raw_lead_decisions", {
+          decisions: batchResults.map(({ row_key, lead }) => ({ row_key, lead })),
+        });
+        if (updateError) throw new Error(updateError.message);
+        results.push(...batchResults);
+      } catch (error) {
+        batchError = error;
+        break;
+      }
     }
 
-    if (results.length === 0) throw new Error("AI returned no usable lead decisions");
-
-    const { error: updateError } = await supabaseAdmin.rpc("batch_update_raw_lead_decisions", {
-      decisions: results.map(({ row_key, lead }) => ({ row_key, lead })),
-    });
-    if (updateError) throw new Error(updateError.message);
+    if (batchError) {
+      // Free the posts this request did not finish so the next check can take
+      // them straight away instead of waiting for the claim to go stale.
+      const done = new Set(results.map((result) => result.row_key));
+      const unfinished = leads.map((lead) => lead.rowKey).filter((key) => !done.has(key));
+      if (unfinished.length) {
+        await supabaseAdmin.from("raw_lead_ai_claims").delete().in("row_key", unfinished);
+      }
+      if (results.length === 0) throw batchError;
+      console.error("[raw-leads-ai] batch failed after partial success", batchError);
+    }
 
     const yes = results.filter((result) => result.lead === "yes").length;
     const no = results.filter((result) => result.lead === "no").length;
     const review = 0;
-    const actor = await loadActor(context.userId);
-    await logActivity({
-      supabaseAdmin,
-      actorId: context.userId,
-      actorName: actor.name,
-      actorRole: actor.role,
-      action: "ai_classify",
-      entityType: "raw_lead_cache",
-      metadata: { analyzed: results.length, yes, no, review },
-    });
+    if (results.length) {
+      const actor = await loadActor(context.userId);
+      await logActivity({
+        supabaseAdmin,
+        actorId: context.userId,
+        actorName: actor.name,
+        actorRole: actor.role,
+        action: "ai_classify",
+        entityType: "raw_lead_cache",
+        metadata: { analyzed: results.length, yes, no, review },
+      });
+    }
 
     return {
       ok: true,
@@ -390,7 +447,10 @@ export const analyzeRawLeadsWithAi = createServerFn({ method: "POST" })
       yes,
       no,
       review,
-      results,
+      // Already-decided posts are included so the page updates them too.
+      results: [...results, ...alreadyDecided],
+      alreadyDecided: alreadyDecided.length,
+      inProgress,
     };
   });
 
@@ -532,6 +592,19 @@ export const autoRephraseLeadWithAi = createServerFn({ method: "POST" })
       return { success: false, reason: "No context text available" };
     }
 
+    // A new lead triggers this from the sender's page and from every open CS
+    // Leads page at the same moment. Only the first caller composes; the rest
+    // would pay for a draft that could never be saved.
+    const { data: claimed, error: claimError } = await supabaseAdmin.rpc("cs_claim_auto_compose", {
+      p_lead_id: lead.id,
+    });
+    if (claimError) return { success: false, reason: "Could not reserve auto-compose" };
+    if (!claimed) return { success: false, reason: "Already being composed" };
+    // Give the lead back if no draft was saved, so a later trigger can retry.
+    const releaseClaim = async () => {
+      await supabaseAdmin.from("cs_auto_compose_claims").delete().eq("lead_id", lead.id);
+    };
+
     try {
       const { data: result, error: composeError } = await context.supabase.functions.invoke(
         "cs-compose-lead",
@@ -550,18 +623,22 @@ export const autoRephraseLeadWithAi = createServerFn({ method: "POST" })
           .eq("id", lead.id)
           .eq("updated_at", lead.updated_at)
           .select("id");
-        if (saveError || !saved?.length)
+        if (saveError || !saved?.length) {
+          await releaseClaim();
           return {
             success: false,
             reason: "Lead changed while composing; draft was not overwritten",
           };
+        }
 
         return { success: true, rephrased: finalSms };
       }
     } catch (err) {
       console.error("[Auto-rephrase] Failed for lead:", lead.id, err);
+      await releaseClaim();
       return { success: false, reason: (err as Error).message };
     }
 
+    await releaseClaim();
     return { success: false, reason: "No output generated" };
   });

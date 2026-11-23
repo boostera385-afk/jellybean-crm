@@ -104,7 +104,8 @@ import {
   pinnedImportantFor,
 } from "@/lib/lead-statuses";
 import { renderCsComposeSuggestion } from "@/lib/cs-compose-template";
-import { rephraseLeadTemplateWithAi, autoRephraseLeadWithAi } from "@/lib/raw-leads-ai.functions";
+import { rephraseLeadTemplateWithAi } from "@/lib/raw-leads-ai.functions";
+import { autoComposeNewLead } from "@/lib/auto-compose";
 import { SERVICE_CATEGORIES } from "@/data/service-options";
 
 import { cn } from "@/lib/utils";
@@ -1123,21 +1124,13 @@ function Inner() {
           at: Date.now(),
         });
 
-        // Auto-rephrase new lead if toggle is enabled and marketing_notes is not yet set
+        // Auto-rephrase new lead if toggle is enabled and marketing_notes is not
+        // yet set. Usually the page that forwarded the lead has already claimed
+        // it; then this returns at once without an OpenAI call.
         if (autoRephraseEnabledRef.current && payload.new?.id && !payload.new?.marketing_notes) {
-          const inserted = payload.new as Record<string, unknown>;
-          void autoRephraseLeadWithAi({ data: { leadId: payload.new.id } })
+          void autoComposeNewLead(payload.new.id)
             .then((res) => {
-              if (!res?.success) return;
-              qc.invalidateQueries({ queryKey: ["cs_leads"] });
-              // This write happens on the server, so it is the one lead change
-              // with no acting client to mirror it to Google Sheets. Every
-              // other path syncs from its own write; the realtime handler no
-              // longer does it for everyone.
-              void syncLeadToGoogleSheet("UPDATE", {
-                ...(inserted as unknown as Parameters<typeof syncLeadToGoogleSheet>[1]),
-                marketing_notes: res.rephrased ?? null,
-              });
+              if (res?.success) qc.invalidateQueries({ queryKey: ["cs_leads"] });
             })
             .catch(() => {});
         }

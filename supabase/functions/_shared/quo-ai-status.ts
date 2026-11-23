@@ -556,13 +556,21 @@ export async function classifyQuoHistory(options: {
       evidenceIds: [mediaOnlyReplies[mediaOnlyReplies.length - 1].id],
     });
   const previous = options.previous;
-  if (
-    previous?.state === "classified" &&
-    previous.historyHash === historyHash &&
+  // The model already read this exact chat under this policy: reuse its answer.
+  // That includes "not sure" (review / insufficient_evidence): the model sees
+  // no clock, so the same chat gets the same answer, and asking again only
+  // repeated the OpenAI call each time the lead was rechecked.
+  const sameRead =
+    previous?.historyHash === historyHash &&
     previous.policyVersion === AI_STATUS_VERSION &&
-    previous.model === AI_STATUS_MODEL &&
-    (INTENT_STATUSES.includes(previous.status as (typeof INTENT_STATUSES)[number]) ||
-      previous.status === "converted")
+    previous.model === AI_STATUS_MODEL;
+  if (
+    previous &&
+    sameRead &&
+    ((previous.state === "classified" &&
+      (INTENT_STATUSES.includes(previous.status as (typeof INTENT_STATUSES)[number]) ||
+        previous.status === "converted")) ||
+      (previous.state === "review" && previous.reasonCode === "insufficient_evidence"))
   )
     return withMeta(previous);
   const response = await (options.fetcher ?? fetch)("https://api.openai.com/v1/chat/completions", {

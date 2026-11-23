@@ -1,8 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { autoRephraseLeadWithAi } from "@/lib/raw-leads-ai.functions";
+import { autoComposeNewLead } from "@/lib/auto-compose";
 import { toast } from "sonner";
 import {
   formatDistanceToNow,
@@ -572,7 +571,6 @@ function SubmitForm({
 }) {
   const auth = useAuth();
   const qc = useQueryClient();
-  const autoRephraseFn = useServerFn(autoRephraseLeadWithAi);
   const [submitting, setSubmitting] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(initialDraft?.id ?? null);
   const baseGroup = roleToBaseGroup(role);
@@ -698,7 +696,7 @@ function SubmitForm({
           pinned_important: values.isImportant,
           cs_status: "new",
         });
-        void autoRephraseFn({ data: { leadId: insertedLead.id } }).catch((err) => {
+        void autoComposeNewLead(insertedLead.id).catch((err) => {
           console.error("[Auto-rephrase] Failed for submitted lead:", insertedLead.id, err);
         });
       }
