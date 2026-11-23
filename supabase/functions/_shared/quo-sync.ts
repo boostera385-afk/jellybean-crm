@@ -14,13 +14,12 @@ export function createQuoCheckpoint(
   snapshot: string,
   numbers: Array<string | null | undefined>,
 ): QuoCheckpoint {
-  const phones = [...new Set(numbers.filter(Boolean).map(normalizeQuoPhone))];
-  if (
-    !Number.isFinite(Date.parse(snapshot)) ||
-    phones.includes(null) ||
-    phones.length < 1 ||
-    phones.length > 3
-  )
+  // Skip numbers that are not valid phone numbers and use at most the first
+  // three, rather than sending the whole lead to review over one bad number.
+  const phones = [
+    ...new Set(numbers.map(normalizeQuoPhone).filter((p): p is string => Boolean(p))),
+  ].slice(0, 3);
+  if (!Number.isFinite(Date.parse(snapshot)) || phones.length < 1)
     throw new Error("invalid_or_excess_customer_numbers");
   return {
     version: 1,

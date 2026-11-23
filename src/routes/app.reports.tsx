@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { RouteSkeleton } from "@/components/route-skeleton";
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
   CalendarRange,
@@ -10,7 +10,6 @@ import {
   Download,
   ExternalLink,
   Loader2,
-  RefreshCw,
   Search,
   SlidersHorizontal,
   User,
@@ -27,7 +26,6 @@ import { isCsUser } from "@/lib/cs-filter";
 import { friendlyError } from "@/lib/error-messages";
 import { cn } from "@/lib/utils";
 import { parseAiStatusReport } from "@/lib/ai-status-report";
-import { toast } from "sonner";
 import { STATUS_LABEL } from "@/lib/lead-statuses";
 
 type DatePreset = "all" | "today" | "yesterday" | "7d" | "30d" | "custom";
@@ -330,27 +328,9 @@ function Inner() {
     staleTime: 60_000,
     retry: false,
   });
-  const refreshAi = useMutation({
-    mutationFn: async (scope: { from: string | null; to: string | null }) => {
-      const { data, error } = await supabase.functions.invoke("quo-ai-status", {
-        body: { action: "refresh", ...scope },
-      });
-      if (error || data?.error)
-        throw new Error("AI refresh failed. Check Quo configuration and try again.");
-      return data as { processed: number; message: string; results: Array<{ state: string }> };
-    },
-    onSuccess: (data) => {
-      void queryClient.invalidateQueries({ queryKey: ["report-ai-status"] });
-      void queryClient.invalidateQueries({ queryKey: ["quo-ai-progress"] });
-      const classified = data.results.filter((r) => r.state === "classified").length;
-      toast.success(
-        data.processed
-          ? `${classified} classified / ${data.processed} checked. Eligible pipeline statuses updated.`
-          : data.message,
-      );
-    },
-    onError: (error) => toast.error(error.message),
-  });
+  // There is no manual "refresh a date range" any more: one refresh queued
+  // thousands of leads and held up the automatic checks for hours. Statuses
+  // update on their own as messages arrive.
   const progress = useQuery({
     queryKey: ["quo-ai-progress", range.from, range.to],
     enabled: canManageAiReporting && Boolean(aiConfiguration.data?.configured),
@@ -728,29 +708,6 @@ function Inner() {
                 </p>
               )}
             </div>
-            {canManageAiReporting && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={
-                  refreshAi.isPending ||
-                  Boolean(progress.data?.pending) ||
-                  !aiConfiguration.data?.configured ||
-                  ai.isError
-                }
-                onClick={() => {
-                  void ai.refetch();
-                  void cs.refetch();
-                  refreshAi.mutate({ ...range });
-                }}
-                title="Check every eligible lead in the selected range; each lead is checked at most once every 15 minutes"
-              >
-                <RefreshCw
-                  className={cn("mr-1.5 h-3.5 w-3.5", refreshAi.isPending && "animate-spin")}
-                />
-                {refreshAi.isPending ? "Checking Quo…" : "Refresh AI · selected range"}
-              </Button>
-            )}
           </div>
         )}
         <Grid>
