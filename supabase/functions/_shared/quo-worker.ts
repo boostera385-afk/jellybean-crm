@@ -3,6 +3,7 @@ import {
   customerRepliedSince,
   emptyResult,
   fetchQuoCalls,
+  normalizeQuoPhone,
   safeAiError,
   type AiResult,
   type QuoMessage,
@@ -85,27 +86,10 @@ export async function processQuoJob(
           ...(job.extraNumbers ?? []),
         ]);
     // When the job reads exactly the lead's own inbox -- its number_name maps to
-    // a single Quo inbox (inboxMatched) -- the history is confined to THAT inbox.
-    // A customer dealt with on one inbox and then messaged again from a different
-    // inbox is two separate conversations, so a number shared across leads on
-    // different inboxes cannot be confused here: classify this lead from its own
-    // inbox (delivered, didn't reply, ...) instead of parking it for review. The
-    // shared-phone guard still applies when the history is read across every
-    // inbox, where a shared number genuinely cannot be attributed to one lead.
-    if (job.inboxMatched !== true) {
-      for (const phone of checkpoint.phones) {
-        const { data: unique, error } = await db.rpc("lead_ai_phone_is_unique", {
-          p_lead_id: job.leadId,
-          p_phone: phone,
-        });
-        if (error) throw new Error("identity_check_unavailable");
-        if (unique !== true) {
-          result = emptyResult("review", "phone_shared_between_leads");
-          break;
-        }
-      }
-    }
-    if (!result) {
+    // a single Quo inbox (inboxMatched) -- the history is confined to THAT inbox,
+    // so a number shared across leads on different inboxes cannot be confused.
+    // Otherwise the shared-phone guard below runs on the number the chat is on.
+    {
       const deadline = AbortSignal.timeout(70_000);
       const advanced = await advanceQuoCheckpoint(checkpoint, {
         apiKey: quoKey,
@@ -182,6 +166,7 @@ export async function processQuoJob(
       // Phone calls too: many outcomes are only said on a call. Best effort --
       // without them the lead is judged from its texts, as before.
       let calls: QuoMessage[] = [];
+      const callPhone = new Map<string, string>();
       // On unless the QUO_AI_CALLS secret is "off".
       const callsOn =
         (globalThis as { Deno?: { env: { get(k: string): string | undefined } } }).Deno?.env.get(
@@ -190,41 +175,73 @@ export async function processQuoJob(
       if (callsOn && job.inboxIds.length <= 3) {
         try {
           for (const phone of checkpoint.phones)
-            for (const inbox of job.inboxIds)
-              calls.push(
-                ...(await fetchQuoCalls({
-                  apiKey: quoKey,
-                  phoneNumberId: inbox,
-                  participant: phone,
-                  snapshot: checkpoint.snapshot,
-                  signal: deadline,
-                  reserveRequest:
-                    options.wait ??
-                    (async () => {
-                      await new Promise((resolve) => setTimeout(resolve, 200));
-                    }),
-                })),
-              );
+            for (const inbox of job.inboxIds) {
+              const found = await fetchQuoCalls({
+                apiKey: quoKey,
+                phoneNumberId: inbox,
+                participant: phone,
+                snapshot: checkpoint.snapshot,
+                signal: deadline,
+                reserveRequest:
+                  options.wait ??
+                  (async () => {
+                    await new Promise((resolve) => setTimeout(resolve, 200));
+                  }),
+              });
+              for (const call of found) callPhone.set(call.id, phone);
+              calls.push(...found);
+            }
         } catch {
           calls = [];
+          callPhone.clear();
         }
       }
-      const history = [...checkpoint.messages, ...calls].sort(
+      const allHistory = [...checkpoint.messages, ...calls].sort(
         (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
       );
+      // A lead with several numbers is judged only on the number the
+      // conversation happened on: the customer's latest message, else ours.
+      const phoneOf = (m: QuoMessage) =>
+        callPhone.get(m.id) ?? normalizeQuoPhone(m.direction === "incoming" ? m.from : m.to[0]);
+      let chatPhone = checkpoint.phones[0];
+      if (checkpoint.phones.length > 1) {
+        const newestFirst = [...allHistory].reverse();
+        const spoke = (m: QuoMessage) => (m.call ? m.call.answered : m.direction === "incoming");
+        const pick = newestFirst.find(spoke) ?? newestFirst[0];
+        chatPhone = (pick && phoneOf(pick)) || chatPhone;
+      }
+      const history =
+        checkpoint.phones.length > 1
+          ? allHistory.filter((m) => phoneOf(m) === chatPhone)
+          : allHistory;
+      // Read across every inbox, a number shared with another lead cannot be
+      // attributed to this one. Only the number the chat is on is checked.
+      if (job.inboxMatched !== true) {
+        const { data: unique, error } = await db.rpc("lead_ai_phone_is_unique", {
+          p_lead_id: job.leadId,
+          p_phone: chatPhone,
+        });
+        if (error) throw new Error("identity_check_unavailable");
+        if (unique !== true) result = emptyResult("review", "phone_shared_between_leads");
+      }
       customerReplied = customerRepliedSince(history, job.assignedAt);
-      result = await classifyQuoHistory({
-        messages: history,
-        assignedAt: job.assignedAt,
-        createdAt: job.createdAt,
-        // Strict: a job from before the claim reported it does not qualify.
-        checkPriorContact: job.inboxMatched === true,
-        service: job.service,
-        apiKey: modelKey,
-        previous: cached,
-        signal: deadline,
-      });
-      lastMessageAt = checkpoint.messages.at(-1)?.createdAt ?? null;
+      if (!result) {
+        result = await classifyQuoHistory({
+          messages: history,
+          assignedAt: job.assignedAt,
+          createdAt: job.createdAt,
+          checkPriorContact: job.inboxMatched === true,
+          service: job.service,
+          apiKey: modelKey,
+          previous: cached,
+          signal: deadline,
+        });
+        // Nothing at all for this number on the lead's own inbox: the lead's
+        // number name most likely points at the wrong inbox.
+        if (job.inboxMatched === true && result.reasonCode === "no_matching_quo_history")
+          result = { ...result, reasonCode: "check_number_name" };
+      }
+      lastMessageAt = history.filter((m) => !m.call).at(-1)?.createdAt ?? null;
     }
   } catch (error) {
     const code = safeAiError(error);

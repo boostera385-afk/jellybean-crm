@@ -50,6 +50,12 @@ const REASONS: Record<string, ReviewReason> = {
     action: "Check the number; set Undeliver or Wrong Number if it is bad.",
   },
   no_matching_quo_history: NO_QUO_CHAT,
+  check_number_name: {
+    short: "Check number name",
+    detail:
+      "No Quo chat for this customer's number on the inbox the lead's number name points to.",
+    action: "Kindly check number name again.",
+  },
   unmatched: NO_QUO_CHAT,
   no_contact_yet: {
     short: "Not contacted",
