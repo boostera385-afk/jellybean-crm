@@ -12,6 +12,7 @@
  * already saved with it, but is never matched to a Quo inbox.
  */
 export const NUMBER_NAMES: ReadonlyArray<{ name: string; phone: string | null }> = [
+  { name: "13-Dallas Lights", phone: "+14698715262" },
   { name: "Appliance Repair Nationwide MIS", phone: null },
   { name: "Atlanta Georgia Appliance Repair / GD", phone: "+14708232133" },
   { name: "Atlanta Georgia Handyman", phone: "+14709448210" },
@@ -21,7 +22,10 @@ export const NUMBER_NAMES: ReadonlyArray<{ name: string; phone: string | null }>
   { name: "Dallas Garage Door", phone: "+14697188444" },
   { name: "Exterior Painting Nationwide / TV Mounting", phone: "+18329816614" },
   { name: "Garage Door NATIONWIDE MIS", phone: "+13462263895" },
+  { name: "Govee 4", phone: "+18327865579" },
+  { name: "Govee 4nov", phone: "+14708736205" },
   { name: "Govee Installation", phone: "+14256996826" },
+  { name: "Govee Installers", phone: "+14698096227" },
   { name: "Houston Facebook ND Garage Door OP1", phone: null },
   { name: "Houston Handyman", phone: "+18322097989" },
   { name: "Houston Handyman OP1", phone: "+12819426479" },
@@ -36,6 +40,7 @@ export const NUMBER_NAMES: ReadonlyArray<{ name: string; phone: string | null }>
   { name: "Los Angeles Handyman FB", phone: "+12133192404" },
   { name: "Max Mad", phone: null },
   { name: "McKinney, Texas", phone: "+14693522498" },
+  { name: "McKinney, Texas ND", phone: "+14693522498" },
   { name: "Miami Appliance Repair", phone: "+19542396751" },
   { name: "Miami FB/ND Garage Door OP1", phone: "+17866736371" },
   { name: "Miami Handyman", phone: "+15614646940" },
