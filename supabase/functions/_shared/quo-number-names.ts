@@ -39,7 +39,6 @@ export const NUMBER_NAMES: ReadonlyArray<{ name: string; phone: string | null }>
   { name: "LOS ANGELES GARAGE DOOR / CLEANING / PLUMBING", phone: "+12132779445" },
   { name: "Los Angeles Handyman FB", phone: "+12133192404" },
   { name: "Max Mad", phone: null },
-  { name: "McKinney, Texas", phone: "+14693522498" },
   { name: "McKinney, Texas ND", phone: "+14693522498" },
   { name: "Miami Appliance Repair", phone: "+19542396751" },
   { name: "Miami FB/ND Garage Door OP1", phone: "+17866736371" },

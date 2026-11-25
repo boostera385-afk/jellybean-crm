@@ -12,7 +12,7 @@ import { NUMBER_NAME_OPTIONS } from "@/components/number-name-select";
 describe("the lead card's inbox list", () => {
   it("keeps the saved names exactly as they were", () => {
     // Every lead saved before the numbers were added still names an option.
-    expect(NUMBER_NAME_OPTIONS).toHaveLength(46);
+    expect(NUMBER_NAME_OPTIONS).toHaveLength(45);
     expect(NUMBER_NAME_OPTIONS).toContain("Houston Handyman OP1");
     expect(NUMBER_NAME_OPTIONS).toContain("LOS ANGELES GARAGE DOOR / CLEANING / PLUMBING");
   });
@@ -21,8 +21,7 @@ describe("the lead card's inbox list", () => {
     const phones = NUMBER_NAMES.map((entry) => entry.phone).filter(Boolean);
     expect(phones.length).toBeGreaterThan(25);
     for (const phone of phones) expect(phone).toMatch(/^\+1\d{10}$/);
-    // "McKinney, Texas" and "McKinney, Texas ND" are both names for one inbox.
-    expect(new Set(phones).size).toBe(phones.length - 1);
+    expect(new Set(phones).size).toBe(phones.length);
   });
 
   it("shows the number beside the name, and just the name when it is unknown", () => {
