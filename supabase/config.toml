@@ -44,3 +44,9 @@ verify_jwt = false
 # requires the exact service-role key.
 [functions.quo-message-backfill]
 verify_jwt = true
+
+# Server-to-server lookup for Marshmallow CRM. No JellyBean user calls it; the
+# handler requires the exact MARSHMALLOW_LOOKUP_SECRET and returns department
+# metadata only.
+[functions.marshmallow-lead-lookup]
+verify_jwt = false
