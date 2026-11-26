@@ -12,6 +12,8 @@
  * already saved with it, but is never matched to a Quo inbox.
  */
 export const NUMBER_NAMES: ReadonlyArray<{ name: string; phone: string | null }> = [
+  { name: "11 Govee", phone: "+14704606850" },
+  { name: "12 Govee", phone: "+16826103061" },
   { name: "13-Dallas Lights", phone: "+14698715262" },
   { name: "Appliance Repair Nationwide MIS", phone: null },
   { name: "Atlanta Georgia Appliance Repair / GD", phone: "+14708232133" },
@@ -22,10 +24,14 @@ export const NUMBER_NAMES: ReadonlyArray<{ name: string; phone: string | null }>
   { name: "Dallas Garage Door", phone: "+14697188444" },
   { name: "Exterior Painting Nationwide / TV Mounting", phone: "+18329816614" },
   { name: "Garage Door NATIONWIDE MIS", phone: "+13462263895" },
+  { name: "Govee 10 NOV", phone: "+13213525025" },
   { name: "Govee 4", phone: "+18327865579" },
   { name: "Govee 4nov", phone: "+14708736205" },
   { name: "Govee Installation", phone: "+14256996826" },
   { name: "Govee Installers", phone: "+14698096227" },
+  { name: "Govee NM", phone: "+16193748127" },
+  { name: "Govee Pro", phone: "+18187404951" },
+  { name: "Holiday Lighting", phone: "+12147785637" },
   { name: "Houston Facebook ND Garage Door OP1", phone: null },
   { name: "Houston Handyman", phone: "+18322097989" },
   { name: "Houston Handyman OP1", phone: "+12819426479" },
@@ -50,6 +56,7 @@ export const NUMBER_NAMES: ReadonlyArray<{ name: string; phone: string | null }>
   { name: "New York Handyman", phone: "+19292983346" },
   { name: "Orange County Appliance Repair", phone: null },
   { name: "Orange County Handyman OP1", phone: "+16575716845" },
+  { name: "Orange County, ND Lights", phone: "+16573878726" },
   { name: "San Diego - Appliance Repair", phone: null },
   { name: "San Diego - Handyman", phone: "+16193049048" },
   { name: "San Diego Garage Door OP1", phone: "+18582643190" },

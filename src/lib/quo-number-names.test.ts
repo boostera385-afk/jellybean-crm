@@ -12,7 +12,7 @@ import { NUMBER_NAME_OPTIONS } from "@/components/number-name-select";
 describe("the lead card's inbox list", () => {
   it("keeps the saved names exactly as they were", () => {
     // Every lead saved before the numbers were added still names an option.
-    expect(NUMBER_NAME_OPTIONS).toHaveLength(45);
+    expect(NUMBER_NAME_OPTIONS).toHaveLength(52);
     expect(NUMBER_NAME_OPTIONS).toContain("Houston Handyman OP1");
     expect(NUMBER_NAME_OPTIONS).toContain("LOS ANGELES GARAGE DOOR / CLEANING / PLUMBING");
   });
